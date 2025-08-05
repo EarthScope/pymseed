@@ -1,0 +1,46 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+
+# C build objects
+*.so
+*.lo
+*.o
+*.dylib
+*.so
+*.dll
+
+# Distribution / packaging
+build/
+develop-eggs/
+dist/
+eggs/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Development environment
+.vscode/
+.venv/
+venv/
+src/miniseed/libmseed.h
+
+# Generated CFFI and other files generated during build phase
+cffi_module/libmseed/libmseed.a
+cffi_module/libmseed/libmseed.lib
+src/pymseed/_libmseed_cffi.c
+src/pymseed/_libmseed_cffi.*.so
+src/pymseed/_libmseed_cffi.*.dylib
+src/pymseed/_libmseed_cffi.*.dll
+src/pymseed/libmseed_version.py
+
+# Sphinx documentation
+docs/_build/
+

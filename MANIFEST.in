@@ -1,0 +1,19 @@
+# Include the cffi module and libmseed source code
+recursive-include cffi_module *.py *.c *.h *.md *.txt *.in *.pc.in *.def *.map
+recursive-include cffi_module/libmseed *
+recursive-exclude cffi_module/libmseed *.o *.a *.lib *.so *.dll *.pyd
+
+# Include examples
+recursive-include examples *.py
+
+# Include test data
+recursive-include tests/data *
+
+# Include development files
+include development.txt
+
+# Standard files already included by default
+include LICENSE
+include README.md
+include pyproject.toml
+include setup.py

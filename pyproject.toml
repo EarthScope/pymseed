@@ -1,0 +1,201 @@
+[build-system]
+requires = ["setuptools>=65.0.0", "wheel", "cffi>=1.15.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pymseed"
+description = "A Python package for reading and writing miniSEED formatted data"
+authors = [
+    { name = "EarthScope Data Services", email = "software@earthscope.org" },
+]
+readme = "README.md"
+requires-python = ">=3.9"
+keywords = ["seismology", "miniseed", "mseed", "data", "waveform", "seismic"]
+license = "Apache-2.0"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering",
+    "Operating System :: MacOS :: MacOS X",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: POSIX :: Other",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
+]
+dynamic = ["version"]
+
+# Core runtime dependencies
+dependencies = [
+    "cffi>=1.15.0",
+]
+
+[project.optional-dependencies]
+# Core development dependencies (testing, linting, type checking)
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "ruff>=0.1.0",
+    "mypy>=1.0.0",
+    "pre-commit>=3.0.0",
+]
+
+# NumPy support for data arrays
+numpy = [
+    "numpy>=1.21.0",
+]
+
+# Documentation dependencies
+docs = [
+    "sphinx>=5.0.0",
+    "sphinx-rtd-theme>=1.0.0",
+    "sphinxcontrib-napoleon>=0.7",
+]
+
+# Testing with numpy
+test = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "numpy>=1.21.0",
+]
+
+# Release/publishing dependencies (for maintainers only)
+release = [
+    "build>=0.10.0",
+    "twine>=4.0.0",
+]
+
+# All optional dependencies for development
+all = [
+    "pymseed[dev,numpy,docs,test]",
+]
+
+[project.urls]
+Homepage = "https://github.com/EarthScope/pymseed"
+Repository = "https://github.com/EarthScope/pymseed"
+Issues = "https://github.com/EarthScope/pymseed/issues"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+include-package-data = true
+zip-safe = false
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+pymseed = ["*.so", "*.pyd", "*.dll", "*.py"]
+
+[tool.setuptools.dynamic]
+version = {attr = "pymseed.__version__.__version__"}
+
+# Testing configuration
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+]
+
+# Coverage configuration options (use with --cov when needed)
+# Example: pytest --cov=pymseed --cov-report=term-missing --cov-report=html --cov-report=xml
+# To run tests with coverage: pytest --cov=pymseed
+# To run tests without coverage (default): pytest
+
+# Linting and code formatting with Ruff
+[tool.ruff]
+target-version = "py39"
+line-length = 88
+extend-exclude = [
+    "cffi_module/libmseed/**",
+    "src/pymseed/_libmseed_cffi.c",
+]
+
+[tool.ruff.format]
+# Use double quotes for strings
+quote-style = "double"
+# Use spaces around the equals sign
+indent-style = "space"
+# Respect magic trailing commas
+skip-magic-trailing-comma = false
+# Automatically detect line ending type
+line-ending = "auto"
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "B",  # flake8-bugbear
+    "C4", # flake8-comprehensions
+    "UP", # pyupgrade
+]
+ignore = [
+    "E501",  # line too long, handled by ruff format
+    "B008",  # do not perform function calls in argument defaults
+    "C901",  # too complex
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B018"]  # Allow "useless" expressions in tests
+
+# Type checking with mypy
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+
+[[tool.mypy.overrides]]
+module = [
+    "pymseed._libmseed_cffi",
+    "pymseed.libmseed_version"
+]
+ignore_errors = true
+
+# Coverage configuration
+[tool.coverage.run]
+source = ["src"]
+omit = [
+    "*/tests/*",
+    "*/test_*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "if settings.DEBUG",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if 0:",
+]
+
+[tool.cibuildwheel]
+# Skip CPython 3.14 builds (unreleased), until cffi wheels are released for it
+skip = "cp314-* cp314t-*"
+
+# Testing configuration
+test-requires = "pytest numpy"
+test-command = "pytest {project}/tests"
