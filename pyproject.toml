@@ -193,8 +193,13 @@ exclude_lines = [
 ]
 
 [tool.cibuildwheel]
-# Skip CPython 3.14 builds (unreleased), until cffi wheels are released for it
-skip = "cp314-* cp314t-*"
+# Enable builds for PyPy
+enable = ["pypy"]
+
+# Skip:
+# CPython 3.14 builds (unreleased), until cffi wheels are released for it
+# Windows ARM builds for Python < 3.11 (limited support)
+skip = "cp314-* cp314t-* cp39-win_arm64 cp310-win_arm64"
 
 # Testing configuration
 test-requires = "pytest numpy"
