@@ -13,7 +13,7 @@ test_path3 = os.path.join(test_dir, "data", "testdata-COLA-signal.mseed3")
 def test_tracelist_read():
     mstl = MS3TraceList(test_path3, unpack_data=True)
 
-    assert mstl.numtraceids == 3
+    assert len(mstl) == 3
 
     assert list(mstl.sourceids()) == [
         "FDSN:IU_COLA_00_B_H_1",
@@ -22,7 +22,7 @@ def test_tracelist_read():
     ]
 
     # Fetch first traceID
-    traceid = next(mstl.traceids())
+    traceid = mstl[0]
 
     assert traceid.sourceid == "FDSN:IU_COLA_00_B_H_1"
     assert traceid.pubversion == 4
@@ -88,7 +88,7 @@ def test_tracelist_read():
 def test_tracelist_read_recordlist():
     mstl = MS3TraceList(test_path3, unpack_data=False, record_list=True)
 
-    assert mstl.numtraceids == 3
+    assert len(mstl) == 3
 
     assert list(mstl.sourceids()) == [
         "FDSN:IU_COLA_00_B_H_1",
@@ -151,7 +151,7 @@ def test_tracelist_numpy():
     mstl = MS3TraceList(test_path3, record_list=True)
 
     # Fetch first traceID
-    traceid = next(mstl.traceids())
+    traceid = mstl[0]
 
     # Fetch first trace segment
     segment = next(traceid.segments())
@@ -217,7 +217,7 @@ def test_tracelist_numpy_arrayfrom_recordlist():
     with pytest.raises(ValueError):
         # Must specify record_list=True
         mstl = MS3TraceList(test_path3)
-        traceid = next(mstl.traceids())
+        traceid = mstl[0]
         segment = next(traceid.segments())
         np_data = segment.create_numpy_array_from_recordlist()
 

@@ -44,3 +44,5 @@ src/pymseed/libmseed_version.py
 # Sphinx documentation
 docs/_build/
 
+TODO
+TODO.txt

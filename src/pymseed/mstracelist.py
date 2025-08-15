@@ -429,18 +429,6 @@ class MS3TraceID:
             current_segment = current_segment.next
 
 
-class _MS3TraceList:
-    """Wrapper around CFFI MS3TraceList structure"""
-
-    def __init__(self, cffi_ptr: Any) -> None:
-        self._list = cffi_ptr
-
-    @property
-    def numtraceids(self) -> int:
-        """Return number of trace IDs"""
-        return self._list.numtraceids
-
-
 class MS3TraceList:
     """A container for a list of traces read from miniSEED
 
@@ -478,7 +466,7 @@ class MS3TraceList:
     from pymseed import MS3TraceList
 
     mstl = MS3TraceList('input_file.mseed')
-    for traceid in mstl.traceids():
+    for traceid in mstl:
         print(f'{traceid.sourceid}, {traceid.pubversion}')
         for segment in traceid.segments():
             print(f'  {segment.starttime_str()} - {segment.endtime_str()}, ',
@@ -525,14 +513,50 @@ class MS3TraceList:
             clibmseed.mstl3_free(mstl_ptr, 1)
 
     def __repr__(self) -> str:
-        return f"MSTraceList with {self.numtraceids} trace IDs"
+        return f"MSTraceList with {len(self)} trace IDs"
 
-    @property
-    def numtraceids(self) -> int:
+    def __len__(self) -> int:
         """Return number of trace IDs in the list"""
         if self._mstl == ffi.NULL:
             return 0
         return int(self._mstl.numtraceids)
+
+    def __iter__(self) -> Any:
+        """Return iterator over trace IDs"""
+        current_traceid = self._mstl.traces.next[0]
+        while current_traceid != ffi.NULL:
+            yield MS3TraceID(current_traceid, self)
+            current_traceid = current_traceid.next[0]
+
+    def __getitem__(self, key: int | slice) -> Any:
+        """Enable indexing and slicing access to trace IDs"""
+        if isinstance(key, slice):
+            # Handle slice objects (e.g., traces[1:3], traces[::2])
+            trace_list = list(self)
+            return trace_list[key]
+        elif isinstance(key, int):
+            # Handle single integer index
+            length = len(self)
+            if length == 0:
+                raise IndexError("list index out of range")
+
+            # Handle negative indices
+            if key < 0:
+                key += length
+
+            # Check bounds
+            if key < 0 or key >= length:
+                raise IndexError("list index out of range")
+
+            # Find and return the trace ID at the specified index
+            for i, traceid in enumerate(self):
+                if i == key:
+                    return traceid
+
+            # This shouldn't happen if our logic is correct
+            raise IndexError("list index out of range")
+        else:
+            raise TypeError("indices must be integers or slices")
 
     def get_traceid(self, sourceid: str, version: int = 0) -> Optional[MS3TraceID]:
         """Get a specific trace ID from the list"""
@@ -556,16 +580,9 @@ class MS3TraceList:
         for c_file_name in _c_file_names:
             self.read_file(ffi.string(c_file_name).decode("utf-8"), **kwargs)
 
-    def traceids(self) -> Any:
-        """Generator that yields MS3TraceID objects"""
-        current_traceid = self._mstl.traces.next[0]
-        while current_traceid != ffi.NULL:
-            yield MS3TraceID(current_traceid, self)
-            current_traceid = current_traceid.next[0]
-
     def sourceids(self) -> Any:
         """Return source IDs via a generator iterator"""
-        for traceid in self.traceids():
+        for traceid in self:
             yield traceid.sourceid
 
     def print(
