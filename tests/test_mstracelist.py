@@ -32,7 +32,7 @@ def test_tracelist_read():
     assert traceid.latest_seconds == 1267257599.969538
 
     # Fetch first trace segment
-    segment = next(traceid.segments())
+    segment = traceid[0]
 
     assert segment.starttime == 1267253400019539000
     assert segment.starttime_seconds == 1267253400.019539
@@ -63,7 +63,7 @@ def test_tracelist_read():
     assert foundid.latest == 1267257599969538000
     assert foundid.latest_seconds == 1267257599.969538
 
-    foundseg = next(foundid.segments())
+    foundseg = foundid[0]
 
     # Check first 6 samples
     assert foundseg.datasamples[0:6].tolist() == [
@@ -99,7 +99,7 @@ def test_tracelist_read_recordlist():
     # Search for a specific trace ID
     foundid = mstl.get_traceid("FDSN:IU_COLA_00_B_H_Z")
 
-    foundseg = next(foundid.segments())
+    foundseg = foundid[0]
 
     assert foundseg.numsamples == 0
 
@@ -154,7 +154,7 @@ def test_tracelist_numpy():
     traceid = mstl[0]
 
     # Fetch first trace segment
-    segment = next(traceid.segments())
+    segment = traceid[0]
 
     # Unpack data samples from record list before accessing numpy data
     segment.unpack_recordlist()
@@ -180,7 +180,7 @@ def test_tracelist_numpy():
     foundid = mstl.get_traceid("FDSN:IU_COLA_00_B_H_Z")
 
     assert foundid.sourceid == "FDSN:IU_COLA_00_B_H_Z"
-    foundseg = next(foundid.segments())
+    foundseg = foundid[0]
 
     # Unpack data samples from record list before accessing numpy data
     foundseg.unpack_recordlist()
@@ -218,7 +218,7 @@ def test_tracelist_numpy_arrayfrom_recordlist():
         # Must specify record_list=True
         mstl = MS3TraceList(test_path3)
         traceid = mstl[0]
-        segment = next(traceid.segments())
+        segment = traceid[0]
         np_data = segment.create_numpy_array_from_recordlist()
 
     mstl = MS3TraceList(test_path3, record_list=True)
@@ -227,7 +227,7 @@ def test_tracelist_numpy_arrayfrom_recordlist():
     foundid = mstl.get_traceid("FDSN:IU_COLA_00_B_H_Z")
 
     assert foundid.sourceid == "FDSN:IU_COLA_00_B_H_Z"
-    foundseg = next(foundid.segments())
+    foundseg = foundid[0]
 
     np_data = foundseg.create_numpy_array_from_recordlist()
 

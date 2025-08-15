@@ -85,7 +85,7 @@ class MS3TraceSeg:
     def __init__(self, cffi_ptr: Any, parent_id_ptr: Any = None, parent_tracelist: Any = None) -> None:
         self._seg = cffi_ptr
         self._parent_id = parent_id_ptr  # Store reference to parent MS3TraceID
-        self._parent_tracelist = parent_tracelist  # Store reference to parent MSTraceList
+        self._parent_tracelist = parent_tracelist  # Store reference to parent MS3TraceList
 
     def __repr__(self) -> str:
         return (
@@ -351,7 +351,14 @@ class MS3TraceSeg:
 
 
 class MS3TraceID:
-    """Wrapper around CFFI MS3TraceID structure"""
+    """Wrapper around CFFI MS3TraceID structure
+
+    This class supports list-like access to the trace segments:
+    - len(traceid) returns the number of segments
+    - traceid[i] returns the i-th segment
+    - traceid[start:end] returns a slice of segments
+    - for segment in traceid: iterates over all segments
+    """
 
     def __init__(self, cffi_ptr: Any, parent_tracelist: Any = None) -> None:
         self._id = cffi_ptr
@@ -362,8 +369,49 @@ class MS3TraceID:
             f"Source ID: {self.sourceid}, "
             f"earliest: {self.earliest_str()}, "
             f"latest: {self.latest_str()}, "
-            f"segments: {self.numsegments}"
+            f"segments: {len(self)}"
         )
+
+    def __len__(self) -> int:
+        """Return number of segments"""
+        return self._id.numsegments
+
+    def __iter__(self) -> Any:
+        """Return iterator over segments"""
+        current_segment = self._id.first
+        while current_segment != ffi.NULL:
+            yield MS3TraceSeg(current_segment, self._id, self._parent_tracelist)
+            current_segment = current_segment.next
+
+    def __getitem__(self, key: int | slice) -> Any:
+        """Enable indexing and slicing access to segments"""
+        if isinstance(key, slice):
+            # Handle slice objects (e.g., traceid[1:3], traceid[::2])
+            segment_list = list(self)
+            return segment_list[key]
+        elif isinstance(key, int):
+            # Handle single integer index
+            length = len(self)
+            if length == 0:
+                raise IndexError("list index out of range")
+
+            # Handle negative indices
+            if key < 0:
+                key += length
+
+            # Check bounds
+            if key < 0 or key >= length:
+                raise IndexError("list index out of range")
+
+            # Find and return the segment at the specified index
+            for i, segment in enumerate(self):
+                if i == key:
+                    return segment
+
+            # This shouldn't happen if our logic is correct
+            raise IndexError("list index out of range")
+        else:
+            raise TypeError("indices must be integers or slices")
 
     @property
     def sourceid(self) -> Optional[str]:
@@ -416,18 +464,6 @@ class MS3TraceID:
             return None
         return result
 
-    @property
-    def numsegments(self) -> int:
-        """Return number of segments"""
-        return self._id.numsegments
-
-    def segments(self) -> Any:
-        """Return segments via a generator iterator"""
-        current_segment = self._id.first
-        while current_segment != ffi.NULL:
-            yield MS3TraceSeg(current_segment, self._id, self._parent_tracelist)
-            current_segment = current_segment.next
-
 
 class MS3TraceList:
     """A container for a list of traces read from miniSEED
@@ -445,7 +481,7 @@ class MS3TraceList:
 
     The overall structure of the trace list list of trace IDs, each of which
     contains a list of trace segments illustrated as follows:
-    - MSTraceList
+    - TraceList
       - TraceID
         - Trace Segment
         - Trace Segment
@@ -457,9 +493,15 @@ class MS3TraceList:
         - ...
       - ...
 
-    MSTraceList.traces() returns a generator iterator for the list of TraceIDs,
-    and TraceID.segments() returns a generator iterator for the list of trace
-    segments.
+    TraceIDs can be accessed via indexing and slicing:
+    - mstl[0] returns the first TraceID
+    - mstl[1:3] returns a slice of the TraceIDs
+    - for traceid in mstl: iterates over all TraceIDs
+
+    Trace Segments can be accessed via indexing and slicing:
+    - traceid[0] returns the first Trace Segment
+    - traceid[1:3] returns a slice of the Trace Segments
+    - for segment in traceid: iterates over all Trace Segments
 
     Example usage iterating over the trace list:
     ```
@@ -468,7 +510,7 @@ class MS3TraceList:
     mstl = MS3TraceList('input_file.mseed')
     for traceid in mstl:
         print(f'{traceid.sourceid}, {traceid.pubversion}')
-        for segment in traceid.segments():
+        for segment in traceid:
             print(f'  {segment.starttime_str()} - {segment.endtime_str()}, ',
                   f'{segment.samprate} sps, {segment.samplecnt} samples')
     ```
@@ -513,7 +555,7 @@ class MS3TraceList:
             clibmseed.mstl3_free(mstl_ptr, 1)
 
     def __repr__(self) -> str:
-        return f"MSTraceList with {len(self)} trace IDs"
+        return f"MS3TraceList with {len(self)} trace IDs"
 
     def __len__(self) -> int:
         """Return number of trace IDs in the list"""
@@ -557,6 +599,11 @@ class MS3TraceList:
             raise IndexError("list index out of range")
         else:
             raise TypeError("indices must be integers or slices")
+
+    @property
+    def numtraceids(self) -> int:
+        """Return number of trace IDs in the list"""
+        return len(self)
 
     def get_traceid(self, sourceid: str, version: int = 0) -> Optional[MS3TraceID]:
         """Get a specific trace ID from the list"""

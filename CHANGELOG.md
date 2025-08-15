@@ -8,11 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Added
 - List-like access to MS3TraceList (indexing, slicing, iteration)
+- List-like access to segments in MS3TraceID (indexing, slicing, iteration)
 
 ### Removed
 - Remove MS3TraceList.numtraces in favor of supporting len() directly
 - Remove MS3TraceList.tracids() in favor of supporting iteration directly
--
+- Remove MS3TraceID.numsegments in favor of supporting len() directly
+- Remove MS3TraceID.segments() in favor of supporting iteration directly
 
 ## [0.0.1] - 2024-8-5
 ### Added
