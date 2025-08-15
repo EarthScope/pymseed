@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
-- List-like access to MS3TraceList (indexing, slicing, iteration)
+- List-like access to trace IDs in MS3TraceList (indexing, slicing, iteration)
 - List-like access to segments in MS3TraceID (indexing, slicing, iteration)
 
 ### Removed

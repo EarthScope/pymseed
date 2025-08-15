@@ -145,6 +145,30 @@ def test_tracelist_read_recordlist():
     assert sample_count == 84000
 
 
+def test_tracelist_slicing():
+    mstl = MS3TraceList(test_path3, unpack_data=True)
+
+    assert len(mstl) == 3
+
+    # Test slicing (trace has 1 segment, so test valid slices)
+    traceid = mstl[0]
+
+    assert len(traceid[0:1]) == 1
+    assert traceid[0:1][0].starttime == 1267253400019539000
+
+    # Test empty slice
+    assert len(traceid[1:3]) == 0  # No segments at indices 1-2
+
+    # Test full slice
+    assert len(traceid[:]) == 1
+    assert len(traceid) == 1
+
+    # Test slicing (trace has 1 segment, so test valid slices)
+
+    assert len(mstl[0:1]) == 1
+    assert len(mstl[0:1][0]) == 1
+
+
 def test_tracelist_numpy():
     np = pytest.importorskip("numpy")
 
