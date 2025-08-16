@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - List-like access to segments in MS3TraceID (indexing, slicing, iteration)
 - Add MS3Record.from_file() and MS3Record.from_buffer() for convenience
 - Add MS3TraceList.from_file() for consistency and future flexibility
+- Add MS3TraceList.to_file() for writing miniSEED
+- Add MS3TraceSeg.has_same_data() for comparison
 
 ### Changed
 - Rename MS3TraceList.read_file() to MS3TraceList.add_file() for clarity

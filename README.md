@@ -31,7 +31,7 @@ Read a file and print details from each record:
 ```Python
 from pymseed import MS3RecordReader,TimeFormat
 
-input_file = "testdata-3channel-signal.mseed3"
+input_file = "examples/example_data.mseed"
 
 for msr in MS3Record.from_file(input_file):
     # Print values directly

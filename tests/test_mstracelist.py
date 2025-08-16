@@ -289,19 +289,19 @@ def test_tracelist_numpy_arrayfrom_recordlist():
 
 # A sine wave generator
 def sine_generator(start_degree=0, yield_count=100, total=1000):
-    """A generator returning a continuing sequence for a sine values."""
+    """A generator returning a continuing sequence of sine values."""
     generated = 0
     while generated < total:
-        bite_size = min(yield_count, total - generated)
+        chunk_size = min(yield_count, total - generated)
 
-        # Yield a tuple of 3 lists of continuing sine values
+        # Yield a list of continuing sine values
         yield [
             int(math.sin(math.radians(x)) * 500)
-            for x in range(start_degree, start_degree + bite_size)
+            for x in range(start_degree, start_degree + chunk_size)
         ]
 
-        start_degree += bite_size
-        generated += bite_size
+        start_degree += chunk_size
+        generated += chunk_size
 
 
 # A global record buffer
@@ -317,7 +317,6 @@ def record_handler(record, handler_data):
 
 
 test_pack3 = os.path.join(test_dir, "data", "packtest_sine2000.mseed3")
-
 
 def test_mstracelist_pack():
     # Create a new MSTraceList object
@@ -364,6 +363,50 @@ def test_mstracelist_pack():
     with open(test_pack3, "rb") as f:
         data_v3 = f.read()
         assert record_buffer == data_v3
+
+
+test_pack2 = os.path.join(test_dir, "data", "packtest_sine2000.mseed2")
+
+def test_mstracelist_to_file(tmp_path):
+    """Test MS3TraceList.to_file() method using pytest's tmp_path fixture."""
+    # Create a new MSTraceList object
+    traces = MS3TraceList()
+
+    sample_rate = 40.0
+    start_time = timestr2nstime("2024-01-01T15:13:55.123456789Z")
+
+    for new_data in sine_generator(yield_count=100, total=2000):
+        traces.add_data(
+            sourceid="FDSN:XX_TEST__B_S_X",
+            data_samples=new_data,
+            sample_type="i",
+            sample_rate=sample_rate,
+            start_time=start_time,
+        )
+
+        start_time = sample_time(start_time, len(new_data), sample_rate)
+
+    # Use pytest's tmp_path fixture to create a temporary file
+    temp_file = tmp_path / "test_output.mseed3"
+
+    # Write using to_file method
+    result = traces.to_file(
+        str(temp_file), overwrite=True, format_version=2, max_reclen=512
+    )
+
+    # Verify file was created and has content
+    assert temp_file.exists()
+    assert temp_file.stat().st_size > 0
+
+    # Verify number of records written
+    assert result == 5
+
+    # Compare created file to reference file
+    with open(test_pack2, "rb") as f:
+        reference_data = f.read()
+        with open(temp_file, "rb") as f:
+            test_data = f.read()
+            assert reference_data == test_data
 
 
 def test_mstracelist_nosuchfile():

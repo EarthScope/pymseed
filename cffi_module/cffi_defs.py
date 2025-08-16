@@ -330,7 +330,7 @@ extern int ms3_url_addheader (const char *header);
 extern void ms3_url_freeheaders (void);
 extern int64_t msr3_writemseed (MS3Record *msr, const char *mspath, int8_t overwrite,
                                 uint32_t flags, int8_t verbose);
-extern int64_t mstl3_writemseed (MS3TraceList *mst, const char *mspath, int8_t overwrite,
+extern int64_t mstl3_writemseed (MS3TraceList *mstl, const char *mspath, int8_t overwrite,
                                  int maxreclen, int8_t encoding, uint32_t flags, int8_t verbose);
 extern int libmseed_url_support (void);
 extern MS3FileParam *ms3_mstl_init_fd (int fd);

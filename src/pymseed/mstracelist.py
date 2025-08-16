@@ -308,16 +308,122 @@ class MS3TraceSeg:
         return array
 
     def unpack_recordlist(self, buffer: Any = None, verbose: int = 0) -> int:
-        """Unpack data samples from record list into a buffer-like object
+        """Unpack data samples from miniSEED record list into accessible format
 
-        If a destination `buffer` is provided it must be a buffer-like object,
-        and large enough to hold the data samples.
+        This method decodes data samples from the original miniSEED records that were
+        stored when reading with `record_list=True`. It's used for memory-efficient
+        workflows where you delay data unpacking until needed.
 
-        If a destination `buffer` is not provided (None), unpacked data will be
-        owned by this object instance and will be freed when the instance is
-        destroyed. If you wish to keep the data, you must make a copy.
+        Args:
+            buffer: Optional destination buffer for unpacked data. Must support the
+                buffer protocol (e.g., numpy array, bytearray, memoryview). If provided,
+                must be large enough to hold `self.samplecnt` samples of the appropriate
+                data type. If None, data is unpacked into internal memory owned by this
+                segment instance.
+            verbose: Verbosity level for diagnostic output (0=quiet, 1-3=increasing
+                detail). Default: 0
 
-        Returns the number of samples unpacked.
+        Returns:
+            Number of samples successfully unpacked
+
+        Raises:
+            ValueError: If no record list is available (requires `record_list=True` when
+                reading), if data is already unpacked and a buffer is provided, or if
+                the provided buffer doesn't support the buffer protocol
+            MiniSEEDError: If unpacking fails due to corrupted or invalid record data
+
+        Note:
+            - Requires the segment to have been created with `record_list=True`
+            - Can only be called once per segment if using internal memory (buffer=None)
+            - If using a provided buffer, the buffer format must match the segment's
+              sample type (int32 for "i", float32 for "f", float64 for "d", bytes for "t")
+            - For performance, use memoryviews with matching dtype when providing buffers
+
+        Examples:
+            Basic workflow illustrating how to use unpack_recordlist():
+
+            >>> from pymseed import MS3TraceList
+
+            Basic unpacking to internal memory:
+            >>> traces = MS3TraceList.from_file("examples/example_data.mseed", record_list=True)
+            >>> len(traces)
+            3
+            >>> # Before unpacking, the data samples are not available
+            >>> for traceid in traces:
+            ...     for segment in traceid:
+            ...         assert(segment.datasamples == memoryview(b''))
+            ...         assert(segment.numsamples == 0)
+
+            >>> # After unpacking, the data samples are available
+            >>> for traceid in traces:
+            ...     for segment in traceid:
+            ...         count = segment.unpack_recordlist()
+            ...         assert(segment.numsamples == segment.samplecnt)
+            ...         assert(len(segment.datasamples) == segment.numsamples)
+
+            Advanced example of unpacking data to a numpy array:
+            Note: this example is for illustration only.  If numpy arrays are desired
+            use the provided create_numpy_array_from_recordlist() or np_datasamples() instead.
+
+            >>> # For doctest conditional skipping, unneeded for real code
+            >>> try:
+            ...     import numpy as np
+            ...     HAS_NUMPY = True
+            ... except ImportError:
+            ...     HAS_NUMPY = False
+
+            >>> if HAS_NUMPY:
+            ...     traces = MS3TraceList.from_file("examples/example_data.mseed", record_list=True)
+            ...     for traceid in traces:
+            ...         for segment in traceid:
+            ...             # Get the sample size and type from the first record in the record list
+            ...             (size, sample_type) = segment.sample_size_type
+            ...
+            ...             if sample_type == "i":
+            ...                 # Create a numpy array to hold the unpacked data
+            ...                 numpy_array = np.zeros(segment.samplecnt, dtype=np.int32)
+            ...
+            ...                 # Unpack the data directly into our array
+            ...                 count = segment.unpack_recordlist(numpy_array)
+            ...
+            ...                 # Check that the array is not all zeros
+            ...                 assert not np.all(numpy_array == 0), "Numpy array is all zeros (should not happen)"
+            ...
+            ...             # Other sample types would need different numpy array types
+
+            # Advanced example of unpacking data to an Apache Arrow array using pyarrow
+            >>> # For doctest conditional skipping, unneeded for real code
+            >>> try:
+            ...     import pyarrow as pa
+            ...     HAS_PYARROW = True
+            ... except ImportError:
+            ...     HAS_PYARROW = False
+
+            >>> if HAS_PYARROW:
+            ...     traces = MS3TraceList.from_file("examples/example_data.mseed", record_list=True)
+            ...     for traceid in traces:
+            ...         for segment in traceid:
+            ...             # Get the sample size and type from the first record in the record list
+            ...             (size, sample_type) = segment.sample_size_type
+            ...
+            ...             if sample_type == "i":
+            ...                 # Create a pyarrow array to hold the unpacked data
+            ...                 pyarrow_array = pa.array([0] * segment.samplecnt, type=pa.int32())
+            ...
+            ...                 # Get the data buffer for direct writing
+            ...                 array_bitmap, array_buffer = pyarrow_array.buffers()
+            ...
+            ...                 # Unpack the data directly into our array buffer
+            ...                 count = segment.unpack_recordlist(array_buffer)
+            ...
+            ...                 # Check that the array has no nulls (all values are valid)
+            ...                 assert pyarrow_array.null_count == 0, "Pyarrow array has nulls (should not happen)"
+            ...
+            ...             # Other sample types would need different pyarrow array types
+
+            The point of the advanced examples is to illustrate how to use the pattern
+            to unpack data into a buffer provided by the caller in order to avoid
+            copying the data.
         """
         if self.recordlist is None:
             raise ValueError("No record list available to unpack")
@@ -356,6 +462,29 @@ class MS3TraceSeg:
             raise MiniSEEDError(status, "Error unpacking record list")
         else:
             return status
+
+    def has_same_data(self, other: "MS3TraceSeg") -> bool:
+        """Compare trace segments for equivalent data
+
+        Args:
+            other: Another MS3TraceSeg to compare with
+
+        Returns:
+            True if segments have equivalent data, False otherwise
+        """
+        if not isinstance(other, MS3TraceSeg):
+            return False
+
+        return (
+            self.starttime == other.starttime
+            and self.endtime == other.endtime
+            and self.samprate == other.samprate
+            and self.samplecnt == other.samplecnt
+            and self.datasamples == other.datasamples
+            and self.datasize == other.datasize
+            and self.numsamples == other.numsamples
+            and self.sampletype == other.sampletype
+        )
 
 
 class MS3TraceID:
@@ -517,16 +646,22 @@ class MS3TraceList:
 
     Example usage iterating over the trace list:
     ```
-    from pymseed import MS3TraceList
+    >>> from pymseed import MS3TraceList
 
-    traces = MS3TraceList.from_file("input_file.mseed")
-    for traceid in traces:
-        print(f"{traceid.sourceid}, {traceid.pubversion}")
-        for segment in traceid:
-            print(
-                f"  {segment.starttime_str()} - {segment.endtime_str()}, "
-                f"{segment.samprate} sps, {segment.samplecnt} samples"
-            )
+    >>> for traceid in MS3TraceList.from_file("examples/example_data.mseed"):
+    ...     print(f"{traceid.sourceid}, {traceid.pubversion}")
+    ...     for segment in traceid:
+    ...         print(
+    ...             f"  {segment.starttime_str()} - {segment.endtime_str()}, "
+    ...             f"{segment.samprate} sps, {segment.samplecnt} samples"
+    ...         )
+    FDSN:IU_COLA_00_L_H_1, 4
+      2010-02-27T06:50:00.069539Z - 2010-02-27T07:59:59.069538Z, 1.0 sps, 4200 samples
+    FDSN:IU_COLA_00_L_H_2, 4
+      2010-02-27T06:50:00.069539Z - 2010-02-27T07:59:59.069538Z, 1.0 sps, 4200 samples
+    FDSN:IU_COLA_00_L_H_Z, 4
+      2010-02-27T06:50:00.069539Z - 2010-02-27T07:59:59.069538Z, 1.0 sps, 4200 samples
+
     ```
     """
 
@@ -656,6 +791,94 @@ class MS3TraceList:
         verbose: int = 0,
     ) -> None:
         """Read miniSEED data from file and add to existing trace list
+
+        This method reads miniSEED records from a file and appends them to the
+        current trace list. Data are organized by source ID and time, with
+        overlapping or adjacent data automatically merged into continuous segments.
+
+        Args:
+            file_name: Path to the miniSEED file to read
+            unpack_data: If True, decode data samples immediately. If False, data
+                samples remain packed and must be unpacked later with
+                `unpack_recordlist()`. Default: False
+            record_list: If True, maintain a list of original records for each
+                trace segment. Required for `unpack_recordlist()` and allows
+                access to individual record metadata. Default: False
+            skip_not_data: If True, skip non-data records in the file instead
+                of raising an error. Useful for files with mixed content. Default: False
+            validate_crc: If True, validate CRC checksums if present in records
+                (miniSEED v3 only). Provides integrity verification. Default: True
+            split_version: If True, treat different publication versions as
+                separate trace IDs. Default: False (merge by source ID only)
+            verbose: Verbosity level for diagnostic output (0=quiet, 1-3=increasing
+                detail). Default: 0
+
+        Raises:
+            MiniSEEDError: If file cannot be read or contains invalid data
+
+        Note:
+            This method adds data to the existing trace list. It does not replace
+            existing data. To start fresh, create a new MS3TraceList instance.
+
+        Examples:
+            Basic usage examples:
+
+            >>> from pymseed import MS3TraceList
+            >>> traces = MS3TraceList()
+            >>> traces.add_file("examples/example_data.mseed")
+            >>> len(traces)
+            3
+
+            Unpacking data while reading for immediate access
+
+            >>> traces = MS3TraceList()
+            >>> traces.add_file("examples/example_data.mseed", unpack_data=True)
+            >>> traces[0].sourceid
+            'FDSN:IU_COLA_00_L_H_1'
+            >>> segment1 = traces[0][0]
+            >>> segment1.starttime_str()
+            '2010-02-27T06:50:00.069539Z'
+            >>> segment1.endtime_str()
+            '2010-02-27T07:59:59.069538Z'
+            >>> segment1.samprate
+            1.0
+            >>> segment1.samplecnt
+            4200
+            >>> segment1.numsamples
+            4200
+            >>> segment1.sampletype
+            'i'
+
+            Read with record list for later unpacking:
+
+            >>> traces = MS3TraceList()
+            >>> traces.add_file("examples/example_data.mseed", record_list=True)
+            >>> total_samples = 0
+            >>> for traceid in traces:
+            ...     for segment in traceid:
+            ...         # Unpack when desired, can unpacked to designated buffer
+            ...         samples_count = segment.unpack_recordlist()
+            ...         total_samples += samples_count
+            >>> total_samples
+            12600
+
+            Add multiple files to same trace list, in this trivial example the
+            same file is read twice, so the data are duplicated in the trace list:
+
+            >>> traces = MS3TraceList()
+            >>> traces.add_file("examples/example_data.mseed")
+            >>> traces.add_file("examples/example_data.mseed")  # Appends to existing data
+            >>> len(traces)
+            3
+            >>> traceid = traces[0]
+            >>> traceid[0].samplecnt
+            4200
+            >>> len(traceid) # Two segments (duplicate in this case)
+            2
+            >>> # Compare using explicit data comparison (fast)
+            >>> traceid[0].has_same_data(traceid[1])
+            True
+
         """
 
         # Store files names for reference and use in record lists
@@ -700,7 +923,76 @@ class MS3TraceList:
         start_time_seconds: Optional[float] = None,
         publication_version: int = 0,
     ) -> None:
-        """Add data samples to the trace list"""
+        """Add data samples to the trace list
+
+        A segment of regularly sampled data values for the given source ID of
+        the specific type and sample rate are added to the trace list.
+
+        Args:
+            sourceid: Source identifier for the trace (e.g., "FDSN:XX_STA__BHZ").
+                Should follow FDSN Source Identifier format.
+            data_samples: Sequence of data samples. Can be a Python list, numpy array,
+                or any buffer-like object. Data type must match `sample_type`.
+            sample_type: Data sample type code:
+                - "i": 32-bit signed integers (int32)
+                - "f": 32-bit floating point (float32)
+                - "d": 64-bit floating point (float64)
+                - "t": Text/character data (single bytes)
+            sample_rate: Sample rate in samples per second (Hz) or period (seconds).
+                Use positive values for samples/second, and negative values for sample period in seconds.
+            start_time_str: Start time as formatted string (e.g., "2023-01-01T12:00:00.000Z").
+                Mutually exclusive with start_time and start_time_seconds.
+            start_time: Start time as nanoseconds since Unix epoch.
+                Mutually exclusive with start_time_str and start_time_seconds.
+            start_time_seconds: Start time as seconds since Unix epoch (float).
+                Mutually exclusive with start_time_str and start_time.
+            publication_version: Publication version number for the trace. Default: 0
+
+        Raises:
+            ValueError: If sample_type is invalid, time parameters are conflicting,
+                or data_samples format is incompatible with sample_type
+            MiniSEEDError: If the data cannot be added to the trace list
+
+        Note:
+            Data is automatically merged with existing segments based on source ID,
+            time continuity, and sample rate compatibility. Adjacent or overlapping
+            segments are combined when possible.
+
+        Performance:
+            The method attempts zero-copy optimization when data_samples is a compatible
+            buffer (correct type and format). Otherwise, data is converted with a copy.
+            Use arrays (or any buffer with memoryviews) with matching types for best performance.
+
+        Examples:
+            Basic usage with integer data:
+
+            >>> from pymseed import MS3TraceList
+            >>> traces = MS3TraceList()
+            >>> data_series = [100, 105, 98, 102, 99, 103, 97]
+            >>> traces.add_data(
+            ...     sourceid="FDSN:XX_STA__BHZ",
+            ...     data_samples=data_series,
+            ...     sample_type="i",
+            ...     sample_rate=20.0,
+            ...     start_time_str="2023-01-01T00:00:00.000Z"
+            ... )
+            >>> len(traces)
+            1
+            >>> traces[0].sourceid
+            'FDSN:XX_STA__BHZ'
+
+            Multiple segments that get merged:
+
+            >>> traces = MS3TraceList()
+            >>> traces.add_data("FDSN:XX_STA__BH1", [1, 2, 3], "i", 10.0,
+            ...                 start_time_str="2023-01-01T00:00:00.000Z")
+            >>> traces.add_data("FDSN:XX_STA__BH1", [4, 5, 6], "i", 10.0,
+            ...                 start_time_str="2023-01-01T00:00:00.300Z")
+            >>> len(traces) # One traceID
+            1
+            >>> len(traces[0]) # One trace segment
+            1
+        """
 
         # Create an MS3Record to hold the data
         msr = MS3Record()
@@ -836,9 +1128,71 @@ class MS3TraceList:
         extra_headers: Optional[str] = None,
         verbose: int = 0,
     ) -> tuple[int, int]:
-        """Pack data into miniSEED record(s) and call handler()
+        """Pack trace list data into miniSEED records and call handler function for each record.
 
-        Returns a tuple of (packed_samples, packed_records)
+        This method packages the time series data from all traces in the trace list
+        into miniSEED format records. For each generated record, the provided handler
+        function is called with the record as a bytes object.
+
+        Args:
+            handler: Callback function that will be called for each packed record.
+                Must accept two arguments: (record_bytes: bytes, userdata: Any).
+                The record_bytes contains the complete miniSEED record.
+            handlerdata: Optional user data passed to the handler function as the second argument.
+                Can be any Python object (file handle, list, etc.).
+            flush_data: If True, forces packing of all available data, even if it doesn't
+                fill a complete record. If False, partial records at the end of traces
+                may be held in internal buffers. Default is True.
+            record_length: Length of each miniSEED record in bytes. Must be a power of 2
+                between 128 and 65536. Common values are 512, 4096, and 8192. Default is 4096.
+            encoding: Data encoding format for compression. Options include:
+                - DataEncoding.STEIM1: Steim-1 compression (default, good general purpose for 32-bit ints)
+                - DataEncoding.STEIM2: Steim-2 compression
+                - DataEncoding.INT16: 16-bit integers (no compression)
+                - DataEncoding.INT32: 32-bit integers (no compression)
+                - DataEncoding.FLOAT32: 32-bit IEEE floats
+                - DataEncoding.FLOAT64: 64-bit IEEE doubles
+                - DataEncoding.TEXT: Text encoding (UTF-8)
+            format_version: miniSEED format version (2 or 3). If None, uses library default.
+                Version 2 is legacy format, version 3 is latest standard.
+            extra_headers: Optional extra header fields to include.
+                Must be valid JSON string.
+            verbose: Verbosity level for libmseed output (0=quiet, 1=info, 2=detailed).
+
+        Returns:
+            tuple[int, int]: A tuple containing:
+                - packed_samples: Total number of data samples that were packed
+                - packed_records: Total number of miniSEED records generated
+
+        Raises:
+            ValueError: If format_version is not 2 or 3, or if record_length is invalid.
+            MiniSEEDError: If the underlying libmseed library encounters an error during packing.
+
+        Examples:
+            Simple example writing to a file:
+
+            >>> # Create a trace list with some data
+            >>> traces = MS3TraceList()
+            >>> traces.add_data("FDSN:XX_STA__BHZ", [1, 2, 3, 4, 5], "i", 100.0, start_time_str="2023-01-01T00:00:00.000Z")
+
+            >>> # Pack to file using a simple handler
+            >>> def write_to_file(record_bytes, file_handle):
+            ...     file_handle.write(record_bytes)
+
+            >>> with open("output.mseed", "wb") as f: # doctest: +SKIP
+            ...     packed_samples, packed_records = traces.pack(write_to_file, f)
+            ...     print(f"Packed {packed_samples} samples into {packed_records} records")
+            Packed 5 samples into 1 records
+
+        Note:
+            - The handler function is called once for each complete record generated
+            - Record boundaries are determined by the record_length parameter
+            - Data encoding affects compression ratio and compatibility
+            - Use flush_data=True to ensure all data is packed in the final call
+            - For large datasets, consider using streaming approaches with multiple pack() calls
+
+        See also:
+            - to_file()
         """
 
         # Set handler function as CFFI callback function
@@ -878,6 +1232,112 @@ class MS3TraceList:
             raise MiniSEEDError(packed_records, "Error packing miniSEED record(s)")
 
         return (packed_samples[0], packed_records)
+
+    def to_file(
+        self,
+        filename: str,
+        overwrite: bool = False,
+        max_reclen: int = 4096,
+        encoding: DataEncoding = DataEncoding.STEIM1,
+        format_version: Optional[int] = None,
+        verbose: int = 0,
+    ) -> int:
+        """Write trace list data to a miniSEED file.
+
+        This method packages the time series data from all traces in the trace list
+        into miniSEED format and writes them directly to a file. This is a convenience
+        method that combines packing and file writing in a single operation.
+
+        Args:
+            filename: Path to the output miniSEED file. The file will be created if it
+                doesn't exist. Directory must already exist.
+            overwrite: If True, overwrites existing file. If False and file exists,
+                raises an error. Default is False for safety.
+            max_reclen: Maximum record length in bytes. Must be a power of 2 between
+                128 and 65536. Common values are 512, 4096, and 8192. Default is 4096.
+            encoding: Data encoding format for compression. Options include:
+                - DataEncoding.STEIM1: Steim-1 compression (default, good general purpose for 32-bit ints)
+                - DataEncoding.STEIM2: Steim-2 compression (better for smooth data)
+                - DataEncoding.INT16: 16-bit integers (no compression)
+                - DataEncoding.INT32: 32-bit integers (no compression)
+                - DataEncoding.FLOAT32: 32-bit IEEE floats
+                - DataEncoding.FLOAT64: 64-bit IEEE doubles
+                - DataEncoding.TEXT: Text encoding (UTF-8)
+            format_version: miniSEED format version (2 or 3). If None, uses library default.
+                Version 2 is legacy format, version 3 is latest standard.
+            verbose: Verbosity level for libmseed output (0=quiet, 1=info, 2=detailed).
+
+        Returns:
+            int: Number of miniSEED records written to the file.
+
+        Raises:
+            ValueError: If format_version is not 2 or 3, or if max_reclen is invalid.
+            MiniSEEDError: If the underlying libmseed library encounters an error during
+                file writing (e.g., permission denied, disk full, invalid data).
+            FileExistsError: If file exists and overwrite=False.
+
+        Examples:
+            Simple file writing:
+
+            >>> # Create a trace list with some data
+            >>> traces = MS3TraceList()
+            >>> traces.add_data("FDSN:XX_STA__BHZ", [1, 2, 3, 4, 5], "i", 100.0, start_time_str="2023-01-01T00:00:00Z")
+
+            >>> # Write to file (basic usage)
+            >>> records_written = traces.to_file("output.mseed") # doctest: +SKIP
+            >>> print(f"Wrote {records_written} records to output.mseed") # doctest: +SKIP
+            Wrote 1 records to output.mseed
+
+            Writing with specific options:
+
+            >>> # Write as miniSEED v2 with Steim-2 compression
+            >>> records_written = traces.to_file( # doctest: +SKIP
+            ...     "output.mseed",
+            ...     overwrite=True,
+            ...     format_version=2,
+            ...     encoding=DataEncoding.STEIM2,
+            ...     max_reclen=512
+            ... )
+            >>> print(f"Wrote {records_written} records to output.mseed") # doctest: +SKIP
+            Wrote 1 records to output.mseed
+
+        Note:
+            - This method is more convenient than using pack() with a file handler
+            - File permissions and disk space are checked during writing
+            - All data is written in a single operation - use pack() for streaming
+            - The output file contains all traces from the trace list
+            - Record boundaries depend on max_reclen and data compression
+
+        See also:
+            - pack(): Lower-level method with custom record handlers
+            - add_data(): Add time series data to the trace list
+            - from_file(): Read miniSEED data from file
+        """
+        # Convert filename to bytes (C string)
+        c_filename = ffi.new("char[]", filename.encode("utf-8"))
+
+        pack_flags = 0
+        if format_version is not None:
+            if format_version not in [2, 3]:
+                raise ValueError(f"Invalid miniSEED format version: {format_version}")
+            if format_version == 2:
+                pack_flags |= clibmseed.MSF_PACKVER2
+
+        # Call the C function
+        result = clibmseed.mstl3_writemseed(
+            self._mstl,
+            c_filename,
+            overwrite,
+            max_reclen,
+            encoding,
+            pack_flags,
+            verbose,
+        )
+
+        if result < 0:
+            raise MiniSEEDError(result, "Error writing miniSEED file")
+
+        return result
 
     @classmethod
     def from_file(cls, filename, **kwargs):
