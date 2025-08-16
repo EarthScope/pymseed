@@ -645,17 +645,6 @@ class MS3TraceList:
         """Print trace list details"""
         clibmseed.mstl3_printtracelist(self._mstl, timeformat, details, gaps, versions)
 
-    def add_files(self, file_names: list[str], **kwargs: Any) -> None:
-        """Read data from multiple files"""
-        # Create C string array for file names
-        _c_file_names: list[Any] = []
-        for file_name in file_names:
-            _c_file_names.append(ffi.new("char[]", file_name.encode("utf-8")))
-
-        # Process each file
-        for c_file_name in _c_file_names:
-            self.read_file(ffi.string(c_file_name).decode("utf-8"), **kwargs)
-
     def add_file(
         self,
         file_name: str,
@@ -666,7 +655,8 @@ class MS3TraceList:
         split_version: bool = False,
         verbose: int = 0,
     ) -> None:
-        """Read miniSEED data from file into trace list"""
+        """Read miniSEED data from file and add to existing trace list
+        """
 
         # Store files names for reference and use in record lists
         self._c_file_names.append(ffi.new("char[]", file_name.encode("utf-8")))
