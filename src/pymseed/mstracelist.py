@@ -866,3 +866,8 @@ class MS3TraceList:
             raise MiniSEEDError(packed_records, "Error packing miniSEED record(s)")
 
         return (packed_samples[0], packed_records)
+
+    @classmethod
+    def from_file(cls, filename, **kwargs):
+        """Create MS3TraceList from file"""
+        return cls(file_name=filename, **kwargs)

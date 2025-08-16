@@ -11,7 +11,7 @@ test_path3 = os.path.join(test_dir, "data", "testdata-COLA-signal.mseed3")
 
 
 def test_tracelist_read():
-    traces = MS3TraceList(test_path3, unpack_data=True)
+    traces = MS3TraceList.from_file(test_path3, unpack_data=True)
 
     assert len(traces) == 3
 
@@ -84,6 +84,7 @@ def test_tracelist_read():
         -152810,
         -149774,
     ]
+
 
 def test_tracelist_read_recordlist():
     traces = MS3TraceList(test_path3, unpack_data=False, record_list=True)
