@@ -11,18 +11,18 @@ test_path3 = os.path.join(test_dir, "data", "testdata-COLA-signal.mseed3")
 
 
 def test_tracelist_read():
-    mstl = MS3TraceList(test_path3, unpack_data=True)
+    traces = MS3TraceList(test_path3, unpack_data=True)
 
-    assert len(mstl) == 3
+    assert len(traces) == 3
 
-    assert list(mstl.sourceids()) == [
+    assert list(traces.sourceids()) == [
         "FDSN:IU_COLA_00_B_H_1",
         "FDSN:IU_COLA_00_B_H_2",
         "FDSN:IU_COLA_00_B_H_Z",
     ]
 
     # Fetch first traceID
-    traceid = mstl[0]
+    traceid = traces[0]
 
     assert traceid.sourceid == "FDSN:IU_COLA_00_B_H_1"
     assert traceid.pubversion == 4
@@ -54,7 +54,7 @@ def test_tracelist_read():
     assert data[-6:].tolist() == [-929184, -928936, -928632, -928248, -927779, -927206]
 
     # Search for a specific TraceID
-    foundid = mstl.get_traceid("FDSN:IU_COLA_00_B_H_Z")
+    foundid = traces.get_traceid("FDSN:IU_COLA_00_B_H_Z")
 
     assert foundid.sourceid == "FDSN:IU_COLA_00_B_H_Z"
     assert foundid.pubversion == 4
@@ -86,18 +86,18 @@ def test_tracelist_read():
     ]
 
 def test_tracelist_read_recordlist():
-    mstl = MS3TraceList(test_path3, unpack_data=False, record_list=True)
+    traces = MS3TraceList(test_path3, unpack_data=False, record_list=True)
 
-    assert len(mstl) == 3
+    assert len(traces) == 3
 
-    assert list(mstl.sourceids()) == [
+    assert list(traces.sourceids()) == [
         "FDSN:IU_COLA_00_B_H_1",
         "FDSN:IU_COLA_00_B_H_2",
         "FDSN:IU_COLA_00_B_H_Z",
     ]
 
     # Search for a specific trace ID
-    foundid = mstl.get_traceid("FDSN:IU_COLA_00_B_H_Z")
+    foundid = traces.get_traceid("FDSN:IU_COLA_00_B_H_Z")
 
     foundseg = foundid[0]
 
@@ -146,12 +146,12 @@ def test_tracelist_read_recordlist():
 
 
 def test_tracelist_slicing():
-    mstl = MS3TraceList(test_path3, unpack_data=True)
+    traces = MS3TraceList(test_path3, unpack_data=True)
 
-    assert len(mstl) == 3
+    assert len(traces) == 3
 
     # Test slicing (trace has 1 segment, so test valid slices)
-    traceid = mstl[0]
+    traceid = traces[0]
 
     assert len(traceid[0:1]) == 1
     assert traceid[0:1][0].starttime == 1267253400019539000
@@ -165,17 +165,17 @@ def test_tracelist_slicing():
 
     # Test slicing (trace has 1 segment, so test valid slices)
 
-    assert len(mstl[0:1]) == 1
-    assert len(mstl[0:1][0]) == 1
+    assert len(traces[0:1]) == 1
+    assert len(traces[0:1][0]) == 1
 
 
 def test_tracelist_numpy():
     np = pytest.importorskip("numpy")
 
-    mstl = MS3TraceList(test_path3, record_list=True)
+    traces = MS3TraceList(test_path3, record_list=True)
 
     # Fetch first traceID
-    traceid = mstl[0]
+    traceid = traces[0]
 
     # Fetch first trace segment
     segment = traceid[0]
@@ -201,7 +201,7 @@ def test_tracelist_numpy():
     )
 
     # Search for a specific TraceID
-    foundid = mstl.get_traceid("FDSN:IU_COLA_00_B_H_Z")
+    foundid = traces.get_traceid("FDSN:IU_COLA_00_B_H_Z")
 
     assert foundid.sourceid == "FDSN:IU_COLA_00_B_H_Z"
     foundseg = foundid[0]
@@ -240,15 +240,15 @@ def test_tracelist_numpy_arrayfrom_recordlist():
 
     with pytest.raises(ValueError):
         # Must specify record_list=True
-        mstl = MS3TraceList(test_path3)
-        traceid = mstl[0]
+        traces = MS3TraceList(test_path3)
+        traceid = traces[0]
         segment = traceid[0]
         np_data = segment.create_numpy_array_from_recordlist()
 
-    mstl = MS3TraceList(test_path3, record_list=True)
+    traces = MS3TraceList(test_path3, record_list=True)
 
     # Search for a specific TraceID
-    foundid = mstl.get_traceid("FDSN:IU_COLA_00_B_H_Z")
+    foundid = traces.get_traceid("FDSN:IU_COLA_00_B_H_Z")
 
     assert foundid.sourceid == "FDSN:IU_COLA_00_B_H_Z"
     foundseg = foundid[0]
@@ -320,7 +320,7 @@ test_pack3 = os.path.join(test_dir, "data", "packtest_sine2000.mseed3")
 
 def test_mstracelist_pack():
     # Create a new MSTraceList object
-    mstl = MS3TraceList()
+    traces = MS3TraceList()
 
     total_samples = 0
     total_records = 0
@@ -330,7 +330,7 @@ def test_mstracelist_pack():
     record_length = 512
 
     for new_data in sine_generator(yield_count=100, total=2000):
-        mstl.add_data(
+        traces.add_data(
             sourceid="FDSN:XX_TEST__B_S_X",
             data_samples=new_data,
             sample_type="i",
@@ -340,7 +340,7 @@ def test_mstracelist_pack():
 
         start_time = sample_time(start_time, len(new_data), sample_rate)
 
-        (packed_samples, packed_records) = mstl.pack(
+        (packed_samples, packed_records) = traces.pack(
             record_handler,
             flush_data=False,
             format_version=format_version,
@@ -350,7 +350,7 @@ def test_mstracelist_pack():
         total_samples += packed_samples
         total_records += packed_records
 
-    (packed_samples, packed_records) = mstl.pack(
+    (packed_samples, packed_records) = traces.pack(
         record_handler, format_version=format_version, record_length=record_length
     )
 
@@ -367,4 +367,4 @@ def test_mstracelist_pack():
 
 def test_mstracelist_nosuchfile():
     with pytest.raises(MiniSEEDError):
-        mstl = MS3TraceList("NOSUCHFILE")
+        traces = MS3TraceList("NOSUCHFILE")
