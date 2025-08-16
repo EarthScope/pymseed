@@ -551,7 +551,7 @@ class MS3TraceList:
 
         # Read specified file
         if file_name is not None:
-            self.read_file(
+            self.add_file(
                 file_name,
                 unpack_data,
                 record_list,
@@ -630,17 +630,6 @@ class MS3TraceList:
 
         return MS3TraceID(traceid_ptr, self)
 
-    def read_files(self, file_names: list[str], **kwargs: Any) -> None:
-        """Read data from multiple files"""
-        # Create C string array for file names
-        _c_file_names: list[Any] = []
-        for file_name in file_names:
-            _c_file_names.append(ffi.new("char[]", file_name.encode("utf-8")))
-
-        # Process each file
-        for c_file_name in _c_file_names:
-            self.read_file(ffi.string(c_file_name).decode("utf-8"), **kwargs)
-
     def sourceids(self) -> Any:
         """Return source IDs via a generator iterator"""
         for traceid in self:
@@ -656,7 +645,18 @@ class MS3TraceList:
         """Print trace list details"""
         clibmseed.mstl3_printtracelist(self._mstl, timeformat, details, gaps, versions)
 
-    def read_file(
+    def add_files(self, file_names: list[str], **kwargs: Any) -> None:
+        """Read data from multiple files"""
+        # Create C string array for file names
+        _c_file_names: list[Any] = []
+        for file_name in file_names:
+            _c_file_names.append(ffi.new("char[]", file_name.encode("utf-8")))
+
+        # Process each file
+        for c_file_name in _c_file_names:
+            self.read_file(ffi.string(c_file_name).decode("utf-8"), **kwargs)
+
+    def add_file(
         self,
         file_name: str,
         unpack_data: bool = False,

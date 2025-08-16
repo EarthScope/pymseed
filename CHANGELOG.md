@@ -11,12 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - List-like access to segments in MS3TraceID (indexing, slicing, iteration)
 - Add MS3Record.from_file() and MS3Record.from_buffer() for convenience
 - Add MS3TraceList.from_file() for consistency and future flexibility
+- Add MS3TraceList.add_file() and MS3TraceList.add_files() for clarity
 
 ### Removed
 - Remove MS3TraceList.numtraces in favor of supporting len() directly
 - Remove MS3TraceList.traceids() in favor of supporting iteration directly
 - Remove MS3TraceID.numsegments in favor of supporting len() directly
 - Remove MS3TraceID.segments() in favor of supporting iteration directly
+- Remove MS3TraceList.read_file() and MS3TraceList.read_files(), these have been renamed
 
 ## [0.0.1] - 2024-8-5
 ### Added
