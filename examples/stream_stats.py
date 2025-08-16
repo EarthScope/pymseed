@@ -23,7 +23,6 @@ print("Reading miniSEED from stdin, writing to stdout", file=sys.stderr)
 # Read miniSEED from stdin
 with MS3RecordReader(sys.stdin.fileno()) as msreader:
     for msr in msreader:
-
         stats = trace_stats.setdefault(msr.sourceid, defaultdict(int))
 
         stats["record_count"] += 1

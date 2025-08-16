@@ -506,25 +506,27 @@ class MS3TraceList:
       - ...
 
     TraceIDs can be accessed via indexing and slicing:
-    - mstl[0] returns the first TraceID
-    - mstl[1:3] returns a slice of the TraceIDs
-    - for traceid in mstl: iterates over all TraceIDs
+    - `traces[0]` returns the first TraceID
+    - `traces[1:3]` returns a slice of the TraceIDs
+    - `for traceid in traces:` iterates over all TraceIDs
 
     Trace Segments can be accessed via indexing and slicing:
-    - traceid[0] returns the first Trace Segment
-    - traceid[1:3] returns a slice of the Trace Segments
-    - for segment in traceid: iterates over all Trace Segments
+    - `traceid[0]` returns the first Trace Segment
+    - `traceid[1:3]` returns a slice of the Trace Segments
+    - `for segment in traceid:` iterates over all Trace Segments
 
     Example usage iterating over the trace list:
     ```
     from pymseed import MS3TraceList
 
-    mstl = MS3TraceList('input_file.mseed')
-    for traceid in mstl:
-        print(f'{traceid.sourceid}, {traceid.pubversion}')
+    traces = MS3TraceList.from_file("input_file.mseed")
+    for traceid in traces:
+        print(f"{traceid.sourceid}, {traceid.pubversion}")
         for segment in traceid:
-            print(f'  {segment.starttime_str()} - {segment.endtime_str()}, ',
-                  f'{segment.samprate} sps, {segment.samplecnt} samples')
+            print(
+                f"  {segment.starttime_str()} - {segment.endtime_str()}, "
+                f"{segment.samprate} sps, {segment.samplecnt} samples"
+            )
     ```
     """
 

@@ -14,17 +14,17 @@
 #
 #   def record_handler() # A function that is called when records are generated
 #
-#   mstl = MS3TraceList() # Create an empty MS3TraceList object
+#   traces = MS3TraceList() # Create an empty MS3TraceList object
 #
 #   Loop on input data:
-#     mstl.add_data()    # Add data to the MS3TraceList object
-#     mstl.pack(flush_data=False) # Generate records and call record_handler() for each
+#     traces.add_data()    # Add data to the MS3TraceList object
+#     traces.pack(flush_data=False) # Generate records and call record_handler() for each
 #
-#   mstl.pack(flush_data=True) # Flush any data remaining in the buffers
+#   traces.pack(flush_data=True) # Flush any data remaining in the buffers
 #
 #
-# This file is part of the the Python miniseed package.
-# Copywrite (c) 2024, EarthScope Data Services
+# This file is part of the the Python pymseed package.
+# Copyright (c) 2025, EarthScope Data Services
 
 import math
 from pymseed import MS3TraceList, timestr2nstime, sample_time
@@ -67,7 +67,7 @@ def record_handler(buffer, handlerdata):
 
 file_handle = open(output_file, "wb")
 
-mstl = MS3TraceList()
+traces = MS3TraceList()
 
 total_samples = 0
 total_records = 0
@@ -81,9 +81,8 @@ record_length = 512
 # This could be any data collection operation that continually
 # adds samples to the trace list.
 for i in range(10):
-
     # Add new synthetic data to each trace using generators
-    mstl.add_data(
+    traces.add_data(
         sourceid="FDSN:XX_TEST__B_S_0",
         data_samples=next(sine0),
         sample_type="i",
@@ -91,7 +90,7 @@ for i in range(10):
         start_time=start_time,
     )
 
-    mstl.add_data(
+    traces.add_data(
         sourceid="FDSN:XX_TEST__B_S_1",
         data_samples=next(sine1),
         sample_type="i",
@@ -99,7 +98,7 @@ for i in range(10):
         start_time=start_time,
     )
 
-    mstl.add_data(
+    traces.add_data(
         sourceid="FDSN:XX_TEST__B_S_2",
         data_samples=next(sine2),
         sample_type="i",
@@ -111,7 +110,7 @@ for i in range(10):
     start_time = sample_time(start_time, generate_yield_count, sample_rate)
 
     # Generate full records and do not flush the data biffers
-    (packed_samples, packed_records) = mstl.pack(
+    (packed_samples, packed_records) = traces.pack(
         record_handler,
         handlerdata={"fh": file_handle},
         format_version=format_version,
@@ -123,7 +122,7 @@ for i in range(10):
     total_records += packed_records
 
 # Flush the data buffers and write any data to records
-(packed_samples, packed_records) = mstl.pack(
+(packed_samples, packed_records) = traces.pack(
     record_handler,
     handlerdata={"fh": file_handle},
     format_version=format_version,

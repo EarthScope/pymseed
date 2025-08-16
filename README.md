@@ -31,7 +31,7 @@ Read a file and print details from each record:
 ```Python
 from pymseed import MS3RecordReader,TimeFormat
 
-input_file = 'testdata-3channel-signal.mseed3'
+input_file = "testdata-3channel-signal.mseed3"
 
 for msr in MS3Record.from_file(input_file):
     # Print values directly
@@ -47,9 +47,7 @@ Read a file into a trace list and print the list:
 ```Python
 from pymseed import MS3TraceList
 
-input_file = 'testdata-3channel-signal.mseed3'
-
-traces = MS3TraceList(input_file)
+traces = MS3TraceList.from_file("input_file.mseed")
 
 # Print the trace list using the library print function
 traces.print(details=1, gaps=True)
@@ -99,7 +97,7 @@ traces.add_data(sourceid="FDSN:XX_TEST__B_S_3",
 def record_handler(record, handler_data):
     handler_data['fh'].write(record)
 
-output_file = 'output.mseed'
+output_file = "output.mseed"
 
 with open(output_file, 'wb') as file_handle:
   # Generate miniSEED records

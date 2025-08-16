@@ -8,7 +8,7 @@
 # Example usage:
 #  cat input.mseed | stream_timewindow.py -e 2023-01-01T00:00:00 -l 2023-01-02T00:00:00 > output.mseed
 #
-# This file is part of the Python miniseed module.
+# This file is part of the Python pymseed module.
 # Copyright (c) 2025, EarthScope Data Services
 
 import sys
@@ -28,7 +28,6 @@ def process_stream(args):
     # Read miniSEED from stdin
     with MS3RecordReader(sys.stdin.fileno()) as msreader:
         for msr in msreader:
-
             # Skip records before earliest selection time
             if args.earliest and msr.endtime < args.earliest:
                 continue

@@ -41,11 +41,10 @@ for file in input_files:
 
 for traceid in traces:
     for segment in traceid:
-
         # Create a numpy array containing the data samples of this segment
         data_samples = segment.create_numpy_array_from_recordlist()
 
-       # Create a dictionary for the trace with basic metadata
+        # Create a dictionary entry for the trace with basic metadata
         info = {
             "sourceid": traceid.sourceid,
             "NSLC": sourceid2nslc(traceid.sourceid),

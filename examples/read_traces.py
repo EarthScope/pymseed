@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 #
-# Read miniseed files and print channels, start and end times and sample rate.
+# Read miniSEED files and print channels, start and end times and sample rate.
 #
 
 import argparse
@@ -9,8 +9,7 @@ from pymseed import MS3TraceList, SubSecond
 
 
 def print_traces(input_file: str) -> None:
-
-    traces = MS3TraceList(file_name=input_file)
+    traces = MS3TraceList.from_file(input_file)
 
     for traceid in traces:
         for segment in traceid:
@@ -21,7 +20,7 @@ def print_traces(input_file: str) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Process some input files.")
-    parser.add_argument('input_files', nargs='+', help='List of input files')
+    parser.add_argument("input_files", nargs="+", help="List of input files")
     args = parser.parse_args()
 
     for input_file in args.input_files:
