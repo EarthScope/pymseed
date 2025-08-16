@@ -50,16 +50,16 @@ from pymseed import MS3TraceList
 
 input_file = 'testdata-3channel-signal.mseed3'
 
-mstl = MS3TraceList(input_file)
+traces = MS3TraceList(input_file)
 
 # Print the trace list using the library print function
-mstl.print(details=1, gaps=True)
+traces.print(details=1, gaps=True)
 
 # Alternatively, traverse the data structures and print each trace ID and segment
-for traceid in mstl.traceids():
+for traceid in traces:
     print(traceid)
 
-    for segment in traceid.segments():
+    for segment in traceid:
         print('  ', segment)
 ```
 

@@ -30,23 +30,23 @@ if not input_files:
     sys.exit("No input files specified")
 
 # List of dictionaries for each trace
-traces = []
+trace_info = []
 
-mstl = MS3TraceList()
+traces = MS3TraceList()
 
 # Read all input files, creating record lists and _not_ unpacking data samples
 for file in input_files:
     print("Reading file: %s" % file)
-    mstl.read_file(file, unpack_data=False, record_list=True)
+    traces.read_file(file, unpack_data=False, record_list=True)
 
-for traceid in mstl.traceids():
-    for segment in traceid.segments():
+for traceid in traces:
+    for segment in traceid:
 
         # Create a numpy array containing the data samples of this segment
         data_samples = segment.create_numpy_array_from_recordlist()
 
        # Create a dictionary for the trace with basic metadata
-        trace = {
+        info = {
             "sourceid": traceid.sourceid,
             "NSLC": sourceid2nslc(traceid.sourceid),
             "publication_version": traceid.pubversion,
@@ -56,8 +56,8 @@ for traceid in mstl.traceids():
             "data_samples": data_samples,
         }
 
-        traces.append(trace)
+        trace_info.append(info)
 
 # Pretty print the trace list
 pp = pprint.PrettyPrinter(indent=4, sort_dicts=False)
-pp.pprint(traces)
+pp.pprint(trace_info)
