@@ -1,5 +1,4 @@
-Commands needed for setting up a development environment, building wheels,
-and uploading to PyPI
+Commands needed for setting up a development environment and running tests
 
 # Development environment
 
@@ -12,6 +11,7 @@ source ./venv/bin/activate
 ## Install the module locally using the source in-place
 python3 -m pip install --editable '.[dev,numpy]'
 
+
 # Testing
 
 The package must be installed to be tested because the C library
@@ -19,14 +19,18 @@ must be compiled and this is done during packaging.
 
 python3 -m pip install pytest
 
-# Run tests (without coverage analysis - default)
+## Run tests (without coverage analysis - default)
 pytest
 
-# Run tests with coverage analysis (when needed)
+## Run tests on code blocks in README.md (not included by default)
+pytest README.md
+
+## Run tests with coverage analysis (when needed)
 pytest --cov=pymseed --cov-report=term-missing --cov-report=html --cov-report=xml
 
-# Run tests with coverage and open HTML report
+## Run tests with coverage and open HTML report
 pytest --cov=pymseed --cov-report=html && open htmlcov/index.html
+
 
 # Update release version
 The single-source package version is specified in:
@@ -56,6 +60,7 @@ happens for releases created on github.com
 
 ## Triggering GitHub Actions using GH CLI
 gh workflow run BuildRelease --ref <branch>
+
 
 # Building distribution packages manually for testing
 

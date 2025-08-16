@@ -28,8 +28,8 @@ Working programs for a variety of use cases ca be found in the
 [examples](https://github.com/EarthScope/pymseed/tree/main/examples) directory of the repository.
 
 Read a file and print details from each record:
-```Python
-from pymseed import MS3RecordReader,TimeFormat
+```python
+from pymseed import MS3Record, TimeFormat
 
 input_file = "examples/example_data.mseed"
 
@@ -44,10 +44,10 @@ for msr in MS3Record.from_file(input_file):
 ```
 
 Read a file into a trace list and print the list:
-```Python
+```python
 from pymseed import MS3TraceList
 
-traces = MS3TraceList.from_file("input_file.mseed")
+traces = MS3TraceList.from_file("examples/example_data.mseed")
 
 # Print the trace list using the library print function
 traces.print(details=1, gaps=True)
@@ -64,7 +64,7 @@ Writing miniSEED requires specifying a "record handler" function that is
 a callback to consume, and do whatever you want, with generated records.
 
 Simple example of writing multiple channels of data:
-```Python
+```python
 import math
 from pymseed import MS3TraceList, timestr2nstime
 
@@ -75,6 +75,7 @@ data2 = list(map(lambda x: int(math.sin(math.radians(x)) * 500), range(90, 500 +
 
 traces = MS3TraceList()
 
+output_file = "output.mseed"
 sample_rate = 40.0
 start_time = timestr2nstime("2024-01-01T15:13:55.123456789Z")
 format_version = 2
@@ -93,19 +94,9 @@ traces.add_data(sourceid="FDSN:XX_TEST__B_S_3",
                 data_samples=data2, sample_type='i',
                 sample_rate=sample_rate, start_time=start_time)
 
-# Record handler called for each generated record
-def record_handler(record, handler_data):
-    handler_data['fh'].write(record)
-
-output_file = "output.mseed"
-
-with open(output_file, 'wb') as file_handle:
-  # Generate miniSEED records
-  traces.pack(record_handler,
-              {'fh':file_handle},
-              format_version=format_version,
-              record_length=record_length,
-              flush_data=True)
+traces.to_file(output_file,
+               format_version=format_version,
+               max_reclen = record_length)
 ```
 
 ## Package design rationale
