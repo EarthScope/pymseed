@@ -76,7 +76,7 @@ data0 = list(map(lambda x: int(math.sin(math.radians(x)) * 500), range(0, 500)))
 data1 = list(map(lambda x: int(math.sin(math.radians(x)) * 500), range(45, 500 + 45)))
 data2 = list(map(lambda x: int(math.sin(math.radians(x)) * 500), range(90, 500 + 90)))
 
-mstl = MS3TraceList()
+traces = MS3TraceList()
 
 sample_rate = 40.0
 start_time = timestr2nstime("2024-01-01T15:13:55.123456789Z")
@@ -84,17 +84,17 @@ format_version = 2
 record_length = 512
 
 # Add synthetic data to the trace list
-mstl.add_data(sourceid="FDSN:XX_TEST__B_S_1",
-              data_samples=data0, sample_type='i',
-              sample_rate=sample_rate, start_time=start_time)
+traces.add_data(sourceid="FDSN:XX_TEST__B_S_1",
+                data_samples=data0, sample_type='i',
+                sample_rate=sample_rate, start_time=start_time)
 
-mstl.add_data(sourceid="FDSN:XX_TEST__B_S_2",
-              data_samples=data1, sample_type='i',
-              sample_rate=sample_rate, start_time=start_time)
+traces.add_data(sourceid="FDSN:XX_TEST__B_S_2",
+                data_samples=data1, sample_type='i',
+                sample_rate=sample_rate, start_time=start_time)
 
-mstl.add_data(sourceid="FDSN:XX_TEST__B_S_3",
-              data_samples=data2, sample_type='i',
-              sample_rate=sample_rate, start_time=start_time)
+traces.add_data(sourceid="FDSN:XX_TEST__B_S_3",
+                data_samples=data2, sample_type='i',
+                sample_rate=sample_rate, start_time=start_time)
 
 # Record handler called for each generated record
 def record_handler(record, handler_data):
@@ -104,11 +104,11 @@ output_file = 'output.mseed'
 
 with open(output_file, 'wb') as file_handle:
   # Generate miniSEED records
-  mstl.pack(record_handler,
-            {'fh':file_handle},
-            format_version=format_version,
-            record_length=record_length,
-            flush_data=True)
+  traces.pack(record_handler,
+              {'fh':file_handle},
+              format_version=format_version,
+              record_length=record_length,
+              flush_data=True)
 ```
 
 ## Package design rationale
