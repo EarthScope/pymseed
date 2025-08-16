@@ -33,15 +33,14 @@ from pymseed import MS3RecordReader,TimeFormat
 
 input_file = 'testdata-3channel-signal.mseed3'
 
-with MS3RecordReader(input_file) as msreader:
-    for msr in msreader:
-        # Print values directly
-        print(f'   SourceID: {msr.sourceid}, record length {msr.reclen}')
-        print(f' Start Time: {msr.starttime_str(timeformat=TimeFormat.ISOMONTHDAY_SPACE_Z)}')
-        print(f'    Samples: {msr.samplecnt}')
+for msr in MS3Record.from_file(input_file):
+    # Print values directly
+    print(f'   SourceID: {msr.sourceid}, record length {msr.reclen}')
+    print(f' Start Time: {msr.starttime_str(timeformat=TimeFormat.ISOMONTHDAY_SPACE_Z)}')
+    print(f'    Samples: {msr.samplecnt}')
 
-        # Alternatively, use the library print function
-        msr.print()
+    # Alternatively, use the library print function
+    msr.print()
 ```
 
 Read a file into a trace list and print the list:

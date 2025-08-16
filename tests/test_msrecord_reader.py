@@ -1,7 +1,7 @@
 import pytest
 import sys
 import os
-from pymseed import MS3RecordReader, MS3RecordBufferReader, DataEncoding, TimeFormat, SubSecond
+from pymseed import MS3Record, DataEncoding, TimeFormat, SubSecond
 from pymseed.exceptions import MiniSEEDError
 
 test_dir = os.path.abspath(os.path.dirname(__file__))
@@ -10,7 +10,7 @@ test_path2 = os.path.join(test_dir, "data", "testdata-COLA-signal.mseed2")
 
 
 def test_msrecord_read_record_details():
-    with MS3RecordReader(test_path3, unpack_data=True) as msreader:
+    with MS3Record.from_file(test_path3, unpack_data=True) as msreader:
 
         # Read first record
         msr = msreader.read()
@@ -70,7 +70,7 @@ def test_msrecord_read_record_details_fd():
         file_descriptor = os.dup(original_file_descriptor)
 
     # Provide the reader with the file descriptor
-    with MS3RecordReader(file_descriptor, unpack_data=True) as msreader:
+    with MS3Record.from_file(file_descriptor, unpack_data=True) as msreader:
         # Read first record
         msr = msreader.read()
 
@@ -85,20 +85,19 @@ def test_msrecord_read_record_details_fd():
 
 
 def test_msrecord_read_records_summary():
-    with MS3RecordReader(test_path2) as msreader:
+    record_count = 0
+    sample_count = 0
 
-        record_count = 0
-        sample_count = 0
+    # Direct iteration without context manager
+    for msr in MS3Record.from_file(test_path2):
+        record_count += 1
+        sample_count += msr.samplecnt
 
-        for msr in msreader:
-            record_count += 1
-            sample_count += msr.samplecnt
-
-        assert record_count == 1141
-        assert sample_count == 252000
+    assert record_count == 1141
+    assert sample_count == 252000
 
 
 def test_msrecord_nosuchfile():
     with pytest.raises(MiniSEEDError):
-        with MS3RecordReader("NOSUCHFILE") as msreader:
+        with MS3Record.from_file("NOSUCHFILE") as msreader:
             msr = msreader.read()

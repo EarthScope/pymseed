@@ -3,6 +3,7 @@ Core MS3RecordBufferReader implementation for pymseed
 
 """
 from typing import Any, Optional
+
 from .clib import clibmseed, ffi
 from .msrecord import MS3Record
 from .exceptions import MiniSEEDError
@@ -78,6 +79,14 @@ class MS3RecordBufferReader:
             return None
         else:
             raise MiniSEEDError(status, "Error reading miniSEED record")
+
+    def __del__(self) -> None:
+        """Ensure cleanup when object is garbage collected"""
+        try:
+            self.close()
+        except Exception:
+            # Silently ignore exceptions in __del__ to avoid issues during interpreter shutdown
+            pass
 
     def close(self) -> None:
         """Close the reader and free any allocated memory"""

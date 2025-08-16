@@ -4,7 +4,7 @@ Core file reader implementation for pymseed
 """
 from typing import Optional, Union, Any
 
-from .clib import clibmseed, ffi, cdata_to_string
+from .clib import clibmseed, ffi
 from .exceptions import MiniSEEDError
 from .msrecord import MS3Record
 
@@ -98,6 +98,14 @@ class MS3RecordReader:
         else:
             raise MiniSEEDError(status, "Error reading miniSEED record")
 
+    def __del__(self) -> None:
+        """Ensure cleanup when object is garbage collected"""
+        try:
+            self.close()
+        except Exception:
+            # Silently ignore exceptions in __del__ to avoid issues during interpreter shutdown
+            pass
+
     def close(self) -> None:
         """Close the reader and free any allocated memory"""
 
@@ -111,3 +119,6 @@ class MS3RecordReader:
                 self._selections,
                 self.verbose,
             )
+            # Mark as closed to prevent double cleanup
+            self._msfp_ptr[0] = ffi.NULL
+            self._msr_ptr[0] = ffi.NULL

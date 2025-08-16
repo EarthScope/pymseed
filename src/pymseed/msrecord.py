@@ -3,11 +3,12 @@ Core MS3Record implementation for pymseed
 
 """
 import json
-from typing import Optional, Any, Union, Callable
+from typing import Any, Callable, Optional, Union
+
 from .clib import clibmseed, ffi, cdata_to_string
-from .util import nstime2timestr, timestr2nstime, encoding_string
-from .exceptions import MiniSEEDError
 from .definitions import TimeFormat, SubSecond
+from .exceptions import MiniSEEDError
+from .util import nstime2timestr, timestr2nstime, encoding_string
 
 
 class MS3Record:
@@ -582,3 +583,17 @@ class MS3Record:
             raise MiniSEEDError(packed_records, "Error packing miniSEED record(s)")
 
         return (packed_samples[0], packed_records)
+
+    @classmethod
+    def from_file(cls, filename, **kwargs):
+        """Convenience method that returns MS3RecordReader"""
+        # Lazy import to avoid circular dependency
+        from .msrecord_reader import MS3RecordReader
+        return MS3RecordReader(filename, **kwargs)
+
+    @classmethod
+    def from_buffer(cls, buffer, **kwargs):
+        """Convenience method that returns MS3RecordBufferReader"""
+        # Lazy import to avoid circular dependency
+        from .msrecord_buffer_reader import MS3RecordBufferReader
+        return MS3RecordBufferReader(buffer, **kwargs)
