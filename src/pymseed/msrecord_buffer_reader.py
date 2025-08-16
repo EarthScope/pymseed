@@ -2,6 +2,7 @@
 Core MS3RecordBufferReader implementation for pymseed
 
 """
+
 from typing import Any, Optional
 
 from .clib import clibmseed, ffi

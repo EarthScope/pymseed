@@ -115,7 +115,7 @@ markers = [
 # Linting and code formatting with Ruff
 [tool.ruff]
 target-version = "py39"
-line-length = 88
+line-length = 100
 extend-exclude = [
     "cffi_module/libmseed/**",
     "src/pymseed/_libmseed_cffi.c",

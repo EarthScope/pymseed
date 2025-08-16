@@ -2,6 +2,7 @@
 Core MS3Record implementation for pymseed
 
 """
+
 import json
 from typing import Any, Callable, Optional, Union
 
@@ -58,9 +59,7 @@ class MS3Record:
         if self._msr.numsamples > 0:
             samples = self.datasamples
             if samples:
-                datasamples_str = (
-                    str(samples[:5]) + " ..." if len(samples) > 5 else str(samples)
-                )
+                datasamples_str = str(samples[:5]) + " ..." if len(samples) > 5 else str(samples)
 
         return (
             f"MS3Record(sourceid: {self.sourceid}\n"
@@ -157,7 +156,7 @@ class MS3Record:
         https://docs.fdsn.org/projects/source-identifiers
         """
         if len(value) >= clibmseed.LM_SIDLEN:
-            raise ValueError(f"Source ID too long (max {clibmseed.LM_SIDLEN-1} characters)")
+            raise ValueError(f"Source ID too long (max {clibmseed.LM_SIDLEN - 1} characters)")
 
         self._msr.sid = ffi.new(f"char[{clibmseed.LM_SIDLEN}]", value.encode("utf-8"))
 
@@ -336,26 +335,26 @@ class MS3Record:
             data_samples = MS3Record.datasamples[:]
         """
         if self._msr.numsamples <= 0:
-            return memoryview(b'')  # Empty memoryview
+            return memoryview(b"")  # Empty memoryview
 
         sampletype = self.sampletype
 
         if sampletype == "i":
             ptr = ffi.cast("int32_t *", self._msr.datasamples)
             buffer = ffi.buffer(ptr, self._msr.numsamples * ffi.sizeof("int32_t"))
-            return memoryview(buffer).cast('i')
+            return memoryview(buffer).cast("i")
         elif sampletype == "f":
             ptr = ffi.cast("float *", self._msr.datasamples)
             buffer = ffi.buffer(ptr, self._msr.numsamples * ffi.sizeof("float"))
-            return memoryview(buffer).cast('f')
+            return memoryview(buffer).cast("f")
         elif sampletype == "d":
             ptr = ffi.cast("double *", self._msr.datasamples)
             buffer = ffi.buffer(ptr, self._msr.numsamples * ffi.sizeof("double"))
-            return memoryview(buffer).cast('d')
+            return memoryview(buffer).cast("d")
         elif sampletype == "t":
             ptr = ffi.cast("char *", self._msr.datasamples)
             buffer = ffi.buffer(ptr, self._msr.numsamples)
-            return memoryview(buffer).cast('B')
+            return memoryview(buffer).cast("B")
         else:
             raise ValueError(f"Unknown sample type: {sampletype}")
 
@@ -481,9 +480,7 @@ class MS3Record:
         self._record_handler_data = handler_data
 
         # Create callback function type and instance
-        RECORD_HANDLER = ffi.callback(
-            "void(char *, int, void *)", self._record_handler_wrapper
-        )
+        RECORD_HANDLER = ffi.callback("void(char *, int, void *)", self._record_handler_wrapper)
 
         packed_samples = ffi.new("int64_t *")
         flags = clibmseed.MSF_FLUSHDATA  # Always flush data when packing
@@ -499,13 +496,13 @@ class MS3Record:
             self._msr.numsamples = len(data_samples)
 
             # Set sample type (use first character only)
-            self._msr.sampletype = sample_type[0].encode('ascii')
+            self._msr.sampletype = sample_type[0].encode("ascii")
 
             # Allocate and copy data samples based on type
             if sample_type == "i":
                 try:
                     mv = memoryview(data_samples)
-                    if mv.format == 'i' and mv.itemsize == 4:
+                    if mv.format == "i" and mv.itemsize == 4:
                         # Compatible format - safe to zero-copy
                         sample_array = ffi.cast("int32_t *", ffi.from_buffer(data_samples))
                     else:
@@ -518,7 +515,7 @@ class MS3Record:
             elif sample_type == "f":
                 try:
                     mv = memoryview(data_samples)
-                    if mv.format == 'f' and mv.itemsize == 4:
+                    if mv.format == "f" and mv.itemsize == 4:
                         # Compatible format - safe to zero-copy
                         sample_array = ffi.cast("float *", ffi.from_buffer(data_samples))
                     else:
@@ -531,7 +528,7 @@ class MS3Record:
             elif sample_type == "d":
                 try:
                     mv = memoryview(data_samples)
-                    if mv.format == 'd' and mv.itemsize == 8:
+                    if mv.format == "d" and mv.itemsize == 8:
                         # Compatible format - safe to zero-copy
                         sample_array = ffi.cast("double *", ffi.from_buffer(data_samples))
                     else:
@@ -544,7 +541,7 @@ class MS3Record:
             elif sample_type == "t":
                 try:
                     mv = memoryview(data_samples)
-                    if mv.format in ('c', 'b', 'B') and mv.itemsize == 1:
+                    if mv.format in ("c", "b", "B") and mv.itemsize == 1:
                         # Compatible format - safe to zero-copy
                         sample_array = ffi.cast("char *", ffi.from_buffer(data_samples))
                     else:
@@ -554,9 +551,13 @@ class MS3Record:
                     text_data = []
                     for sample in data_samples:
                         if isinstance(sample, str):
-                            text_data.append(sample.encode('utf-8')[0])
+                            text_data.append(sample.encode("utf-8")[0])
                         else:
-                            text_data.append(int(sample) if isinstance(sample, (int, float)) else str(sample).encode('utf-8')[0])
+                            text_data.append(
+                                int(sample)
+                                if isinstance(sample, (int, float))
+                                else str(sample).encode("utf-8")[0]
+                            )
                     sample_array = ffi.new("char[]", text_data)
                 self._msr.datasamples = ffi.cast("void *", sample_array)
                 self._msr.datasize = len(data_samples)
@@ -589,6 +590,7 @@ class MS3Record:
         """Convenience method that returns MS3RecordReader"""
         # Lazy import to avoid circular dependency
         from .msrecord_reader import MS3RecordReader
+
         return MS3RecordReader(filename, **kwargs)
 
     @classmethod
@@ -596,4 +598,5 @@ class MS3Record:
         """Convenience method that returns MS3RecordBufferReader"""
         # Lazy import to avoid circular dependency
         from .msrecord_buffer_reader import MS3RecordBufferReader
+
         return MS3RecordBufferReader(buffer, **kwargs)

@@ -2,7 +2,8 @@
 Core file reader implementation for pymseed
 
 """
-from typing import Optional, Union, Any
+
+from typing import Any, Optional, Union
 
 from .clib import clibmseed, ffi
 from .exceptions import MiniSEEDError

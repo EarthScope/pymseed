@@ -22,7 +22,7 @@ class MS3RecordPtr:
     def __repr__(self) -> str:
         return (
             f"Pointer to {self.msr.sourceid}, "
-            f'{cdata_to_string(self._ptr.filename)}, '
+            f"{cdata_to_string(self._ptr.filename)}, "
             f"byte offset: {self._ptr.fileoffset}"
         )
 
@@ -82,10 +82,12 @@ class MS3RecordList:
 class MS3TraceSeg:
     """Wrapper around CFFI MS3TraceSeg structure"""
 
-    def __init__(self, cffi_ptr: Any, parent_id_ptr: Any = None, parent_tracelist: Any = None) -> None:
+    def __init__(
+        self, cffi_ptr: Any, parent_id_ptr: Any = None, parent_tracelist: Any = None
+    ) -> None:
         self._seg = cffi_ptr
-        self._parent_id = parent_id_ptr  # Store reference to parent MS3TraceID
-        self._parent_tracelist = parent_tracelist  # Store reference to parent MS3TraceList
+        self._parent_id = parent_id_ptr  # Reference to parent MS3TraceID
+        self._parent_tracelist = parent_tracelist  # Reference to parent MS3TraceList
 
     def __repr__(self) -> str:
         return (
@@ -106,7 +108,9 @@ class MS3TraceSeg:
         return self._seg.starttime / clibmseed.NSTMODULUS
 
     def starttime_str(
-        self, timeformat: TimeFormat = TimeFormat.ISOMONTHDAY_Z, subsecond: SubSecond = SubSecond.NANO_MICRO_NONE
+        self,
+        timeformat: TimeFormat = TimeFormat.ISOMONTHDAY_Z,
+        subsecond: SubSecond = SubSecond.NANO_MICRO_NONE,
     ) -> Optional[str]:
         """Return start time as formatted string"""
         result = nstime2timestr(self._seg.starttime, timeformat, subsecond)
@@ -125,7 +129,9 @@ class MS3TraceSeg:
         return self._seg.endtime / clibmseed.NSTMODULUS
 
     def endtime_str(
-        self, timeformat: TimeFormat = TimeFormat.ISOMONTHDAY_Z, subsecond: SubSecond = SubSecond.NANO_MICRO_NONE
+        self,
+        timeformat: TimeFormat = TimeFormat.ISOMONTHDAY_Z,
+        subsecond: SubSecond = SubSecond.NANO_MICRO_NONE,
     ) -> Optional[str]:
         """Return end time as formatted string"""
         result = nstime2timestr(self._seg.endtime, timeformat, subsecond)
@@ -167,26 +173,26 @@ class MS3TraceSeg:
             data_samples = MS3TraceSeg.datasamples[:]
         """
         if self._seg.numsamples <= 0:
-            return memoryview(b'')  # Empty memoryview
+            return memoryview(b"")  # Empty memoryview
 
         sampletype = self.sampletype
 
         if sampletype == "i":
             ptr = ffi.cast("int32_t *", self._seg.datasamples)
             buffer = ffi.buffer(ptr, self._seg.numsamples * ffi.sizeof("int32_t"))
-            return memoryview(buffer).cast('i')
+            return memoryview(buffer).cast("i")
         elif sampletype == "f":
             ptr = ffi.cast("float *", self._seg.datasamples)
             buffer = ffi.buffer(ptr, self._seg.numsamples * ffi.sizeof("float"))
-            return memoryview(buffer).cast('f')
+            return memoryview(buffer).cast("f")
         elif sampletype == "d":
             ptr = ffi.cast("double *", self._seg.datasamples)
             buffer = ffi.buffer(ptr, self._seg.numsamples * ffi.sizeof("double"))
-            return memoryview(buffer).cast('d')
+            return memoryview(buffer).cast("d")
         elif sampletype == "t":
             ptr = ffi.cast("char *", self._seg.datasamples)
             buffer = ffi.buffer(ptr, self._seg.numsamples)
-            return memoryview(buffer).cast('B')
+            return memoryview(buffer).cast("B")
         else:
             raise ValueError(f"Unknown sample type: {sampletype}")
 
@@ -216,9 +222,7 @@ class MS3TraceSeg:
         It is not guaranteed to be correct for any other records in the list.
         """
         if self._seg.recordlist is None:
-            raise ValueError(
-                "No record list available to determine sample size and type"
-            )
+            raise ValueError("No record list available to determine sample size and type")
 
         # Get the first record
         first_record_ptr = self._seg.recordlist.first
@@ -332,7 +336,11 @@ class MS3TraceSeg:
                 # Try to get size through len() if nbytes is not available
                 try:
                     buffer_ptr = ffi.from_buffer(buffer)
-                    buffer_size = len(buffer) * buffer.itemsize if hasattr(buffer, 'itemsize') else len(buffer)
+                    buffer_size = (
+                        len(buffer) * buffer.itemsize
+                        if hasattr(buffer, "itemsize")
+                        else len(buffer)
+                    )
                 except (TypeError, AttributeError):
                     raise ValueError("Buffer must support the buffer protocol")
 
@@ -437,7 +445,9 @@ class MS3TraceID:
         return self._id.earliest / clibmseed.NSTMODULUS
 
     def earliest_str(
-        self, timeformat: TimeFormat = TimeFormat.ISOMONTHDAY_Z, subsecond: SubSecond = SubSecond.NANO_MICRO_NONE
+        self,
+        timeformat: TimeFormat = TimeFormat.ISOMONTHDAY_Z,
+        subsecond: SubSecond = SubSecond.NANO_MICRO_NONE,
     ) -> Optional[str]:
         """Return earliest time as formatted string"""
         result = nstime2timestr(self._id.earliest, timeformat, subsecond)
@@ -456,7 +466,9 @@ class MS3TraceID:
         return self._id.latest / clibmseed.NSTMODULUS
 
     def latest_str(
-        self, timeformat: TimeFormat = TimeFormat.ISOMONTHDAY_Z, subsecond: SubSecond = SubSecond.NANO_MICRO_NONE
+        self,
+        timeformat: TimeFormat = TimeFormat.ISOMONTHDAY_Z,
+        subsecond: SubSecond = SubSecond.NANO_MICRO_NONE,
     ) -> Optional[str]:
         """Return latest time as formatted string"""
         result = nstime2timestr(self._id.latest, timeformat, subsecond)
@@ -633,7 +645,11 @@ class MS3TraceList:
             yield traceid.sourceid
 
     def print(
-        self, details: int = 0, gaps: bool = False, versions: bool = False, timeformat: TimeFormat = TimeFormat.ISOMONTHDAY_Z
+        self,
+        details: int = 0,
+        gaps: bool = False,
+        versions: bool = False,
+        timeformat: TimeFormat = TimeFormat.ISOMONTHDAY_Z,
     ) -> None:
         """Print trace list details"""
         clibmseed.mstl3_printtracelist(self._mstl, timeformat, details, gaps, versions)
@@ -708,7 +724,9 @@ class MS3TraceList:
         elif start_time_seconds is not None:
             msr.starttime_seconds = start_time_seconds
         else:
-            raise ValueError("Must specify one of start_time_str, start_time, or start_time_seconds")
+            raise ValueError(
+                "Must specify one of start_time_str, start_time, or start_time_seconds"
+            )
 
         # Set sample count and type
         msr._msr.samplecnt = len(data_samples)
@@ -733,7 +751,7 @@ class MS3TraceList:
         if sample_type == "i":
             try:
                 mv = memoryview(data_samples)
-                if mv.format == 'i' and mv.itemsize == 4:
+                if mv.format == "i" and mv.itemsize == 4:
                     # Compatible format - safe to zero-copy
                     sample_array = ffi.cast("int32_t *", ffi.from_buffer(data_samples))
                 else:
@@ -746,7 +764,7 @@ class MS3TraceList:
         elif sample_type == "f":
             try:
                 mv = memoryview(data_samples)
-                if mv.format == 'f' and mv.itemsize == 4:
+                if mv.format == "f" and mv.itemsize == 4:
                     # Compatible format - safe to zero-copy
                     sample_array = ffi.cast("float *", ffi.from_buffer(data_samples))
                 else:
@@ -759,7 +777,7 @@ class MS3TraceList:
         elif sample_type == "d":
             try:
                 mv = memoryview(data_samples)
-                if mv.format == 'd' and mv.itemsize == 8:
+                if mv.format == "d" and mv.itemsize == 8:
                     # Compatible format - safe to zero-copy
                     sample_array = ffi.cast("double *", ffi.from_buffer(data_samples))
                 else:
@@ -772,7 +790,7 @@ class MS3TraceList:
         elif sample_type == "t":
             try:
                 mv = memoryview(data_samples)
-                if mv.format in ('c', 'b', 'B') and mv.itemsize == 1:
+                if mv.format in ("c", "b", "B") and mv.itemsize == 1:
                     # Compatible format - safe to zero-copy
                     sample_array = ffi.cast("char *", ffi.from_buffer(data_samples))
                 else:
@@ -782,9 +800,13 @@ class MS3TraceList:
                 text_data = []
                 for sample in data_samples:
                     if isinstance(sample, str):
-                        text_data.append(sample.encode('utf-8')[0])
+                        text_data.append(sample.encode("utf-8")[0])
                     else:
-                        text_data.append(int(sample) if isinstance(sample, (int, float)) else str(sample).encode('utf-8')[0])
+                        text_data.append(
+                            int(sample)
+                            if isinstance(sample, (int, float))
+                            else str(sample).encode("utf-8")[0]
+                        )
                 sample_array = ffi.new("char[]", text_data)
             msr._msr.datasamples = ffi.cast("void *", sample_array)
             msr._msr.datasize = len(data_samples)
@@ -832,9 +854,7 @@ class MS3TraceList:
         self._record_handler_data = handlerdata
 
         # Create callback function type and instance
-        RECORD_HANDLER = ffi.callback(
-            "void(char *, int, void *)", self._record_handler_wrapper
-        )
+        RECORD_HANDLER = ffi.callback("void(char *, int, void *)", self._record_handler_wrapper)
 
         pack_flags = 0
         if flush_data:
