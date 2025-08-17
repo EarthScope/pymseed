@@ -1,5 +1,5 @@
 """
-Core file reader implementation for pymseed
+Core miniSEED file reader implementation for pymseed.
 
 """
 
@@ -11,20 +11,58 @@ from .msrecord import MS3Record
 
 
 class MS3RecordReader:
-    """Read miniSEED records from a file or file descriptor
+    """Read miniSEED records from a file or file descriptor.
 
-    If `input` is an integer, it is assumed to be an open file descriptor,
-    otherwise it is assumed to be a path (file) name.  In all cases the
-    file or descriptor will be closed when the object's close() is called.
+    This class provides a Python interface for reading miniSEED records from files
+    or file descriptors.
 
-    If `unpack_data` is True, the data samples will be decoded.
+    The reader can be used as an iterator to process records sequentially, or as
+    a context manager for automatic resource cleanup.
 
-    If `skip_not_data` is True, bytes from the input stream will be skipped
-    until a record is found.
+    Args:
+        input (Union[str, int]): File path (string) or open file descriptor (integer).
+            If an integer, it must be a valid open file descriptor. The file or
+            descriptor will be automatically closed when close() is called or when
+            the object is used as a context manager.
+        unpack_data (bool, optional): Whether to decode/unpack the data samples from
+            the records. If False, only metadata is parsed and data remains in
+            compressed format. Defaults to False for better performance when only
+            metadata is needed.
+        skip_not_data (bool, optional): Whether to skip non-data bytes in the input
+            stream until a valid miniSEED record is found. Useful for reading from
+            streams that may contain other data mixed with miniSEED records.
+            Defaults to False.
+        validate_crc (bool, optional): If True, validate CRC checksums when present in records.
+            miniSEED v3 records contain CRCs, but v2 records do not. Default is True.
+        verbose (int, optional): Verbosity level for for libmseed operations. Higher values
+            produce more detailed output. 0 = no output, 1+ = increasing verbosity.
+            Defaults to 0 (silent).
 
-    If `validate_crc` is True, the CRC will be validated if contained in
-    the record (legacy miniSEED v2 contains no CRCs).  The CRC provides an
-    internal integrity check of the record contents.
+    Raises:
+        MiniSEEDError: If the file or file descriptor cannot be initialized for reading.
+
+    Examples:
+        Basic usage with a file path as a context manager:
+
+        >>> with MS3RecordReader('examples/example_data.mseed', unpack_data=True) as reader:
+        ...     total_samples = 0
+        ...     for record in reader:
+        ...         total_samples += record.numsamples
+        ...     print(f"Total samples: {total_samples}")
+        Total samples: 12600
+
+        Using with an open file descriptor:
+
+        >>> import os
+        >>> fd = os.open('examples/example_data.mseed', os.O_RDONLY)
+        >>> with MS3RecordReader(fd, unpack_data=True) as reader:
+        ...     records = list(reader)  # Read all records
+        ...     print(f"Total records: {len(records)}")
+        Total records: 107
+
+    Note:
+        This class is not thread-safe. Each thread should use its own reader instance.
+        The underlying libmseed library handles the actual parsing and decompression.
     """
 
     def __init__(
@@ -59,21 +97,25 @@ class MS3RecordReader:
                     f"Error initializing file descriptor {input}",
                 )
 
-            self.stream_name = ffi.new("char[]", f"File Descriptor {input}".encode("utf-8"))
+            self.stream_name = ffi.new("char[]", f"File Descriptor {input}".encode())
         # Otherwise, assume a path name
         else:
-            self.stream_name = ffi.new("char[]", input.encode("utf-8"))
+            self.stream_name = ffi.new("char[]", input.encode())
 
     def __enter__(self) -> "MS3RecordReader":
+        """Context manager entry point - returns self for use in 'with' statements."""
         return self
 
     def __exit__(self, exc_type: Any, exc_value: Any, traceback: Any) -> None:
+        """Context manager exit point - ensures proper cleanup by calling close()."""
         self.close()
 
     def __iter__(self) -> "MS3RecordReader":
+        """Iterator protocol - allows the reader to be used in for loops."""
         return self
 
     def __next__(self) -> MS3Record:
+        """Iterator protocol - returns the next record or raises StopIteration."""
         next = self.read()
         if next is not None:
             return next
@@ -81,7 +123,7 @@ class MS3RecordReader:
             raise StopIteration
 
     def read(self) -> Optional[MS3Record]:
-        """Read the next miniSEED record from the file/descriptor"""
+        """Read the next miniSEED record from the file or file descriptor"""
 
         status = clibmseed.ms3_readmsr_selection(
             self._msfp_ptr,

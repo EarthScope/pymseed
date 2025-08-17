@@ -7,29 +7,115 @@ import json
 from typing import Any, Callable, Optional, Union
 
 from .clib import clibmseed, ffi, cdata_to_string
-from .definitions import TimeFormat, SubSecond
+from .definitions import TimeFormat, SubSecond, DataEncoding
 from .exceptions import MiniSEEDError
 from .util import nstime2timestr, timestr2nstime, encoding_string
 
 
 class MS3Record:
-    """A miniSEED record wrapper around a MS3Record structure"""
+    """A wrapper for miniSEED data records supporting formats v2 and v3.
+
+    MS3Record provides a Python interface to individual miniSEED data records,
+    which are the fundamental unit of the miniSEED time series data format.
+    Each record contains metadata (timing, sample rate, encoding) and optionally,
+    but commonly, data samples.
+
+    miniSEED is a format optimized for continuous time series data. It's widely
+    used in seismology, and related geophysical data for storing and exchanging
+    time series data.
+
+    Key Features:
+        - Read and write miniSEED v2 and v3 formats
+        - Access to all record metadata (timing, sample rates, encoding, etc.)
+        - Efficient data sample access via memoryview (zero-copy) or numpy arrays
+        - Support for all defined data encodings
+
+    Common Usage Patterns:
+
+        Reading records from files:
+            >>> from pymseed import MS3Record
+            >>> for record in MS3Record.from_file('examples/example_data.mseed', unpack_data=True):
+            ...     print(f"{record.sourceid}: {record.numsamples} samples")
+            ...     break # only print the first record to limit testing output
+            FDSN:IU_COLA_00_L_H_1: 135 samples
+
+        Creating and writing records:
+            >>> record = MS3Record()
+            >>> record.sourceid = "FDSN:NET_STA_LOC_B_S_s"
+            >>> record.starttime_str = "2024-01-01T00:00:00Z"
+            >>> record.samprate = 100.0
+            >>> record.encoding = DataEncoding.STEIM2
+            >>> record.reclen = 512
+
+            >>> # Pack with data and save via handler
+            >>> def write_handler(record_bytes, file_handle):
+            ...     print(f"Packed {len(record_bytes)} byte record")
+
+            >>> (total_samples, total_records) = record.pack(write_handler, data_samples=[1,2,3,4], sample_type='i')
+            Packed 126 byte record
+            >>> print(f"Packed {total_samples} samples in {total_records} records")
+            Packed 4 samples in 1 records
+
+        Working with data samples:
+            # Get data as memoryview (no copy)
+            data_mv = record.datasamples
+            # Get data as numpy array (requires numpy, no copy)
+            data_np = record.np_datasamples
+            # Get data as Python list (copy)
+            data_list = record.datasamples[:]
+
+    Attributes:
+        All miniSEED record fields are accessible as properties with both
+        getters and setters where appropriate. Key properties include:
+        - sourceid: FDSN Source Identifier (e.g., "FDSN:IU_COLA_00_B_H_Z")
+        - starttime: Start time in nanoseconds since Unix epoch
+        - samprate: Sample rate in Hz (positive) or interval in seconds (negative)
+        - numsamples: Number of decoded data samples
+        - datasamples: Access to the actual data samples
+        - encoding: Data encoding format (Steim1/2, Float, etc.)
+
+    See Also:
+        MS3RecordReader: For reading records from files
+        MS3RecordBufferReader: For reading records from memory buffers
+        MSTraceList: For working with collections of records as traces
+    """
 
     def __init__(
         self,
         reclen: Optional[int] = None,
         encoding: Optional[int] = None,
-        samplecnt: Optional[int] = None,
         recordptr: Any = None,
     ) -> None:
         """
         Initialize MS3Record wrapper.
 
+        Creates a new miniSEED record or wraps an existing one. When creating
+        a new record, the structure is initialized with default values that
+        can be overridden by the optional parameters.
+
         Args:
-            reclen: Record length in bytes (None for default)
-            encoding: Data encoding format (None for default)
-            samplecnt: Sample count (None for default)
-            recordptr: Existing MS3Record pointer (for wrapping parsed records)
+            reclen: Maximum record length in bytes. Common values are 512, 4096
+                   (miniSEED v2 default) bytes. If None, uses library default.
+            encoding: Data encoding format code. Common values:
+                    DataEncoding.TEXT, DataEncoding.STEIM1, DataEncoding.STEIM2,
+                    DataEncoding.FLOAT32, DataEncoding.FLOAT64. If None, uses library default.
+            recordptr: Internal C structure pointer. Only used when wrapping
+                      existing parsed records. Should not be set by users.
+
+        Note:
+            Most users should create records with MS3Record() and set properties
+            like sourceid, starttime, and samprate before packing data.
+
+        Example:
+            >>> # Create empty record
+            >>> from pymseed import MS3Record
+            >>> record = MS3Record()
+            >>> record.sourceid = "FDSN:IU_COLA_00_B_H_Z"
+            >>> record.samprate = 20.0
+            >>>
+            >>> # Create with specific encoding for Steim2 compression
+            >>> record = MS3Record(encoding=11, reclen=4096)
+
         """
         if recordptr is not None:
             # Wrap an existing record structure
@@ -45,8 +131,7 @@ class MS3Record:
                 self._msr.reclen = reclen
             if encoding is not None:
                 self._msr.encoding = encoding
-            if samplecnt is not None:
-                self._msr.samplecnt = samplecnt
+
 
     def __del__(self) -> None:
         if self._msr and self._msr_allocated:
@@ -144,16 +229,32 @@ class MS3Record:
 
     @property
     def sourceid(self) -> Optional[str]:
-        """Return source identifier as string"""
+        """Source identifier string identifying the data source.
+
+        Returns:
+            Source identifier string, or None if not set
+        """
         return cdata_to_string(self._msr.sid)
 
     @sourceid.setter
     def sourceid(self, value: str) -> None:
-        """Set source identifier
+        """Set source identifier string.
 
-        The source identifier is limited to 63 characters.
-        Typically this is an FDSN Source Identifier:
-        https://docs.fdsn.org/projects/source-identifiers
+        The source identifier is limited to 63 characters and should follow
+        FDSN Source Identifier conventions for interoperability.
+
+        Examples:
+            "FDSN:UW_BEER__L_H_Z"
+            "FDSN:IU_COLA_00_B_H_1"
+
+        Args:
+            value: Source identifier string
+
+        Raises:
+            ValueError: If identifier exceeds 63 characters
+
+        See Also:
+            https://docs.fdsn.org/projects/source-identifiers
         """
         if len(value) >= clibmseed.LM_SIDLEN:
             raise ValueError(f"Source ID too long (max {clibmseed.LM_SIDLEN - 1} characters)")
@@ -183,7 +284,27 @@ class MS3Record:
         self._msr.flags = value
 
     def flags_dict(self) -> dict[str, bool]:
-        """Return record flags as a dictionary"""
+        """Record flags as a dictionary.
+
+        Decodes the 8-bit flags field into named boolean indicators for
+        data quality assessment.
+
+        Returns:
+            dict[str, bool]: Dictionary with flag names as keys:
+                'calibration_signals_present': Calibration signals detected
+                'time_tag_is_questionable': Timing accuracy uncertain
+                'clock_locked': Clock was locked to reference
+
+        Example:
+            >>> from pymseed import MS3Record
+            >>> record = MS3Record()
+            >>> flags = record.flags_dict()
+            >>> if flags.get('time_tag_is_questionable'):
+            ...     print("Warning: questionable timing")
+
+        See Also:
+            flags: Raw 8-bit flags value
+        """
         flags = {}
         if self._msr.flags & 0x01:
             flags["calibration_signals_present"] = True
@@ -195,7 +316,24 @@ class MS3Record:
 
     @property
     def starttime(self) -> int:
-        """Return start time as nanoseconds since Unix/POSIX epoch"""
+        """Time of the first sample as nanoseconds since Unix epoch.
+
+        Depending on the version of miniSEED, and the characteristics of the
+        data source, the start time may not have nanosecond precision.  A
+        precision of microseconds is common, along with .0001 second resolution.
+
+        Returns:
+            Nanoseconds since Unix epoch (1970-01-01T00:00:00Z)
+
+        Example:
+            >>> from pymseed import MS3Record
+            >>> record = MS3Record()
+            >>> record.starttime = 1609459200000000000  # 2021-01-01T00:00:00Z
+
+        See Also:
+            starttime_seconds: For working with floating-point seconds
+            starttime_str(): For human-readable time strings
+        """
         return self._msr.starttime
 
     @starttime.setter
@@ -217,7 +355,7 @@ class MS3Record:
         This is done to avoid floating point precision issues.
         """
         # Scale to microseconds, round to nearest integer, then scale to nanoseconds
-        self._msr.starttime = int(value * 1000000 + 0.5) * 1000
+        self._msr.starttime = round(value * 1000000) * 1000
 
     def starttime_str(
         self,
@@ -228,12 +366,26 @@ class MS3Record:
         return nstime2timestr(self._msr.starttime, timeformat, subsecond)
 
     def set_starttime_str(self, value: str) -> None:
-        """Set start time from formatted string"""
+        """Set start time from formatted string
+        TODO, more here"""
         self._msr.starttime = timestr2nstime(value)
 
     @property
     def samprate(self) -> float:
-        """Return nominal sample rate"""
+        """Nominal sample rate in Hz or sample interval in seconds.
+
+        When positive, this represents samples per second (Hz).
+        When negative, this represents the sample period in seconds (-1/period).
+
+        Returns:
+            Sample rate in Hz (positive) or interval in seconds (negative)
+
+        Examples:
+            >>> from pymseed import MS3Record
+            >>> record = MS3Record()
+            >>> record.samprate = 100.0   # 100 Hz sampling
+            >>> record.samprate = -10.0   # 10 second intervals
+        """
         return self._msr.samprate
 
     @samprate.setter
@@ -259,15 +411,34 @@ class MS3Record:
 
     @property
     def encoding(self) -> int:
-        """Return data encoding format code"""
+        """Data encoding format code specifying how data samples are compressed/stored.
+
+        miniSEED supports various encoding formats optimized for different data types
+        and compression requirements. Common encoding values:
+
+        - DataEncoding.TEXT: UTF-8 text
+        - DataEncoding.STEIM1: Steim1 32-bit integer compression
+        - DataEncoding.STEIM2: Steim2 32-bit integer compression
+        - DataEncoding.FLOAT32: IEEE Float32 (little-endian)
+        - DataEncoding.FLOAT64: IEEE Float64 (little-endian)
+
+        Returns:
+            int: Encoding format code
+
+        Examples:
+            >>> from pymseed import MS3Record
+            >>> record = MS3Record()
+            >>> record.encoding = DataEncoding.STEIM2
+            >>> record.encoding = DataEncoding.FLOAT32
+
+        See Also:
+            encoding_str(): Human-readable encoding description
+        """
         return self._msr.encoding
 
     @encoding.setter
     def encoding(self, value: int) -> None:
-        """Set data encoding format code
-
-        See DataEncoding enum for valid values
-        """
+        """Set data encoding format"""
         self._msr.encoding = value
 
     @property
@@ -321,18 +492,46 @@ class MS3Record:
 
     @property
     def datasamples(self) -> memoryview:
-        """Return data samples as a memoryview (no copy)
+        """Data samples as a memoryview (zero-copy access).
 
-        A view of the data samples in an internal buffer owned by this MS3Record
-        instance is returned.  If the data are needed beyond the lifetime of this
-        instance, a copy must be made.
+        Returns a memoryview of the decoded data samples. This provides direct
+        access to the internal buffer without copying data.
 
-        The returned view can be used directly with slicing and indexing
-        from `0` to `MS3Record.numsamples - 1`.
+        The view type depends on the data encoding:
+        - Integer data (Steim1/2, int16/32): memoryview of 32-bit integers
+        - Float32 data: memoryview of 32-bit floats
+        - Float64 data: memoryview of 64-bit floats
+        - Text data: memoryview of bytes
 
-        The view can efficiently be copied to a _python list_ using:
+        Important:
+            The returned view is only valid while this MS3Record exists.
+            If data is needed beyond the record's lifetime, make a copy.
 
-            data_samples = MS3Record.datasamples[:]
+        Returns:
+            memoryview: Direct view of sample data, indexed 0 to numsamples-1
+
+        Examples:
+            >>> from pymseed import MS3Record
+            >>> reader = MS3Record.from_file("examples/example_data.mseed", unpack_data=True)
+            >>> record = reader.read()
+            >>> # Direct indexing (no copy)
+            >>> first_sample = record.datasamples[0]
+            >>> last_sample = record.datasamples[-1]
+            >>>
+            >>> # Slicing (no copy)
+            >>> first_ten = record.datasamples[:10]
+            >>>
+            >>> # Copy to Python list
+            >>> data_list = record.datasamples[:]
+            >>>
+            >>> # Copy to new array
+            >>> import array
+            >>> data_array = array.array('f', record.datasamples)
+
+        See Also:
+            np_datasamples: NumPy array view (requires numpy)
+            numsamples: Number of available samples
+            sampletype: Type indicator ('i', 'f', 'd', 't')
         """
         if self._msr.numsamples <= 0:
             return memoryview(b"")  # Empty memoryview
@@ -360,11 +559,49 @@ class MS3Record:
 
     @property
     def np_datasamples(self) -> Any:
-        """Return data samples as a numpy array view (no copy)
+        """Data samples as a NumPy array view (zero-copy access).
 
-        A view of the data samples in an internal buffer owned by this MS3Record
-        instance is returned. If the data are needed beyond the lifetime of this
-        instance, a copy must be made.
+        Returns a NumPy array view of the decoded data samples without copying
+        the underlying data.
+
+        The array dtype depends on the data encoding:
+        - Integer data (Steim1/2, int16/32): numpy.int32
+        - Float32 data: numpy.float32
+        - Float64 data: numpy.float64
+        - Text data: numpy dtype 'S1' (1-byte strings)
+
+        Returns:
+            numpy.ndarray: 1D array view of the sample data
+
+        Raises:
+            ImportError: If NumPy is not installed
+            ValueError: If sample type is unknown or unsupported
+
+        Important:
+            Requires NumPy to be installed. The returned array is only valid
+            while this MS3Record exists. For permanent storage, make a copy.
+
+        Examples:
+            >>> from pymseed import MS3Record
+            >>> reader = MS3Record.from_file("examples/example_data.mseed", unpack_data=True)
+            >>> record = reader.read()
+
+            >>> # Direct NumPy operations (no copy)
+            >>> import numpy as np
+            >>> data = record.np_datasamples
+            >>> mean_value = np.mean(data)
+            >>> max_value = np.max(data)
+
+            >>> # Copy for permanent storage
+            >>> data_copy = record.np_datasamples.copy()
+
+            >>> # Mathematical operations
+            >>> filtered = data * 0.5  # Creates new array
+
+        See Also:
+            datasamples: Raw memoryview access
+            numsamples: Number of available samples
+            sampletype: Type indicator ('i', 'f', 'd', 't')
         """
         try:
             import numpy as np
@@ -399,7 +636,20 @@ class MS3Record:
 
     @property
     def numsamples(self) -> int:
-        """Return number of decoded samples at MS3Record.datasamples"""
+        """Number of data samples that have been decoded and are available.
+
+        This represents the actual number of samples accessible via datasamples
+        or np_datasamples properties. May differ from samplecnt (which is the
+        declared sample count in the record header) if data has not been
+        decoded.
+
+        Returns:
+            int: Number of decoded samples (0 if no data decoded)
+
+        See Also:
+            samplecnt: Sample count from record header
+            datasamples: Access to the actual sample data
+        """
         return self._msr.numsamples
 
     @property
@@ -426,7 +676,19 @@ class MS3Record:
 
     @property
     def endtime(self) -> int:
-        """Return end time as nanoseconds since Unix/POSIX epoch"""
+        """End time of the last sample as nanoseconds since Unix epoch.
+
+        Calculated from starttime, sample rate, and number of samples.
+        For regularly sampled data: endtime = starttime + (numsamples-1)/samprate
+
+        Returns:
+            int: Nanoseconds since Unix epoch (1970-01-01T00:00:00Z)
+
+        See Also:
+            starttime: Start time of first sample
+            endtime_seconds: End time as floating-point seconds
+            endtime_str(): Human-readable end time string
+        """
         return clibmseed.msr3_endtime(self._msr)
 
     @property
@@ -443,11 +705,28 @@ class MS3Record:
         return nstime2timestr(self.endtime, timeformat, subsecond)
 
     def encoding_str(self) -> Optional[str]:
-        """Return encoding format as descriptive string"""
+        """Human-readable description of the data encoding format.
+
+        Returns:
+            str or None: Descriptive string like "Steim2", "Float32", "Integer32",
+                        or None if encoding is unknown
+
+        See Also:
+            encoding: Numeric encoding code
+        """
         return encoding_string(self._msr.encoding)
 
     def print(self, details: int = 0) -> None:
-        """Print details of the record to stdout, with varying levels of `details`"""
+        """Print record information to stdout with configurable detail level.
+
+        Useful for debugging and inspecting record contents. Output includes
+        metadata, timing information, and optionally sample data.
+
+        Args:
+            details: Detail level for output:
+                    0 = Basic record header information (default)
+                    1 = All record header information
+        """
         clibmseed.msr3_print(self._msr, details)
 
     def _record_handler_wrapper(self, record: Any, record_length: int, handlerdata: Any) -> None:
@@ -464,16 +743,68 @@ class MS3Record:
         sample_type: Optional[str] = None,
         verbose: int = 0,
     ) -> tuple[int, int]:
-        """Pack `datasamples` into miniSEED record(s) and call `handler()`
+        """Pack data samples into miniSEED record(s) using a custom handler.
 
-        The `handler(record, handlerdata)` function must accept two arguments:
-                record:         A buffer containing a miniSEED record
-                handlerdata:    The `handlerdata` value
+        This method encodes data samples into one or more miniSEED records according
+        to the record's configuration (encoding, record length, etc.) and calls the
+        provided handler function for each generated record.
 
-        The handler function must use or copy the record buffer as the memory may be
-        reused on subsequent iterations.
+        Args:
+            handler: Callback function that receives each packed record.
+                    Signature: handler(record_bytes, handler_data)
+                    The record_bytes must be used or copied immediately as the
+                    buffer may be reused for subsequent records.
+            handler_data: Optional data passed to the handler function.
+                         Commonly used for file handles, counters, or containers.
+            data_samples: Data to pack. If None, uses existing record data.
+                         Types supported: list of int/float/str, numpy arrays,
+                         or any buffer-protocol compatible object.
+            sample_type: Sample type indicator when providing data_samples:
+                        'i' = 32-bit integer
+                        'f' = 32-bit float
+                        'd' = 64-bit float
+                        't' = text (1 byte per sample)
+                        Required when data_samples is provided.
+            verbose: Verbosity level for diagnostic output (0=quiet, 1+=verbose)
 
-        Returns a tuple of (packed_samples, packed_records)
+        Returns:
+            tuple[int, int]: (total_samples_packed, number_of_records_created)
+
+        Raises:
+            MiniSEEDError: If packing fails due to invalid configuration or data
+            ValueError: If sample_type is invalid or data format is incompatible
+
+        Examples:
+            >>> # Write to file
+            >>> def file_handler(record_bytes, file_handle):
+            ...     file_handle.write(record_bytes)
+            >>>
+            >>> record = MS3Record() # doctest: +SKIP
+            >>> with open('output.mseed', 'wb') as f: # doctest: +SKIP
+            ...     samples, records = record.pack(
+            ...         file_handler, f,
+            ...         data_samples=[1, 2, 3, 4, 5],
+            ...         sample_type='i'
+            ...     )
+            >>>
+            >>> # Collect records in memory
+            >>> records_list = []
+            >>> def collect_handler(record_bytes, container):
+            ...     container.append(bytes(record_bytes))
+            >>>
+            >>> record = MS3Record()
+            >>> record.encoding = DataEncoding.FLOAT32
+            >>> record.pack(collect_handler, records_list, data_samples=[1.0, 2.0], sample_type='f')  # doctest: +ELLIPSIS
+            (2, 1)
+
+        Notes:
+            The handler function must use or copy the record buffer as the memory
+            may be reused on subsequent iterations.
+
+        See Also:
+            encoding: Data encoding format
+            reclen: Maximum record length
+            samplecnt: Expected sample count
         """
         # Set handler function as CFFI callback function
         self._record_handler = handler
@@ -587,7 +918,22 @@ class MS3Record:
 
     @classmethod
     def from_file(cls, filename, **kwargs):
-        """Convenience method that returns MS3RecordReader"""
+        """Create a record reader for miniSEED files.
+
+        This convenience method returns an MS3RecordReader that can iterate
+        over all records in a miniSEED file.
+
+        Args:
+            filename: Path to miniSEED file
+            **kwargs: Additional arguments passed to MS3RecordReader
+
+        Returns:
+            MS3RecordReader: Iterator over records in the file
+
+        See Also:
+            from_buffer(): Read from memory buffer
+            MS3RecordReader: Full file reader documentation
+        """
         # Lazy import to avoid circular dependency
         from .msrecord_reader import MS3RecordReader
 
@@ -595,7 +941,22 @@ class MS3Record:
 
     @classmethod
     def from_buffer(cls, buffer, **kwargs):
-        """Convenience method that returns MS3RecordBufferReader"""
+        """Create a record reader for miniSEED data in memory.
+
+        This convenience method returns an MS3RecordBufferReader that can iterate
+        over records stored in a memory buffer (bytes-like object).
+
+        Args:
+            buffer: Bytes-like object containing miniSEED data
+            **kwargs: Additional arguments passed to MS3RecordBufferReader
+
+        Returns:
+            MS3RecordBufferReader: Iterator over records in the buffer
+
+        See Also:
+            from_file(): Read from file
+            MS3RecordBufferReader: Full buffer reader documentation
+        """
         # Lazy import to avoid circular dependency
         from .msrecord_buffer_reader import MS3RecordBufferReader
 
