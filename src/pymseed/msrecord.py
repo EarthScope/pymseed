@@ -132,7 +132,6 @@ class MS3Record:
             if encoding is not None:
                 self._msr.encoding = encoding
 
-
     def __del__(self) -> None:
         if self._msr and self._msr_allocated:
             msr_ptr = ffi.new("MS3Record **")
@@ -366,8 +365,26 @@ class MS3Record:
         return nstime2timestr(self._msr.starttime, timeformat, subsecond)
 
     def set_starttime_str(self, value: str) -> None:
-        """Set start time from formatted string
-        TODO, more here"""
+        """Set start time from formatted date-time string
+
+        Args:
+            value (str): Formatted date-time string
+                A number of formats are supported, but the recommended form is
+                YYYY-MM-DDTHH:MM:SS.ssssssZ (RFC 3339/ISO 8601).
+
+        Raises:
+            ValueError: If the string is not a valid date-time string
+
+        Example:
+            >>> from pymseed import MS3Record
+            >>> record = MS3Record()
+            >>> record.set_starttime_str("2021-01-01T00:00:00.123456789Z")
+            >>> record.starttime_str()
+            '2021-01-01T00:00:00.123456789Z'
+
+        See Also:
+            starttime_str(): For formatting the start time as a string
+        """
         self._msr.starttime = timestr2nstime(value)
 
     @property

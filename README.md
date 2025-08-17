@@ -1,20 +1,17 @@
 # pymseed - a Python package to read and write miniSEED formatted data
 
-The pymseed package allows for reading and writing of miniSEED
-time series data.  Both [miniSEED version 2](https://fdsn.org/pdf/SEEDManual_V2.4.pdf)
+The pymseed package supports reading and writing of miniSEED formatted data.
+Both [miniSEED version 2](https://fdsn.org/pdf/SEEDManual_V2.4.pdf)
 (defined in the SEED standard) and [miniSEED version 3](https://docs.fdsn.org/projects/miniseed3)
 are supported.
 
-The package is based on the C-language [libmseed](https://earthscope.github.io/libmseed)
+The package is uses the C-language [libmseed](https://earthscope.github.io/libmseed)
 for most of the data format and manipulation work.
 
 ## Installation
 
 The [releases](https://pypi.org/project/pymseed/) should be installed
 directly from PyPI with, for example, `pip install pymseed`.
-
-The package is built using [CFFI](https://cffi.readthedocs.io/) and supports
-multiple Python implementations including CPython and PyPy for broad usability.
 
 If using numpy features use optional dependency "numpy" or install it independently
 e.g. `pip install pymseed[numpy]`.
@@ -24,7 +21,7 @@ e.g. `pip install pymseed[dev]`.
 
 ## Example usage
 
-Working programs for a variety of use cases ca be found in the
+Working programs for a variety of use cases can be found in the
 [examples](https://github.com/EarthScope/pymseed/tree/main/examples) directory of the repository.
 
 Read a file and print details from each record:
@@ -68,7 +65,7 @@ Simple example of writing multiple channels of data:
 import math
 from pymseed import MS3TraceList, timestr2nstime
 
-# Generate synthetic sinusoid data, starting at 0, 45, and 90 degrees
+# Generate sinusoid data, starting at 0, 45, and 90 degrees
 data0 = list(map(lambda x: int(math.sin(math.radians(x)) * 500), range(0, 500)))
 data1 = list(map(lambda x: int(math.sin(math.radians(x)) * 500), range(45, 500 + 45)))
 data2 = list(map(lambda x: int(math.sin(math.radians(x)) * 500), range(90, 500 + 90)))
@@ -81,7 +78,7 @@ start_time = timestr2nstime("2024-01-01T15:13:55.123456789Z")
 format_version = 2
 record_length = 512
 
-# Add synthetic data to the trace list
+# Add generated data to the trace list
 traces.add_data(sourceid="FDSN:XX_TEST__B_S_1",
                 data_samples=data0, sample_type='i',
                 sample_rate=sample_rate, start_time=start_time)
