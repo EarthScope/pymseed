@@ -4,12 +4,13 @@ Core MS3Record implementation for pymseed
 """
 
 import json
+from collections.abc import Sequence
 from typing import Any, Callable, Optional, Union
 
 from .clib import clibmseed, ffi, cdata_to_string
-from .definitions import TimeFormat, SubSecond, DataEncoding
+from .definitions import DataEncoding, SubSecond, TimeFormat
 from .exceptions import MiniSEEDError
-from .util import nstime2timestr, timestr2nstime, encoding_string
+from .util import encoding_string, nstime2timestr, timestr2nstime
 
 
 class MS3Record:
@@ -134,9 +135,15 @@ class MS3Record:
 
     def __del__(self) -> None:
         if self._msr and self._msr_allocated:
-            msr_ptr = ffi.new("MS3Record **")
-            msr_ptr[0] = self._msr
-            clibmseed.msr3_free(msr_ptr)
+            try:
+                msr_ptr = ffi.new("MS3Record **")
+                msr_ptr[0] = self._msr
+                clibmseed.msr3_free(msr_ptr)
+                self._msr = ffi.NULL
+                self._msr_allocated = False
+            except Exception:
+                # Silently ignore errors during cleanup to avoid issues during interpreter shutdown
+                pass
 
     def __repr__(self) -> str:
         datasamples_str = "[]"
@@ -507,6 +514,157 @@ class MS3Record:
             if status < 0:
                 raise ValueError(f"Error setting extra headers: {status}")
 
+    def set_datasamples(self, data_samples: Sequence[Any], sample_type: str) -> None:
+        """Set data samples for the record from a sequence or buffer.
+
+        This method assigns data samples to the record and updates related metadata
+        including sample count and data size. It supports multiple data types and
+        optimizes for zero-copy operations when possible.  For zero-copy operations,
+        the data samples must remain in memory for the lifetime of the record.  To
+        ensure that the data samples can be garbage collected, the data samples must
+        be set to None after use with `set_datasamples(None, None)`.
+
+        Args:
+            data_samples: Sequence containing the data samples. Can be a list, numpy array,
+                memoryview, or any object supporting the sequence protocol. The data will
+                be converted to the appropriate type based on sample_type.
+            sample_type: Single character string indicating the data type:
+                - 'i': 32-bit signed integers
+                - 'f': 32-bit IEEE floating point numbers
+                - 'd': 64-bit IEEE floating point numbers (double precision)
+                - 't': Text/character data (1 byte per sample)
+
+        Raises:
+            ValueError: If sample_type is not one of the supported types ('i', 'f', 'd', 't')
+                or if data conversion fails.
+            TypeError: If data_samples doesn't support the sequence protocol.
+
+        Examples:
+            Setting integer samples:
+
+            >>> from pymseed import MS3Record
+            >>> record = MS3Record()
+            >>> record.set_datasamples([1, 2, 3, 4, 5], 'i')
+            >>> print(record.numsamples)
+            5
+            >>> record.set_datasamples(None, None)
+
+            Setting floating point samples:
+
+            >>> import numpy as np
+            >>> samples = np.array([1.1, 2.2, 3.3], dtype=np.float32)
+            >>> record.set_datasamples(samples, 'f')
+            >>> print(record.numsamples)
+            3
+            >>> record.set_datasamples(None, None)
+
+            Setting text data:
+
+            >>> text_samples = "This is a log entry"
+            >>> record.set_datasamples(text_samples, 't')
+            >>> print(record.numsamples)
+            19
+            >>> record.set_datasamples(None, None)
+
+        Note:
+            - The method attempts zero-copy optimization when the input buffer format
+              matches the target type exactly
+            - Sample count (numsamples and samplecnt) is automatically updated
+            - Data size is calculated based on the sample type and count
+            - For text data, string samples are converted to their first UTF-8 byte,
+              while integer/float samples are converted to byte values (0-255)
+            - This method may not copy the data samples, so the data samples must
+              remain in memory for the lifetime of the record.  An internal reference
+              is maintained to prevent premature garbage collection.
+
+        """
+        if data_samples is None:
+            self._msr.datasamples = ffi.NULL
+            self._msr.datasize = 0
+            self._msr.samplecnt = 0
+            self._msr.numsamples = 0
+            self._msr.sampletype = b'\0'
+            self._data_reference = None
+            return
+
+        if sample_type == "i":
+            try:
+                mv = memoryview(data_samples)
+                if mv.format == "i" and mv.itemsize == 4:
+                    # Compatible format - safe to zero-copy
+                    self._data_reference = data_samples
+                    sample_array = ffi.cast("int32_t *", ffi.from_buffer(data_samples))
+                else:
+                    raise ValueError("Incompatible buffer format")
+            except (TypeError, ValueError):
+                # Not compatible or not a buffer - need conversion
+                sample_array = ffi.new("int32_t[]", [int(sample) for sample in data_samples])
+                self._data_reference = sample_array
+
+            self._msr.datasamples = sample_array
+            self._msr.numsamples = len(data_samples)
+            self._msr.datasize = len(data_samples) * 4
+        elif sample_type == "f":
+            try:
+                mv = memoryview(data_samples)
+                if mv.format == "f" and mv.itemsize == 4:
+                    # Compatible format - safe to zero-copy
+                    self._data_reference = data_samples
+                    sample_array = ffi.cast("float *", ffi.from_buffer(data_samples))
+                else:
+                    raise ValueError("Incompatible buffer format")
+            except (TypeError, ValueError):
+                # Not compatible or not a buffer - need conversion
+                sample_array = ffi.new("float[]", [float(sample) for sample in data_samples])
+                self._data_reference = sample_array
+
+            self._msr.datasamples = sample_array
+            self._msr.numsamples = len(data_samples)
+            self._msr.datasize = len(data_samples) * 4
+        elif sample_type == "d":
+            try:
+                mv = memoryview(data_samples)
+                if mv.format == "d" and mv.itemsize == 8:
+                    # Compatible format - safe to zero-copy
+                    self._data_reference = data_samples
+                    sample_array = ffi.cast("double *", ffi.from_buffer(data_samples))
+                else:
+                    raise ValueError("Incompatible buffer format")
+            except (TypeError, ValueError):
+                # Not compatible or not a buffer - need conversion
+                sample_array = ffi.new("double[]", [float(sample) for sample in data_samples])
+                self._data_reference = sample_array
+
+            self._msr.datasamples = sample_array
+            self._msr.numsamples = len(data_samples)
+            self._msr.datasize = len(data_samples) * 8
+        elif sample_type == "t":
+            # Convert everything to bytes for simplicity
+            if isinstance(data_samples, str):
+                text_bytes = data_samples.encode("utf-8")
+            elif isinstance(data_samples, (bytes, bytearray)):
+                text_bytes = bytes(data_samples)
+            else:
+                # Handle sequence - convert each item to byte
+                byte_values = []
+                for sample in data_samples:
+                    if isinstance(sample, str):
+                        byte_values.append(sample.encode("utf-8")[0])
+                    else:
+                        byte_values.append(int(sample) & 0xFF)
+                text_bytes = bytes(byte_values)
+
+            sample_array = ffi.new("char[]", text_bytes)
+            self._data_reference = sample_array
+            self._msr.datasamples = sample_array
+            self._msr.numsamples = len(text_bytes)
+            self._msr.datasize = len(text_bytes)
+        else:
+            raise ValueError(f"Unknown sample type: {sample_type}")
+
+        self._msr.samplecnt = self._msr.numsamples
+        self._msr.sampletype = sample_type.encode("ascii")
+
     @property
     def datasamples(self) -> memoryview:
         """Data samples as a memoryview (zero-copy access).
@@ -839,78 +997,7 @@ class MS3Record:
             msr_numsamples = self._msr.numsamples
             msr_samplecnt = self._msr.samplecnt
 
-            # Set up data samples in the MS3Record before packing
-            self._msr.samplecnt = len(data_samples)
-            self._msr.numsamples = len(data_samples)
-
-            # Set sample type (use first character only)
-            self._msr.sampletype = sample_type[0].encode("ascii")
-
-            # Allocate and copy data samples based on type
-            if sample_type == "i":
-                try:
-                    mv = memoryview(data_samples)
-                    if mv.format == "i" and mv.itemsize == 4:
-                        # Compatible format - safe to zero-copy
-                        sample_array = ffi.cast("int32_t *", ffi.from_buffer(data_samples))
-                    else:
-                        raise ValueError("Incompatible buffer format")
-                except (TypeError, ValueError):
-                    # Not compatible or not a buffer - need conversion
-                    sample_array = ffi.new("int32_t[]", [int(sample) for sample in data_samples])
-                self._msr.datasamples = ffi.cast("void *", sample_array)
-                self._msr.datasize = len(data_samples) * 4
-            elif sample_type == "f":
-                try:
-                    mv = memoryview(data_samples)
-                    if mv.format == "f" and mv.itemsize == 4:
-                        # Compatible format - safe to zero-copy
-                        sample_array = ffi.cast("float *", ffi.from_buffer(data_samples))
-                    else:
-                        raise ValueError("Incompatible buffer format")
-                except (TypeError, ValueError):
-                    # Not compatible or not a buffer - need conversion
-                    sample_array = ffi.new("float[]", [float(sample) for sample in data_samples])
-                self._msr.datasamples = ffi.cast("void *", sample_array)
-                self._msr.datasize = len(data_samples) * 4
-            elif sample_type == "d":
-                try:
-                    mv = memoryview(data_samples)
-                    if mv.format == "d" and mv.itemsize == 8:
-                        # Compatible format - safe to zero-copy
-                        sample_array = ffi.cast("double *", ffi.from_buffer(data_samples))
-                    else:
-                        raise ValueError("Incompatible buffer format")
-                except (TypeError, ValueError):
-                    # Not compatible or not a buffer - need conversion
-                    sample_array = ffi.new("double[]", [float(sample) for sample in data_samples])
-                self._msr.datasamples = ffi.cast("void *", sample_array)
-                self._msr.datasize = len(data_samples) * 8
-            elif sample_type == "t":
-                try:
-                    mv = memoryview(data_samples)
-                    if mv.format in ("c", "b", "B") and mv.itemsize == 1:
-                        # Compatible format - safe to zero-copy
-                        sample_array = ffi.cast("char *", ffi.from_buffer(data_samples))
-                    else:
-                        raise ValueError("Incompatible buffer format")
-                except (TypeError, ValueError):
-                    # Not compatible or not a buffer - need conversion
-                    text_data = []
-                    for sample in data_samples:
-                        if isinstance(sample, str):
-                            text_data.append(sample.encode("utf-8")[0])
-                        else:
-                            text_data.append(
-                                int(sample)
-                                if isinstance(sample, (int, float))
-                                else str(sample).encode("utf-8")[0]
-                            )
-                    sample_array = ffi.new("char[]", text_data)
-                self._msr.datasamples = ffi.cast("void *", sample_array)
-                self._msr.datasize = len(data_samples)
-            else:
-                raise ValueError(f"Unknown sample type: {sample_type}")
+            self.set_datasamples(data_samples, sample_type)
 
         packed_records = clibmseed.msr3_pack(
             self._msr,
@@ -923,6 +1010,8 @@ class MS3Record:
 
         # Restore original values if they were replaced
         if data_samples is not None and sample_type is not None:
+            self.set_datasamples(None, None)
+
             self._msr.datasamples = msr_datasamples
             self._msr.sampletype = msr_sampletype
             self._msr.numsamples = msr_numsamples
@@ -932,6 +1021,54 @@ class MS3Record:
             raise MiniSEEDError(packed_records, "Error packing miniSEED record(s)")
 
         return (packed_samples[0], packed_records)
+
+    def to_file(
+        self,
+        filename: str,
+        overwrite: bool = False,
+        verbose: int = 0,
+    ) -> int:
+        """Write data contained in the record to a miniSEED file
+
+        Args:
+            filename: Path to the output miniSEED file. The file will be created if it
+                doesn't exist. Directory must already exist.
+            overwrite: If True, overwrites existing file. If False and file exists,
+                append data to the end of the file. Default is False for safety.
+            verbose: Verbosity level for libmseed output (0=quiet, 1=info, 2=detailed).
+
+        Returns:
+            int: Number of miniSEED records written to the file.
+
+        Raises:
+            MiniSEEDError: If the underlying libmseed library encounters an error during
+                file writing (e.g., permission denied, disk full, invalid data).
+
+        See Also:
+            pack(): For packing data into a record
+            MS3Record: Full record documentation
+        """
+        # Convert filename to bytes (C string)
+        c_filename = ffi.new("char[]", filename.encode("utf-8"))
+
+        # Set flags based on record configuration
+        pack_flags = clibmseed.MSF_FLUSHDATA  # Pack all available data
+        if self._msr.formatversion == 2:
+            pack_flags |= clibmseed.MSF_PACKVER2  # Force miniSEED version 2 format
+
+        # Call the C function
+        packed_records = clibmseed.msr3_writemseed(
+            self._msr,
+            c_filename,
+            overwrite,
+            pack_flags,
+            verbose,
+        )
+
+        if packed_records < 0:
+            raise MiniSEEDError(packed_records, "Error writing miniSEED file")
+
+        return packed_records
 
     @classmethod
     def from_file(cls, filename, **kwargs):

@@ -84,13 +84,13 @@ def test_msrecord_pack():
 
     # Test populating an MS3Record object with setters
     msr = MS3Record()
-    msr.reclen = 512
     msr.sourceid = "FDSN:XX_TEST__B_S_X"
+    msr.reclen = 512
     msr.formatversion = 3
     msr.flags = 0x04  # Set the 4th bit (clock locked) to 1
     msr.set_starttime_str("2023-01-02T01:02:03.123456789Z")
     msr.samprate = 50.0
-    msr.encoding = DataEncoding.STEIM2  # value of 11
+    msr.encoding = DataEncoding.STEIM2
     msr.pubversion = 1
     msr.extra = json.dumps({"FDSN": {"Time": {"Quality": 80}}})
 
@@ -141,3 +141,43 @@ def test_msrecord_pack():
     msr.starttime_seconds = 1672621323.987654321
     assert msr.starttime == 1672621323987654000
     assert msr.starttime_seconds == 1672621323.987654
+
+
+def test_msrecord_to_file(tmp_path):
+    """Test MS3Record.to_file() method using pytest's tmp_path fixture."""
+    # Create a new MS3Record object
+    msr = MS3Record()
+    msr.sourceid = "FDSN:XX_TEST__B_S_X"
+    msr.reclen = 512
+    msr.formatversion = 3
+    msr.flags = 0x04  # Set the 4th bit (clock locked) to 1
+    msr.set_starttime_str("2023-01-02T01:02:03.123456789Z")
+    msr.samprate = 50.0
+    msr.encoding = DataEncoding.STEIM2
+    msr.pubversion = 1
+    msr.extra = json.dumps({"FDSN": {"Time": {"Quality": 80}}})
+
+    msr.set_datasamples(sine_500, "i")
+
+    # Use pytest's tmp_path fixture to create a temporary file
+    temp_file = tmp_path / "test_output.mseed"
+
+    # Write using to_file method
+    records_written = msr.to_file(str(temp_file), overwrite=True)
+
+    # Disconnect the data samples from the record
+    msr.set_datasamples(None, None)
+
+    # Verify number of records written
+    assert records_written == 1
+
+    # Verify file was created and has content
+    assert temp_file.exists()
+    assert temp_file.stat().st_size > 0
+
+    # Compare created file to reference file
+    with open(test_pack3, "rb") as f:
+        reference_data = f.read()
+        with open(temp_file, "rb") as f:
+            test_data = f.read()
+            assert reference_data == test_data

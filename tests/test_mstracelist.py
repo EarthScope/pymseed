@@ -390,16 +390,16 @@ def test_mstracelist_to_file(tmp_path):
     temp_file = tmp_path / "test_output.mseed3"
 
     # Write using to_file method
-    result = traces.to_file(
+    records_written = traces.to_file(
         str(temp_file), overwrite=True, format_version=2, max_reclen=512
     )
+
+    # Verify number of records written
+    assert records_written == 5
 
     # Verify file was created and has content
     assert temp_file.exists()
     assert temp_file.stat().st_size > 0
-
-    # Verify number of records written
-    assert result == 5
 
     # Compare created file to reference file
     with open(test_pack2, "rb") as f:

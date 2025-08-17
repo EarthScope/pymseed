@@ -3,6 +3,8 @@ Core trace list implementation for pymseed
 
 """
 
+from __future__ import annotations
+
 from collections.abc import Sequence
 from typing import Any, Optional, Callable
 
@@ -1012,90 +1014,8 @@ class MS3TraceList:
                 "Must specify one of start_time_str, start_time, or start_time_seconds"
             )
 
-        # Set sample count and type
-        msr._msr.samplecnt = len(data_samples)
-        msr._msr.numsamples = len(data_samples)
-
-        if sample_type == "i":
-            msr._msr.sampletype = b"i"
-            msr.encoding = DataEncoding.INT32
-        elif sample_type == "f":
-            msr._msr.sampletype = b"f"
-            msr.encoding = DataEncoding.FLOAT32
-        elif sample_type == "d":
-            msr._msr.sampletype = b"d"
-            msr.encoding = DataEncoding.FLOAT64
-        elif sample_type == "t":
-            msr._msr.sampletype = b"t"
-            msr.encoding = DataEncoding.TEXT
-        else:
-            raise ValueError(f"Unknown sample type: {sample_type}")
-
-        # Allocate and copy data samples based on type
-        if sample_type == "i":
-            try:
-                mv = memoryview(data_samples)
-                if mv.format == "i" and mv.itemsize == 4:
-                    # Compatible format - safe to zero-copy
-                    sample_array = ffi.cast("int32_t *", ffi.from_buffer(data_samples))
-                else:
-                    raise ValueError("Incompatible buffer format")
-            except (TypeError, ValueError):
-                # Not compatible or not a buffer - need conversion
-                sample_array = ffi.new("int32_t[]", [int(sample) for sample in data_samples])
-            msr._msr.datasamples = ffi.cast("void *", sample_array)
-            msr._msr.datasize = len(data_samples) * 4
-        elif sample_type == "f":
-            try:
-                mv = memoryview(data_samples)
-                if mv.format == "f" and mv.itemsize == 4:
-                    # Compatible format - safe to zero-copy
-                    sample_array = ffi.cast("float *", ffi.from_buffer(data_samples))
-                else:
-                    raise ValueError("Incompatible buffer format")
-            except (TypeError, ValueError):
-                # Not compatible or not a buffer - need conversion
-                sample_array = ffi.new("float[]", [float(sample) for sample in data_samples])
-            msr._msr.datasamples = ffi.cast("void *", sample_array)
-            msr._msr.datasize = len(data_samples) * 4
-        elif sample_type == "d":
-            try:
-                mv = memoryview(data_samples)
-                if mv.format == "d" and mv.itemsize == 8:
-                    # Compatible format - safe to zero-copy
-                    sample_array = ffi.cast("double *", ffi.from_buffer(data_samples))
-                else:
-                    raise ValueError("Incompatible buffer format")
-            except (TypeError, ValueError):
-                # Not compatible or not a buffer - need conversion
-                sample_array = ffi.new("double[]", [float(sample) for sample in data_samples])
-            msr._msr.datasamples = ffi.cast("void *", sample_array)
-            msr._msr.datasize = len(data_samples) * 8
-        elif sample_type == "t":
-            try:
-                mv = memoryview(data_samples)
-                if mv.format in ("c", "b", "B") and mv.itemsize == 1:
-                    # Compatible format - safe to zero-copy
-                    sample_array = ffi.cast("char *", ffi.from_buffer(data_samples))
-                else:
-                    raise ValueError("Incompatible buffer format")
-            except (TypeError, ValueError):
-                # Not compatible or not a buffer - need conversion
-                text_data = []
-                for sample in data_samples:
-                    if isinstance(sample, str):
-                        text_data.append(sample.encode("utf-8")[0])
-                    else:
-                        text_data.append(
-                            int(sample)
-                            if isinstance(sample, (int, float))
-                            else str(sample).encode("utf-8")[0]
-                        )
-                sample_array = ffi.new("char[]", text_data)
-            msr._msr.datasamples = ffi.cast("void *", sample_array)
-            msr._msr.datasize = len(data_samples)
-        else:
-            raise ValueError(f"Unknown sample type: {sample_type}")
+        # Set data samples array, type, and counts
+        msr.set_datasamples(data_samples, sample_type)
 
         # Request storing time of update in the trace list segment (at seg.prvtptr)
         flags = clibmseed.MSF_PPUPDATETIME
@@ -1106,7 +1026,7 @@ class MS3TraceList:
         )
 
         # Disconnect data sample memory from the MS3Record
-        msr._msr.datasamples = ffi.NULL
+        msr.set_datasamples(None, None)
 
         if segptr == ffi.NULL:
             raise MiniSEEDError(clibmseed.MS_GENERROR, "Error adding data samples")
@@ -1251,13 +1171,13 @@ class MS3TraceList:
         Args:
             filename: Path to the output miniSEED file. The file will be created if it
                 doesn't exist. Directory must already exist.
-            overwrite: If True, overwrites existing file. If False and file exists,
-                raises an error. Default is False for safety.
+            overwrite: If True, overwrites any existing file. If False and file exists,
+                append data to the end of the file. Default is False for safety.
             max_reclen: Maximum record length in bytes. Must be a power of 2 between
                 128 and 65536. Common values are 512, 4096, and 8192. Default is 4096.
             encoding: Data encoding format for compression. Options include:
                 - DataEncoding.STEIM1: Steim-1 compression (default, good general purpose for 32-bit ints)
-                - DataEncoding.STEIM2: Steim-2 compression (better for smooth data)
+                - DataEncoding.STEIM2: Steim-2 compression
                 - DataEncoding.INT16: 16-bit integers (no compression)
                 - DataEncoding.INT32: 32-bit integers (no compression)
                 - DataEncoding.FLOAT32: 32-bit IEEE floats
@@ -1274,7 +1194,6 @@ class MS3TraceList:
             ValueError: If format_version is not 2 or 3, or if max_reclen is invalid.
             MiniSEEDError: If the underlying libmseed library encounters an error during
                 file writing (e.g., permission denied, disk full, invalid data).
-            FileExistsError: If file exists and overwrite=False.
 
         Examples:
             Simple file writing:
@@ -1324,7 +1243,7 @@ class MS3TraceList:
                 pack_flags |= clibmseed.MSF_PACKVER2
 
         # Call the C function
-        result = clibmseed.mstl3_writemseed(
+        packed_records = clibmseed.mstl3_writemseed(
             self._mstl,
             c_filename,
             overwrite,
@@ -1334,10 +1253,10 @@ class MS3TraceList:
             verbose,
         )
 
-        if result < 0:
-            raise MiniSEEDError(result, "Error writing miniSEED file")
+        if packed_records < 0:
+            raise MiniSEEDError(packed_records, "Error writing miniSEED file")
 
-        return result
+        return packed_records
 
     @classmethod
     def from_file(cls, filename, **kwargs):

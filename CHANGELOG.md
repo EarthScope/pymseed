@@ -9,21 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - List-like access to trace IDs in MS3TraceList (indexing, slicing, iteration)
 - List-like access to segments in MS3TraceID (indexing, slicing, iteration)
-- Add MS3Record.from_file() and MS3Record.from_buffer() for convenience
-- Add MS3TraceList.from_file() for consistency and future flexibility
-- Add MS3TraceList.to_file() for writing miniSEED
-- Add MS3TraceSeg.has_same_data() for comparison
-- Add docstring documentation including examples
+- MS3Record.set_datasamples() to set internal sample buffer, type, counts
+- MS3Record.from_file() and MS3Record.from_buffer() for convenience
+- MS3TraceList.from_file() for consistency and future flexibility
+- MS3TraceList.to_file() for writing miniSEED
+- MS3TraceSeg.has_same_data() for comparison
+- docstring documentation including examples
 
 ### Changed
 - Rename MS3TraceList.read_file() to MS3TraceList.add_file() for clarity
 
 ### Removed
-- Remove MS3TraceList.numtraces in favor of supporting len() directly
-- Remove MS3TraceList.traceids() in favor of supporting iteration directly
-- Remove MS3TraceID.numsegments in favor of supporting len() directly
-- Remove MS3TraceID.segments() in favor of supporting iteration directly
-- Remove MS3TraceList.read_files() as unnecessary
+- MS3TraceList.numtraces in favor of supporting len() directly
+- MS3TraceList.traceids() in favor of supporting iteration directly
+- MS3TraceID.numsegments in favor of supporting len() directly
+- MS3TraceID.segments() in favor of supporting iteration directly
+- MS3TraceList.read_files() as unnecessary
 
 ## [0.0.1] - 2024-8-5
 ### Added
