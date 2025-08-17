@@ -157,16 +157,12 @@ def test_msrecord_to_file(tmp_path):
     msr.pubversion = 1
     msr.extra = json.dumps({"FDSN": {"Time": {"Quality": 80}}})
 
-    msr.set_datasamples(sine_500, "i")
-
     # Use pytest's tmp_path fixture to create a temporary file
     temp_file = tmp_path / "test_output.mseed"
 
-    # Write using to_file method
-    records_written = msr.to_file(str(temp_file), overwrite=True)
-
-    # Disconnect the data samples from the record
-    msr.set_datasamples(None, None)
+    with msr.with_datasamples(sine_500, "i"):
+        # Write using to_file method
+        records_written = msr.to_file(str(temp_file), overwrite=True)
 
     # Verify number of records written
     assert records_written == 1

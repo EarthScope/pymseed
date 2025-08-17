@@ -1014,19 +1014,15 @@ class MS3TraceList:
                 "Must specify one of start_time_str, start_time, or start_time_seconds"
             )
 
-        # Set data samples array, type, and counts
-        msr.set_datasamples(data_samples, sample_type)
-
         # Request storing time of update in the trace list segment (at seg.prvtptr)
         flags = clibmseed.MSF_PPUPDATETIME
 
-        # Add the MS3Record to the trace list, setting auto-heal flag to 1 (true)
-        segptr = clibmseed.mstl3_addmsr_recordptr(
-            self._mstl, msr._msr, ffi.NULL, 0, 1, flags, ffi.NULL
-        )
-
-        # Disconnect data sample memory from the MS3Record
-        msr.set_datasamples(None, None)
+        # Set data samples array, type, and counts temporarily for potential zero-copy operations
+        with msr.with_datasamples(data_samples, sample_type):
+            # Add the MS3Record to the trace list, setting auto-heal flag to 1 (true)
+            segptr = clibmseed.mstl3_addmsr_recordptr(
+                self._mstl, msr._msr, ffi.NULL, 0, 1, flags, ffi.NULL
+            )
 
         if segptr == ffi.NULL:
             raise MiniSEEDError(clibmseed.MS_GENERROR, "Error adding data samples")
