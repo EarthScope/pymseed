@@ -1,62 +1,96 @@
 #!/usr/bin/env python3
-#
-# Read miniSEED file(s) using the pymseed package and decode
-# data samples directly into NumPy arrays.
-#
-# The data are organized into a list of dictionaries, one for
-# each contiguous trace of data.  The dictionaries contain very
-# basic metadata and a NumPy array of data samples.  This data
-# structure is for illustration only, and would like need
-# adaptation for a real application.
-#
-# This file is part of the pymseed package.
-# Copyright (c) 2025, EarthScope Data Services
+"""
+Read miniSEED files and convert data samples to NumPy arrays.
 
-import os
+This example demonstrates how to:
+- Read miniSEED files using pymseed
+- Extract data samples as NumPy arrays
+- Access basic trace metadata
+
+Usage: python read_numpy.py [file1.mseed] [file2.mseed] ...
+"""
+
+import argparse
 import sys
-import pprint
+
+import numpy as np
 from pymseed import MS3TraceList, sourceid2nslc
 
-input_files = []
 
-# Verify that input files are readable
-for arg in sys.argv[1:]:
-    if os.access(arg, os.R_OK):
-        input_files.append(arg)
-    else:
-        sys.exit("Cannot read file: %s" % arg)
+def read_traces_to_numpy(input_files):
+    """Read miniSEED files and return list of trace data with NumPy arrays."""
+    trace_data = []
+    traces = MS3TraceList()
 
-if not input_files:
-    sys.exit("No input files specified")
+    # Read all files, explicitly not unpacking data samples and creating a record list
+    for filename in input_files:
+        print(f"Reading: {filename}")
+        try:
+            traces.add_file(filename, unpack_data=False, record_list=True)
+        except Exception as e:
+            print(f"Warning: Could not read {filename}: {e}")
+            continue
 
-# List of dictionaries for each trace
-trace_info = []
+    # Extract data for each trace segment, creating a NumPy array from the record list
+    for trace_id in traces:
+        for segment in trace_id:
+            try:
+                # Create and populate a NumPy array from the record list
+                data_array = segment.create_numpy_array_from_recordlist()
 
-traces = MS3TraceList()
+                # Organize trace information
+                trace_entry = {
+                    "source_id": trace_id.sourceid,
+                    "network_station_location_channel": sourceid2nslc(trace_id.sourceid),
+                    "start_time": segment.starttime_str(),
+                    "end_time": segment.endtime_str(),
+                    "sample_rate_hz": segment.samprate,
+                    "num_samples": len(data_array),
+                    "data_samples": data_array,
+                }
 
-# Read all input files, creating record lists and _not_ unpacking data samples
-for file in input_files:
-    print("Reading file: %s" % file)
-    traces.read_file(file, unpack_data=False, record_list=True)
+                trace_data.append(trace_entry)
 
-for traceid in traces:
-    for segment in traceid:
-        # Create a numpy array containing the data samples of this segment
-        data_samples = segment.create_numpy_array_from_recordlist()
+            except Exception as e:
+                print(f"Warning: Could not process segment for {trace_id.sourceid}: {e}")
+                continue
 
-        # Create a dictionary entry for the trace with basic metadata
-        info = {
-            "sourceid": traceid.sourceid,
-            "NSLC": sourceid2nslc(traceid.sourceid),
-            "publication_version": traceid.pubversion,
-            "start_time": segment.starttime_str(),
-            "end_time": segment.endtime_str(),
-            "sample_rate": segment.samprate,
-            "data_samples": data_samples,
-        }
+    return trace_data
 
-        trace_info.append(info)
 
-# Pretty print the trace list
-pp = pprint.PrettyPrinter(indent=4, sort_dicts=False)
-pp.pprint(trace_info)
+if __name__ == "__main__":
+    # Simple argparse setup
+    parser = argparse.ArgumentParser(description="Read miniSEED files and convert to NumPy arrays")
+    parser.add_argument('files', nargs='*', help='miniSEED files to read')
+    args = parser.parse_args()
+
+    # Check if files were provided
+    if not args.files:
+        parser.print_help()
+        sys.exit(1)
+
+    input_files = args.files
+
+    # Read traces and convert to NumPy arrays
+    trace_data = read_traces_to_numpy(input_files)
+
+    if not trace_data:
+        sys.exit("No trace data found")
+
+    # Display trace information
+    print(f"\nFound {len(trace_data)} trace segments:")
+    print("-" * 80)
+
+    for trace in trace_data:
+        nslc = trace["network_station_location_channel"]
+        data = trace["data_samples"]
+
+        print(f"Trace {trace['source_id']}, NSLC: {nslc[0]}.{nslc[1]}.{nslc[2]}.{nslc[3]}")
+        print(f"  Time: {trace['start_time']} to {trace['end_time']}")
+        print(f"  Sample rate: {trace['sample_rate_hz']} Hz")
+        print(f"  Samples: {trace['num_samples']:,}")
+
+        # Basic NumPy statistics
+        print(f"  Data range: {np.min(data):.2f} to {np.max(data):.2f}")
+        print(f"  Mean: {np.mean(data):.2f}, Std: {np.std(data):.2f}")
+        print()

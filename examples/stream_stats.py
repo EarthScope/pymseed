@@ -5,54 +5,84 @@
 # stats are printed to stderr on completion.
 #
 # Example usage:
-#  cat input.mseed | stream_stats.py > output.mseed
+#  cat example_data.mseed | stream_stats.py > output.mseed
 #
-# This file is part of the Python pymseed module.
+# This file is part of the pymseed package.
 # Copyright (c) 2025, EarthScope Data Services
 
-import sys
 import pprint
-from collections import defaultdict
-from pymseed import MS3RecordReader, nstime2timestr
+import sys
 
-# Container for trace stats
-trace_stats = {}
+from pymseed import MS3Record, nstime2timestr
 
-print("Reading miniSEED from stdin, writing to stdout", file=sys.stderr)
 
-# Read miniSEED from stdin
-with MS3RecordReader(sys.stdin.fileno()) as msreader:
-    for msr in msreader:
-        stats = trace_stats.setdefault(msr.sourceid, defaultdict(int))
+def create_initial_stats():
+    """Create a new stats dictionary with default values."""
+    return {
+        "record_count": 0,
+        "sample_count": 0,
+        "bytes": 0,
+        "pubversions": [],
+        "formatversions": [],
+        "earliest": None,
+        "latest": None,
+    }
 
-        stats["record_count"] += 1
-        stats["sample_count"] += msr.samplecnt
-        stats["bytes"] += msr.reclen
 
-        # Track publication versions
-        if msr.pubversion not in stats.setdefault("pubversions", []):
-            stats["pubversions"].append(msr.pubversion)
+def update_stats(stats, record):
+    """Update statistics with data from a miniSEED record."""
+    # Update counters
+    stats["record_count"] += 1
+    stats["sample_count"] += record.samplecnt
+    stats["bytes"] += record.reclen
 
-        # Track format versions
-        if msr.formatversion not in stats.setdefault("formatversions", []):
-            stats["formatversions"].append(msr.formatversion)
+    # Track unique publication versions
+    if record.pubversion not in stats["pubversions"]:
+        stats["pubversions"].append(record.pubversion)
 
-        # Track earliest sample time
-        if "earliest" not in stats or msr.starttime > stats["earliest"]:
-            stats["earliest"] = msr.starttime
+    # Track unique format versions
+    if record.formatversion not in stats["formatversions"]:
+        stats["formatversions"].append(record.formatversion)
 
-        # Track latest sample time
-        if "latest" not in stats or msr.endtime > stats["latest"]:
-            stats["latest"] = msr.endtime
+    # Track earliest sample time (fix: should use < for earliest)
+    if stats["earliest"] is None or record.starttime < stats["earliest"]:
+        stats["earliest"] = record.starttime
 
-        # Write raw miniSEED record to stdout
-        sys.stdout.buffer.write(msr.record)
+    # Track latest sample time (fix: should use > for latest)
+    if stats["latest"] is None or record.endtime > stats["latest"]:
+        stats["latest"] = record.endtime
 
-# Traverse trace stats and add date-time string values for earliest and latest
-for stats in trace_stats.values():
-    stats["earliest_str"] = nstime2timestr(stats["earliest"])
-    stats["latest_str"] = nstime2timestr(stats["latest"])
 
-# Pretty print stats to stderr (to avoid mixing with stdout)
-pp = pprint.PrettyPrinter(stream=sys.stderr, indent=4, sort_dicts=False)
-pp.pprint(trace_stats)
+def main():
+    """Main processing function."""
+    trace_stats = {}
+
+    print("Reading miniSEED from stdin, writing to stdout", file=sys.stderr)
+
+    # Read miniSEED from stdin and process each record
+    with MS3Record.from_file(sys.stdin.fileno()) as reader:
+        for record in reader:
+            # Get or create stats for this source ID
+            if record.sourceid not in trace_stats:
+                trace_stats[record.sourceid] = create_initial_stats()
+
+            # Update statistics for this trace
+            update_stats(trace_stats[record.sourceid], record)
+
+            # Write raw miniSEED record to stdout
+            sys.stdout.buffer.write(record.record)
+
+    # Add human-readable time strings
+    for stats in trace_stats.values():
+        if stats["earliest"] is not None:
+            stats["earliest_str"] = nstime2timestr(stats["earliest"])
+        if stats["latest"] is not None:
+            stats["latest_str"] = nstime2timestr(stats["latest"])
+
+    # Print statistics to stderr
+    printer = pprint.PrettyPrinter(stream=sys.stderr, indent=4, sort_dicts=False)
+    printer.pprint(trace_stats)
+
+
+if __name__ == "__main__":
+    main()
