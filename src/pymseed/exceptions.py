@@ -1,4 +1,5 @@
 from typing import Optional
+
 from .util import error_string
 
 

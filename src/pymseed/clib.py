@@ -3,13 +3,13 @@ Core library interface for pymseed using CFFI
 
 """
 
-from typing import Optional, Any
-
+from typing import Any, Optional
 
 try:
     # This is the correct pattern: import the ffi and lib objects
     # directly FROM the compiled _libmseed_cffi module.
-    from ._libmseed_cffi import ffi, lib as clibmseed
+    from ._libmseed_cffi import ffi
+    from ._libmseed_cffi import lib as clibmseed  # noqa: F401
 
 except ImportError as exc:
     # The friendly error message is still a good idea.

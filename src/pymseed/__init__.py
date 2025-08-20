@@ -1,23 +1,21 @@
 from .__version__ import __version__
 from .clib import clibmseed, ffi
-
 from .definitions import (
     DataEncoding,
-    TimeFormat,
     SubSecond,
+    TimeFormat,
 )
-
 from .exceptions import MiniSEEDError
 from .msrecord import MS3Record
-from .msrecord_reader import MS3RecordReader
 from .msrecord_buffer_reader import MS3RecordBufferReader
+from .msrecord_reader import MS3RecordReader
 from .mstracelist import MS3TraceList
 from .util import (
-    nstime2timestr,
-    timestr2nstime,
-    sourceid2nslc,
     nslc2sourceid,
+    nstime2timestr,
     sample_time,
+    sourceid2nslc,
+    timestr2nstime,
 )
 
 libmseed_version = ffi.string(clibmseed.LIBMSEED_VERSION).decode('utf-8')

@@ -6,13 +6,13 @@ Core trace list implementation for pymseed
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any, Optional, Callable
+from typing import Any, Callable, Optional
 
-from .clib import clibmseed, ffi, cdata_to_string
+from .clib import cdata_to_string, clibmseed, ffi
 from .definitions import DataEncoding, SubSecond, TimeFormat
 from .exceptions import MiniSEEDError
 from .msrecord import MS3Record
-from .util import nstime2timestr, encoding_sizetype
+from .util import encoding_sizetype, nstime2timestr
 
 
 class MS3RecordPtr:
@@ -100,7 +100,8 @@ class MS3RecordList:
                 indent_repr(self[-1]),
             ]
 
-        return f"MS3RecordList(recordcnt: {len(self)}\n{'\n'.join(formatted_lines)}\n)"
+        newline = "\n"
+        return f"MS3RecordList(recordcnt: {len(self)}\n{newline.join(formatted_lines)}\n)"
 
     def __str__(self) -> str:
         def indent_str(thing):
@@ -119,7 +120,8 @@ class MS3RecordList:
                 indent_str(self[-1]),
             ]
 
-        return f"Record list with {len(self)} records\n{'\n'.join(formatted_lines)}"
+        newline = "\n"
+        return f"Record list with {len(self)} records\n{newline.join(formatted_lines)}"
 
     def __len__(self) -> int:
         """Return number of records"""
@@ -567,7 +569,7 @@ class MS3TraceSeg:
                         else len(buffer)
                     )
                 except (TypeError, AttributeError):
-                    raise ValueError("Buffer must support the buffer protocol")
+                    raise ValueError("Buffer must support the buffer protocol") from None
 
         status = clibmseed.mstl3_unpack_recordlist(
             self._parent_id,
@@ -582,7 +584,7 @@ class MS3TraceSeg:
         else:
             return status
 
-    def has_same_data(self, other: "MS3TraceSeg") -> bool:
+    def has_same_data(self, other: MS3TraceSeg) -> bool:
         """Compare trace segments for equivalent data
 
         Args:
@@ -637,13 +639,14 @@ class MS3TraceID:
                 indent_repr(self[-1]),
             ]
 
+        newline = "\n"
         return (
             f"MS3TraceID(sourceid: {self.sourceid}\n"
             f"         pubversion: {self.pubversion}\n"
             f"         earliest: {self.earliest_str(timeformat=TimeFormat.ISOMONTHDAY_DOY_Z)}\n"
             f"         latest: {self.latest_str(timeformat=TimeFormat.ISOMONTHDAY_DOY_Z)}\n"
             f"         numsegments: {len(self)}\n"
-            f"{'\n'.join(formatted_lines)}"
+            f"{newline.join(formatted_lines)}"
             "\n)"
         )
 
@@ -867,10 +870,8 @@ class MS3TraceList:
                 indent_repr(self[-1]),
             ]
 
-        return (f"MS3TraceList(numtraceids: {len(self)}\n"
-                f"{'\n'.join(formatted_lines)}\n"
-                ")"
-        )
+        newline = "\n"
+        return f"MS3TraceList(numtraceids: {len(self)}\n{newline.join(formatted_lines)}\n)"
 
     def __str__(self) -> str:
         def indent_str(thing):
@@ -889,7 +890,8 @@ class MS3TraceList:
                 indent_str(self[-1]),
             ]
 
-        return f"Trace list with {len(self)} trace IDs\n{'\n'.join(formatted_lines)}\n"
+        newline = "\n"
+        return f"Trace list with {len(self)} trace IDs\n{newline.join(formatted_lines)}\n"
 
     def __len__(self) -> int:
         """Return number of trace IDs in the list"""

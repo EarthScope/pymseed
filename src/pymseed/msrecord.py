@@ -8,8 +8,8 @@ from collections.abc import Sequence
 from contextlib import contextmanager
 from typing import Any, Callable, Optional, Union
 
-from .clib import clibmseed, ffi, cdata_to_string
-from .definitions import DataEncoding, SubSecond, TimeFormat
+from .clib import cdata_to_string, clibmseed, ffi
+from .definitions import SubSecond, TimeFormat
 from .exceptions import MiniSEEDError
 from .util import encoding_string, nstime2timestr, timestr2nstime
 
@@ -42,6 +42,7 @@ class MS3Record:
             FDSN:IU_COLA_00_L_H_1: 135 samples
 
         Creating and writing records:
+            >>> from pymseed import MS3Record, DataEncoding
             >>> record = MS3Record()
             >>> record.sourceid = "FDSN:NET_STA_LOC_B_S_s"
             >>> record.starttime_str = "2024-01-01T00:00:00Z"
@@ -454,7 +455,7 @@ class MS3Record:
             int: Encoding format code
 
         Examples:
-            >>> from pymseed import MS3Record
+            >>> from pymseed import MS3Record, DataEncoding
             >>> record = MS3Record()
             >>> record.encoding = DataEncoding.STEIM2
             >>> record.encoding = DataEncoding.FLOAT32
@@ -780,7 +781,7 @@ class MS3Record:
         Examples:
             Setting data samples for packing:
 
-            >>> from pymseed import MS3Record
+            >>> from pymseed import MS3Record, DataEncoding
             >>> record = MS3Record()
             >>> record.sourceid = "FDSN:XX_TEST__L_S_X"
             >>> record.reclen = 512
@@ -961,6 +962,7 @@ class MS3Record:
             ValueError: If sample_type is invalid or data format is incompatible
 
         Examples:
+            >>> from pymseed import MS3Record, DataEncoding
             >>> # Write to file
             >>> def file_handler(record_bytes, file_handle):
             ...     file_handle.write(record_bytes)

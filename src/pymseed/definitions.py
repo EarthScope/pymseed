@@ -11,7 +11,7 @@ from enum import IntEnum
 try:
     from .clib import clibmseed
 except ImportError:
-    raise ImportError("CFFI interface not available. Please build the CFFI interface first.")
+    raise ImportError("CFFI interface not available. Please build the CFFI interface first.") from None
 
 
 class DataEncoding(IntEnum):

@@ -3,7 +3,8 @@ Core utility functions for pymseed
 
 """
 
-from typing import Optional, Union
+from typing import Optional
+
 from .clib import cdata_to_string, clibmseed, ffi
 from .definitions import SubSecond, TimeFormat
 
