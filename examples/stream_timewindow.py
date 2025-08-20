@@ -75,14 +75,14 @@ def trim_record(record, earliest, latest):
     # Re-parse the record and decode the data samples
     buffer = bytearray(record.record)  # Mutable/writable buffer required
     with MS3Record.from_buffer(buffer, unpack_data=True) as msreader:
-        msr = msreader.read()
+        record = msreader.read()
 
-        trimmed_data = _trim_data_samples(msr, earliest, latest)
+        trimmed_data = _trim_data_samples(record, earliest, latest)
         if not trimmed_data:
             return None
 
         # Pack the trimmed record
-        return _pack_trimmed_record(msr, trimmed_data)
+        return _pack_trimmed_record(record, trimmed_data)
 
 
 def _trim_data_samples(record, earliest, latest):

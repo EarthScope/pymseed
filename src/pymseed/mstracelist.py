@@ -23,13 +23,24 @@ class MS3RecordPtr:
 
     def __repr__(self) -> str:
         return (
-            f"Pointer to {self.msr.sourceid}, "
+            f"MS3RecordPtr(sourceid: {self.record.sourceid}\n"
+            f"             filename: {cdata_to_string(self._ptr.filename)}\n"
+            f"           fileoffset: {self._ptr.fileoffset}\n"
+            f"               reclen: {self._ptr.msr.reclen}\n"
+            f"            starttime: {self.record.starttime_str(timeformat=TimeFormat.ISOMONTHDAY_Z)}\n"
+            f"              endtime: {self.record.endtime_str(timeformat=TimeFormat.ISOMONTHDAY_Z)}\n"
+            ")"
+        )
+
+    def __str__(self) -> str:
+        return (
+            f"{self.record.sourceid}, "
             f"{cdata_to_string(self._ptr.filename)}, "
             f"byte offset: {self._ptr.fileoffset}"
         )
 
     @property
-    def msr(self) -> MS3Record:
+    def record(self) -> MS3Record:
         """Return a constructed MS3Record"""
         if not hasattr(self, "_msrecord"):
             self._msrecord = MS3Record(recordptr=self._ptr.msr)
@@ -60,13 +71,96 @@ class MS3RecordPtr:
 
 
 class MS3RecordList:
-    """Wrapper around CFFI MS3RecordList structure"""
+    """Wrapper around CFFI MS3RecordList structure
+
+    This class supports list-like access to the record pointers:
+    - len(record_list) returns the number of records
+    - record_list[i] returns the i-th record pointer
+    - record_list[start:end] returns a slice of record pointers
+    - for record_ptr in record_list: iterates over all record pointers
+    """
 
     def __init__(self, cffi_ptr: Any) -> None:
         self._list = cffi_ptr
 
     def __repr__(self) -> str:
-        return f"Record list of {self._list.recordcnt} records"
+        def indent_repr(thing):
+            """Add two-space indentation to each line of repr(thing)"""
+            return "\n".join("  " + line for line in repr(thing).split("\n"))
+
+        # Create list of formatted strings
+        if len(self) <= 5:
+            formatted_lines = [indent_repr(recptr) for recptr in self]
+        else:
+            formatted_lines = [
+                indent_repr(self[0]),
+                indent_repr(self[1]),
+                f"  ... {len(self) - 4} more",
+                indent_repr(self[-2]),
+                indent_repr(self[-1]),
+            ]
+
+        return f"MS3RecordList(recordcnt: {len(self)}\n{'\n'.join(formatted_lines)}\n)"
+
+    def __str__(self) -> str:
+        def indent_str(thing):
+            """Add two-space indentation to each line of str(thing)"""
+            return "\n".join("  " + line for line in str(thing).split("\n"))
+
+        # Create list of formatted strings
+        if len(self) <= 5:
+            formatted_lines = [indent_str(recptr) for recptr in self]
+        else:
+            formatted_lines = [
+                indent_str(self[0]),
+                indent_str(self[1]),
+                f"  ... {len(self) - 4} more",
+                indent_str(self[-2]),
+                indent_str(self[-1]),
+            ]
+
+        return f"Record list with {len(self)} records\n{'\n'.join(formatted_lines)}"
+
+    def __len__(self) -> int:
+        """Return number of records"""
+        return self._list.recordcnt
+
+    def __iter__(self) -> Any:
+        """Return iterator over record pointers"""
+        current_record = self._list.first
+        while current_record != ffi.NULL:
+            yield MS3RecordPtr(current_record)
+            current_record = current_record.next
+
+    def __getitem__(self, key: int | slice) -> Any:
+        """Enable indexing and slicing access to record pointers"""
+        if isinstance(key, slice):
+            # Handle slice objects (e.g., record_list[1:3], record_list[::2])
+            record_list = list(self)
+            return record_list[key]
+        elif isinstance(key, int):
+            # Handle single integer index
+            length = len(self)
+            if length == 0:
+                raise IndexError("list index out of range")
+
+            # Handle negative indices
+            if key < 0:
+                key += length
+
+            # Check bounds
+            if key < 0 or key >= length:
+                raise IndexError("list index out of range")
+
+            # Find and return the record at the specified index
+            for i, record in enumerate(self):
+                if i == key:
+                    return record
+
+            # This shouldn't happen if our logic is correct
+            raise IndexError("list index out of range")
+        else:
+            raise TypeError("indices must be integers or slices")
 
     @property
     def recordcnt(self) -> int:
@@ -92,9 +186,32 @@ class MS3TraceSeg:
         self._parent_tracelist = parent_tracelist  # Reference to parent MS3TraceList
 
     def __repr__(self) -> str:
+        sample_preview = "[]"
+        if self.numsamples > 0:
+            if len(self.datasamples) > 5:
+                # Create array representation with ellipsis inside: [1,2,3,4,5,...]
+                first_samples = ", ".join(str(sample) for sample in list(self.datasamples[:5]))
+                sample_preview = f"[{first_samples}, ...]"
+            else:
+                sample_preview = str(list(self.datasamples))
+
         return (
-            f"start: {self.starttime_str()}, "
-            f"end: {self.endtime_str()}, "
+            f"MS3TraceSeg(start: {self.starttime_str(timeformat=TimeFormat.ISOMONTHDAY_DOY_Z)}\n"
+            f"              end: {self.endtime_str(timeformat=TimeFormat.ISOMONTHDAY_DOY_Z)}\n"
+            f"         samprate: {self.samprate}\n"
+            f"        samplecnt: {self.samplecnt}\n"
+            f"      datasamples: {sample_preview}\n"
+            f"         datasize: {self.datasize}\n"
+            f"       numsamples: {self.numsamples}\n"
+            f"       sampletype: {self.sampletype}\n"
+            f"       recordlist: {'Record list of ' + str(len(self.recordlist)) + ' records' if self.recordlist else 'None'}\n"
+            ")"
+        )
+
+    def __str__(self) -> str:
+        return (
+            f"start: {self.starttime_str(timeformat=TimeFormat.ISOMONTHDAY_DOY_Z)}, "
+            f"end: {self.endtime_str(timeformat=TimeFormat.ISOMONTHDAY_DOY_Z)}, "
             f"samprate: {self.samprate}, "
             f"samples: {self.samplecnt} "
         )
@@ -504,11 +621,39 @@ class MS3TraceID:
         self._parent_tracelist = parent_tracelist
 
     def __repr__(self) -> str:
+        def indent_repr(thing):
+            """Add two-space indentation to each line of repr(thing)"""
+            return "\n".join("  " + line for line in repr(thing).split("\n"))
+
+        # Create list of formatted strings
+        if len(self) <= 5:
+            formatted_lines = [indent_repr(traceid) for traceid in self]
+        else:
+            formatted_lines = [
+                indent_repr(self[0]),
+                indent_repr(self[1]),
+                f"  ... {len(self) - 4} more",
+                indent_repr(self[-2]),
+                indent_repr(self[-1]),
+            ]
+
         return (
-            f"Source ID: {self.sourceid}, "
-            f"earliest: {self.earliest_str()}, "
-            f"latest: {self.latest_str()}, "
-            f"segments: {len(self)}"
+            f"MS3TraceID(sourceid: {self.sourceid}\n"
+            f"         pubversion: {self.pubversion}\n"
+            f"         earliest: {self.earliest_str(timeformat=TimeFormat.ISOMONTHDAY_DOY_Z)}\n"
+            f"         latest: {self.latest_str(timeformat=TimeFormat.ISOMONTHDAY_DOY_Z)}\n"
+            f"         numsegments: {len(self)}\n"
+            f"{'\n'.join(formatted_lines)}"
+            "\n)"
+        )
+
+    def __str__(self) -> str:
+        return (
+            f"{self.sourceid}, "
+            f"v{self.pubversion}, "
+            f"earliest: {self.earliest_str(timeformat=TimeFormat.ISOMONTHDAY_DOY_Z)}, "
+            f"latest: {self.latest_str(timeformat=TimeFormat.ISOMONTHDAY_DOY_Z)}, "
+            f"{len(self)} segments"
         )
 
     def __len__(self) -> int:
@@ -683,7 +828,7 @@ class MS3TraceList:
         if self._mstl == ffi.NULL:
             raise MiniSEEDError(clibmseed.MS_GENERROR, "Error initializing trace list")
 
-        # Store filenames for record list functionality in C-like buffers
+        # Store filenames for record list functionality in C-compatible buffers
         self._c_file_names = []
 
         # Read specified file
@@ -706,7 +851,45 @@ class MS3TraceList:
             clibmseed.mstl3_free(mstl_ptr, 1)
 
     def __repr__(self) -> str:
-        return f"MS3TraceList with {len(self)} trace IDs"
+        def indent_repr(thing):
+            """Add two-space indentation to each line of repr(thing)"""
+            return "\n".join("  " + line for line in repr(thing).split("\n"))
+
+        # Create list of formatted strings
+        if len(self) <= 5:
+            formatted_lines = [indent_repr(traceid) for traceid in self]
+        else:
+            formatted_lines = [
+                indent_repr(self[0]),
+                indent_repr(self[1]),
+                f"  ... {len(self) - 4} more",
+                indent_repr(self[-2]),
+                indent_repr(self[-1]),
+            ]
+
+        return (f"MS3TraceList(numtraceids: {len(self)}\n"
+                f"{'\n'.join(formatted_lines)}\n"
+                ")"
+        )
+
+    def __str__(self) -> str:
+        def indent_str(thing):
+            """Add two-space indentation to each line of str(thing)"""
+            return "\n".join("  " + line for line in str(thing).split("\n"))
+
+        # Create list of formatted strings
+        if len(self) <= 5:
+            formatted_lines = [indent_str(traceid) for traceid in self]
+        else:
+            formatted_lines = [
+                indent_str(self[0]),
+                indent_str(self[1]),
+                f"  ... {len(self) - 4} more",
+                indent_str(self[-2]),
+                indent_str(self[-1]),
+            ]
+
+        return f"Trace list with {len(self)} trace IDs\n{'\n'.join(formatted_lines)}\n"
 
     def __len__(self) -> int:
         """Return number of trace IDs in the list"""

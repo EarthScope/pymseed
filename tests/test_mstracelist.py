@@ -140,7 +140,7 @@ def test_tracelist_read_recordlist():
     sample_count = 0
     for record_ptr in foundseg.recordlist.records():
         record_count += 1
-        sample_count += record_ptr.msr.samplecnt
+        sample_count += record_ptr.record.samplecnt
 
     assert record_count == 386
     assert sample_count == 84000

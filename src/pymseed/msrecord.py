@@ -147,18 +147,21 @@ class MS3Record:
                 pass
 
     def __repr__(self) -> str:
-        datasamples_str = "[]"
+        sample_preview= "[]"
         if self._msr.numsamples > 0:
-            samples = self.datasamples
-            if samples:
-                datasamples_str = str(samples[:5]) + " ..." if len(samples) > 5 else str(samples)
+            if len(self.datasamples) > 5:
+                # Create array representation with ellipsis inside: [1,2,3,4,5,...]
+                first_samples = ', '.join(str(sample) for sample in list(self.datasamples[:5]))
+                sample_preview = f"[{first_samples}, ...]"
+            else:
+                sample_preview = str(list(self.datasamples))
 
         return (
             f"MS3Record(sourceid: {self.sourceid}\n"
             f"        pubversion: {self._msr.pubversion}\n"
             f"            reclen: {self._msr.reclen}\n"
             f"     formatversion: {self._msr.formatversion}\n"
-            f"         starttime: {self._msr.starttime} => {self.starttime_str()}\n"
+            f"         starttime: {self._msr.starttime} => {self.starttime_str(timeformat=TimeFormat.ISOMONTHDAY_DOY_Z)}\n"
             f"         samplecnt: {self._msr.samplecnt}\n"
             f"          samprate: {self._msr.samprate}\n"
             f"             flags: {self._msr.flags} => {self.flags_dict()}\n"
@@ -168,7 +171,7 @@ class MS3Record:
             f"        datalength: {self._msr.datalength}\n"
             f"             extra: {self.extra}\n"
             f"        numsamples: {self._msr.numsamples}\n"
-            f"       datasamples: {datasamples_str}\n"
+            f"       datasamples: {sample_preview}\n"
             f"          datasize: {self._msr.datasize}\n"
             f"        sampletype: {self.sampletype} => {self.sampletype_str()}\n"
             f"    record pointer: {self._msr})"
@@ -189,11 +192,11 @@ class MS3Record:
     def __str__(self) -> str:
         return (
             f"{self.sourceid}, "
-            f"{self.pubversion}, "
-            f"{self.reclen}, "
+            f"v{self.pubversion}, "
+            f"{self.reclen} bytes, "
             f"{self.samplecnt} samples, "
             f"{self.samprate} Hz, "
-            f"{self.starttime_str()}"
+            f"{self.starttime_str(timeformat=TimeFormat.ISOMONTHDAY_DOY_Z)}"
         )
 
     @property
