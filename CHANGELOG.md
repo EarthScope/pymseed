@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.0.2] - 2025-8-20
 ### Added
 - List-like access to trace IDs in MS3TraceList (indexing, slicing, iteration)
 - List-like access to segments in MS3TraceID (indexing, slicing, iteration)
@@ -28,7 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - MS3TraceID.segments() in favor of supporting iteration directly
 - MS3TraceList.read_files() as unnecessary
 
-## [0.0.1] - 2024-8-5
+## [0.0.1] - 2025-8-5
 ### Added
 - Initial release
 - MS3TraceList class for reading miniSEED files
@@ -36,4 +38,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CFFI-based bindings to libmseed
 
 [Unreleased]: https://github.com/EarthScope/pymseed/compare/v0.0.1...HEAD
+[0.0.2]: https://github.com/EarthScope/pymseed/releases/tag/v0.0.2
 [0.0.1]: https://github.com/EarthScope/pymseed/releases/tag/v0.0.1
