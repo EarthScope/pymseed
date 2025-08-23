@@ -112,3 +112,8 @@ def encoding_sizetype(encoding: int) -> tuple[int, str]:
 def sample_time(time: int, offset: int, samprate: float) -> int:
     """Calculate time for a sample at given offset"""
     return clibmseed.ms_sampletime(time, offset, samprate)
+
+
+def system_time() -> int:
+    """Get the current system time in nanoseconds"""
+    return clibmseed.lmp_systemtime()

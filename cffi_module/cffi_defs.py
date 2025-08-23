@@ -355,4 +355,6 @@ extern const char *ms_errorstr (int errorcode);
 
 extern nstime_t ms_sampletime (nstime_t time, int64_t offset, double samprate);
 extern int ms_bigendianhost (void);
+
+extern nstime_t lmp_systemtime (void);
 """

@@ -1,4 +1,9 @@
+import time
+
 import pytest
+
+from pymseed import clibmseed
+from pymseed.definitions import TimeFormat, SubSecond, DataEncoding
 from pymseed.util import (
     nstime2timestr,
     timestr2nstime,
@@ -9,8 +14,8 @@ from pymseed.util import (
     sample_size,
     encoding_sizetype,
     sample_time,
+    system_time,
 )
-from pymseed.definitions import TimeFormat, SubSecond, DataEncoding
 
 
 class TestTimeConversion:
@@ -178,42 +183,42 @@ class TestEncodingFunctions:
         """Test getting sample sizes for different encodings"""
         # ms_samplesize expects a char sampletype, not encoding number
         # Test with sample type characters as bytes
-        assert sample_size(b'i') == 4  # integer type
-        assert sample_size(b'f') == 4  # float type
-        assert sample_size(b'd') == 8  # double type
-        assert sample_size(b't') == 1  # text type
+        assert sample_size(b"i") == 4  # integer type
+        assert sample_size(b"f") == 4  # float type
+        assert sample_size(b"d") == 8  # double type
+        assert sample_size(b"t") == 1  # text type
 
     def test_encoding_sizetype_basic(self):
         """Test getting encoding size and type information"""
         # Test INT16
         size, sample_type = encoding_sizetype(int(DataEncoding.INT16))
         assert size == 4  # From the C code, INT16 also returns 4
-        assert sample_type == 'i'  # integer type
+        assert sample_type == "i"  # integer type
 
         # Test INT32
         size, sample_type = encoding_sizetype(int(DataEncoding.INT32))
         assert size == 4
-        assert sample_type == 'i'  # integer type
+        assert sample_type == "i"  # integer type
 
         # Test FLOAT32
         size, sample_type = encoding_sizetype(int(DataEncoding.FLOAT32))
         assert size == 4
-        assert sample_type == 'f'  # float type
+        assert sample_type == "f"  # float type
 
         # Test FLOAT64
         size, sample_type = encoding_sizetype(int(DataEncoding.FLOAT64))
         assert size == 8
-        assert sample_type == 'd'  # double type (not 'f')
+        assert sample_type == "d"  # double type (not 'f')
 
         # Test Steim1
         size, sample_type = encoding_sizetype(int(DataEncoding.STEIM1))
         assert size == 4
-        assert sample_type == 'i'  # integer type
+        assert sample_type == "i"  # integer type
 
         # Test Steim2
         size, sample_type = encoding_sizetype(int(DataEncoding.STEIM2))
         assert size == 4
-        assert sample_type == 'i'  # integer type
+        assert sample_type == "i"  # integer type
 
     def test_encoding_sizetype_invalid_encoding(self):
         """Test error handling for invalid encoding"""
@@ -290,3 +295,18 @@ class TestSampleTime:
         base_time = 1672574445123456789
         result = sample_time(base_time, 0, 50.0)
         assert result == base_time
+
+
+class TestSystemtime:
+    """Test systemtime function"""
+
+    def test_systemtime(self):
+        """Test systemtime function"""
+        system_time_ns = system_time()
+
+        system_time_sec = float(system_time_ns / clibmseed.NSTMODULUS)
+
+        # Verify within a millisecond of time.time()
+        assert abs(time.time() - system_time_sec) < 0.001, (
+            f"Time difference {abs(time.time() - system_time_sec) * 1e3:.3f} ms exceeds 1 ms tolerance"
+        )
