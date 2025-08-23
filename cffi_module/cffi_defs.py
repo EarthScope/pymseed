@@ -218,8 +218,8 @@ typedef struct MS3FileParam
 // Functions
 extern int ms_nstime2time (nstime_t nstime, uint16_t *year, uint16_t *yday,
                            uint8_t *hour, uint8_t *min, uint8_t *sec, uint32_t *nsec);
-extern char* ms_nstime2timestr (nstime_t nstime, char *timestr,
-                                ms_timeformat_t timeformat, ms_subseconds_t subsecond);
+extern char* ms_nstime2timestr_n (nstime_t nstime, char *timestr, size_t timestrsize,
+                                  ms_timeformat_t timeformat, ms_subseconds_t subsecond);
 extern nstime_t ms_time2nstime (int year, int yday, int hour, int min, int sec, uint32_t nsec);
 extern nstime_t ms_timestr2nstime (const char *timestr);
 extern nstime_t ms_mdtimestr2nstime (const char *timestr);

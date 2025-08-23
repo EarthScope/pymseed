@@ -16,9 +16,9 @@ def nstime2timestr(
 ) -> Optional[str]:
     """Convert a nanosecond timestamp to a date-time string"""
     # Create a buffer for the time string (40 chars should be enough)
-    c_timestr = ffi.new("char[]", 40)
+    c_timestr = ffi.new("char[]", 50)
 
-    status = clibmseed.ms_nstime2timestr(nstime, c_timestr, timeformat, subsecond)
+    status = clibmseed.ms_nstime2timestr_n(nstime, c_timestr, 50, timeformat, subsecond)
 
     if status != 0:  # Success check - differs from ctypes version
         return cdata_to_string(c_timestr)
