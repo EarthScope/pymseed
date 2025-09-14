@@ -12,10 +12,11 @@ from .msrecord_reader import MS3RecordReader
 from .mstracelist import MS3TraceList
 from .util import (
     nslc2sourceid,
-    nstime2timestr,
-    sample_time,
     sourceid2nslc,
+    nstime2timestr,
     timestr2nstime,
+    sample_time,
+    system_time,
 )
 
 libmseed_version = ffi.string(clibmseed.LIBMSEED_VERSION).decode('utf-8')
@@ -39,10 +40,11 @@ __all__ = [
     "MS3RecordReader",
     "MS3RecordBufferReader",
     "MS3TraceList",
+    "nslc2sourceid",
+    "sourceid2nslc",
     "nstime2timestr",
     "timestr2nstime",
-    "sourceid2nslc",
-    "nslc2sourceid",
     "sample_time",
+    "system_time",
 ]
 

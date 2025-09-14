@@ -7,7 +7,11 @@ This example demonstrates how to:
 - Extract data samples as NumPy arrays
 - Access basic trace metadata
 
-Usage: python read_numpy.py [file1.mseed] [file2.mseed] ...
+Usage:
+> python read_numpy.py [file1.mseed] [file2.mseed] ...
+
+This file is part of the pymseed package.
+Copyright (c) 2025, EarthScope Data Services
 """
 
 import argparse

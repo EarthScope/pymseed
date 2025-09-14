@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
-#
-# Read miniSEED file(s) from a stream, accumulate stats, and write to
-# a stream.  For this illustration input is stdin, output is stdout, and
-# stats are printed to stderr on completion.
-#
-# Example usage:
-#  cat example_data.mseed | stream_stats.py > output.mseed
-#
-# This file is part of the pymseed package.
-# Copyright (c) 2025, EarthScope Data Services
+"""
+Read miniSEED file(s) from a stream, accumulate stats, and write to a stream.
+
+For this illustration input is stdin, output is stdout, and stats are printed
+to stderr on completion.
+
+Example usage:
+  cat example_data.mseed | stream_stats.py > output.mseed
+
+This file is part of the pymseed package.
+Copyright (c) 2025, EarthScope Data Services
+"""
 
 import pprint
 import sys

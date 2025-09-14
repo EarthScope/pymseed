@@ -109,7 +109,7 @@ for i in range(10):
     # Update the start time for the next iteration of synthetic data
     start_time = sample_time(start_time, generate_yield_count, sample_rate)
 
-    # Generate full records and do not flush the data biffers
+    # Generate full records and do not flush the data buffers
     (packed_samples, packed_records) = traces.pack(
         record_handler,
         handlerdata={"fh": file_handle},

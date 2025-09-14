@@ -6,6 +6,7 @@ Core trace list implementation for pymseed
 from __future__ import annotations
 
 from collections.abc import Sequence
+from time import time
 from typing import Any, Callable, Optional
 
 from .clib import cdata_to_string, clibmseed, ffi
@@ -1199,7 +1200,8 @@ class MS3TraceList:
                 "Must specify one of start_time_str, start_time, or start_time_seconds"
             )
 
-        # Request storing time of update in the trace list segment (at seg.prvtptr)
+        # Request storing time of update in the trace list segment
+        # This stores the update time as an nstime_t in the segment's private pointer (seg.prvtptr)
         flags = clibmseed.MSF_PPUPDATETIME
 
         # Set data samples array, type, and counts temporarily for potential zero-copy operations
@@ -1223,6 +1225,7 @@ class MS3TraceList:
         handler: Callable[[bytes, Any], None],
         handlerdata: Any = None,
         flush_data: bool = True,
+        flush_idle_seconds: int = 0,
         record_length: int = 4096,
         encoding: DataEncoding = DataEncoding.STEIM1,
         format_version: Optional[int] = None,
@@ -1244,6 +1247,8 @@ class MS3TraceList:
             flush_data: If True, forces packing of all available data, even if it doesn't
                 fill a complete record. If False, partial records at the end of traces
                 may be held in internal buffers. Default is True.
+            flush_idle_seconds: If > 0, forces flushing of data segments that have not been
+                updated within the specified number of seconds. Default is 0 (disabled).
             record_length: Length of each miniSEED record in bytes. Must be a power of 2
                 between 128 and 65536. Common values are 512, 4096, and 8192. Default is 4096.
             encoding: Data encoding format for compression. Options include:
@@ -1287,9 +1292,6 @@ class MS3TraceList:
 
         Note:
             - The handler function is called once for each complete record generated
-            - Record boundaries are determined by the record_length parameter
-            - Data encoding affects compression ratio and compatibility
-            - Use flush_data=True to ensure all data is packed in the final call
             - For large datasets, consider using streaming approaches with multiple pack() calls
 
         See also:
@@ -1331,6 +1333,43 @@ class MS3TraceList:
 
         if packed_records < 0:
             raise MiniSEEDError(packed_records, "Error packing miniSEED record(s)")
+
+        # Iterate through all trace IDs and segments and flush idle data
+        if flush_idle_seconds > 0:
+            for traceid in self:
+                for segment in traceid:
+                    if segment.numsamples > 0 and segment._seg.prvtptr is not None:
+                        # Pack the segment if it has been updated within the specified number of seconds
+
+                        seg_packed_samples = ffi.new("int64_t *")
+                        seg_packed_records = 0
+
+                        # segment._seg.prvtptr is a void pointer to nstime_t value
+                        nstime_ptr = ffi.cast("nstime_t *", segment._seg.prvtptr)
+                        update_time_seconds = nstime_ptr[0] / clibmseed.NSTMODULUS
+
+                        if (time() - update_time_seconds) > flush_idle_seconds:
+                            seg_packed_records = clibmseed.mstl3_pack_segment(
+                                self._mstl,
+                                traceid._id,
+                                segment._seg,
+                                RECORD_HANDLER,
+                                ffi.NULL,
+                                record_length,
+                                encoding,
+                                seg_packed_samples,
+                                pack_flags | clibmseed.MSF_FLUSHDATA,
+                                verbose,
+                                c_extra,
+                            )
+
+                            if seg_packed_records < 0:
+                                raise MiniSEEDError(
+                                    seg_packed_samples, "Error packing miniSEED records"
+                                )
+
+                            packed_samples[0] += seg_packed_samples[0]
+                            packed_records += seg_packed_records
 
         return (packed_samples[0], packed_records)
 

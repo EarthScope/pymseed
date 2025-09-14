@@ -6,6 +6,9 @@ Displays channel ID, start/end times, and sample rate for each trace segment.
 
 Example:
   > python read_traces.py example_data.mseed
+
+This file is part of the pymseed package.
+Copyright (c) 2025, EarthScope Data Services
 """
 
 import argparse

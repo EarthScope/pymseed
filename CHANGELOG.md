@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Added
 - system_time() to return the current system time in nanoseconds
+- Add `flush_idle_seconds` parameter to MS3TraceList.pack() to control flushing
+  of data buffers that have not been updated in a specified number of seconds
+- libmseed updated to v3.1.8
 
 ## [0.0.2] - 2025-8-20
 ### Added
