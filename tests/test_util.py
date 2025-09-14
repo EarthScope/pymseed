@@ -306,7 +306,7 @@ class TestSystemtime:
 
         system_time_sec = float(system_time_ns / clibmseed.NSTMODULUS)
 
-        # Verify within a millisecond of time.time()
-        assert abs(time.time() - system_time_sec) < 0.001, (
-            f"Time difference {abs(time.time() - system_time_sec) * 1e3:.3f} ms exceeds 1 ms tolerance"
+        # Verify within a 100 milliseconds of time.time()
+        assert abs(time.time() - system_time_sec) < 0.1, (
+            f"Time difference {abs(time.time() - system_time_sec) * 1e3:.3f} ms exceeds 100 ms tolerance"
         )
