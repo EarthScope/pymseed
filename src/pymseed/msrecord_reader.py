@@ -13,8 +13,10 @@ from .msrecord import MS3Record
 class MS3RecordReader:
     """Read miniSEED records from a file or file descriptor.
 
-    This class provides a Python interface for reading miniSEED records from files
-    or file descriptors.
+    Use MS3Record.from_file() instead of this class directly.
+
+    This class provides a Python interface for reading miniSEED records from
+    files or file descriptors.
 
     The reader can be used as an iterator to process records sequentially, or as
     a context manager for automatic resource cleanup.
@@ -44,25 +46,32 @@ class MS3RecordReader:
     Examples:
         Basic usage with a file path as a context manager:
 
-        >>> with MS3RecordReader('examples/example_data.mseed', unpack_data=True) as reader:
-        ...     total_samples = 0
-        ...     for record in reader:
-        ...         total_samples += record.numsamples
-        ...     print(f"Total samples: {total_samples}")
-        Total samples: 12600
+    >>> from pymseed import MS3Record
+
+    >>> with MS3Record.from_file('examples/example_data.mseed', unpack_data=True) as reader:
+    ...     total_samples = 0
+    ...     for record in reader:
+    ...         total_samples += record.numsamples
+    ...     print(f"Total samples: {total_samples}")
+    Total samples: 12600
+
 
         Using with an open file descriptor:
 
-        >>> import os
-        >>> fd = os.open('examples/example_data.mseed', os.O_RDONLY)
-        >>> with MS3RecordReader(fd, unpack_data=True) as reader:
-        ...     records = list(reader)  # Read all records
-        ...     print(f"Total records: {len(records)}")
-        Total records: 107
+    >>> import os
+    >>> fd = os.open('examples/example_data.mseed', os.O_RDONLY)
+
+    >>> with MS3Record.from_file(fd, unpack_data=True) as reader:
+    ...     records = list(reader)  # Read all records
+    ...     print(f"Total records: {len(records)}")
+    Total records: 107
 
     Note:
         This class is not thread-safe. Each thread should use its own reader instance.
         The underlying libmseed library handles the actual parsing and decompression.
+
+    See Also:
+        MS3Record.from_file(): use this instead of MS3RecordReader directly
     """
 
     def __init__(

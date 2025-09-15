@@ -13,17 +13,19 @@ from .msrecord import MS3Record
 class MS3RecordBufferReader:
     """Read miniSEED records sequentially from a memory buffer.
 
+    Use MS3Record.from_buffer() instead of this class directly.
+
     This class provides an efficient way to read miniSEED records from in-memory
     buffers such as bytearray, bytes, memoryview, numpy arrays, or any object
     that supports the buffer protocol. The reader maintains an internal offset
     and can be used as an iterator or context manager.
 
-    The source buffer is read-only and will not be modified by this class.
-    Records are parsed sequentially from the beginning of the buffer using the
-    underlying libmseed library.
+    The buffer is read-only and will not be modified by this class. Records are
+    parsed sequentially from the beginning of the buffer using the underlying
+    libmseed library.
 
     Args:
-        source (buffer-like object): A buffer containing miniSEED records. Must support
+        buffer: A buffer-like object containing miniSEED records. Must support
             the buffer protocol (e.g., bytearray, bytes, memoryview, numpy.ndarray).
         unpack_data (bool, optional): If True, decode and unpack the data samples from each record.
             If False, only header information is parsed. Default is False.
@@ -36,12 +38,14 @@ class MS3RecordBufferReader:
         MiniSEEDError: If there are errors parsing records from the buffer.
 
     Examples:
-        Reading records from a byte buffer:
+        Reading records from a raw buffer (bytes-like object):
 
-    >>> from pymseed import MS3RecordBufferReader
+    >>> from pymseed import MS3Record
+
     >>> with open('examples/example_data.mseed', 'rb') as f:
     ...     buffer = f.read()
-    >>> with MS3RecordBufferReader(buffer, unpack_data=True) as reader:
+
+    >>> with MS3Record.from_buffer(buffer, unpack_data=True) as reader:
     ...     total_samples = 0
     ...     for record in reader:
     ...         total_samples += record.numsamples
@@ -51,18 +55,21 @@ class MS3RecordBufferReader:
     Notes:
         Once a reader reaches the end of the buffer, it cannot be reset
 
+    See Also:
+        MS3Record.from_buffer(): use this instead of MS3RecordBufferReader directly
+
     """
 
     def __init__(
         self,
-        source: Any,
+        buffer: Any,
         unpack_data: bool = False,
         validate_crc: bool = True,
         verbose: int = 0,
     ) -> None:
         self._msr_ptr = ffi.new("MS3Record **")
-        self.source = ffi.from_buffer(source)
-        self.source_offset = 0
+        self._buffer_ptr = ffi.from_buffer(buffer)
+        self._buffer_offset = 0
         self.verbose = verbose
 
         # Construct parse flags
@@ -94,12 +101,12 @@ class MS3RecordBufferReader:
 
     def read(self) -> Optional[MS3Record]:
         """Read the next miniSEED record from the buffer"""
-        remaining_bytes = len(self.source) - self.source_offset
+        remaining_bytes = len(self._buffer_ptr) - self._buffer_offset
         if remaining_bytes < clibmseed.MINRECLEN:
             return None
 
         status = clibmseed.msr3_parse(
-            self.source + self.source_offset,
+            self._buffer_ptr + self._buffer_offset,
             remaining_bytes,
             self._msr_ptr,
             self.parse_flags,
@@ -107,7 +114,7 @@ class MS3RecordBufferReader:
         )
 
         if status == clibmseed.MS_NOERROR:
-            self.source_offset += self._msr_ptr[0].reclen
+            self._buffer_offset += self._msr_ptr[0].reclen
             return MS3Record(recordptr=self._msr_ptr[0])
         elif status > 0:  # Record detected but not enough data
             return None
