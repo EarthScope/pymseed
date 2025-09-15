@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.0.3] - 2025-9-14
 ### Added
 - MS3TraceList.from_buffer() to create a trace list from miniSEED in a buffer
 - MS3TraceList.add_buffer() to add miniSEED data from a buffer
@@ -14,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `flush_idle_seconds` parameter of MS3TraceList.pack() to control flushing
   of data buffers that have not been updated in a specified number of seconds
 - libmseed updated to v3.1.8
+
+### Changed
+- MS3RecordReader parameter `source` renamed to `buffer` for consistency
 
 ## [0.0.2] - 2025-8-20
 ### Added
@@ -45,6 +50,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - MS3Record class for individual records
 - CFFI-based bindings to libmseed
 
-[Unreleased]: https://github.com/EarthScope/pymseed/compare/v0.0.1...HEAD
+[Unreleased]: https://github.com/EarthScope/pymseed/compare/v0.0.3...HEAD
+[0.0.3]: https://github.com/EarthScope/pymseed/releases/tag/v0.0.3
 [0.0.2]: https://github.com/EarthScope/pymseed/releases/tag/v0.0.2
 [0.0.1]: https://github.com/EarthScope/pymseed/releases/tag/v0.0.1
