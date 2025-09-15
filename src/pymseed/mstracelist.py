@@ -27,6 +27,7 @@ class MS3RecordPtr:
             f"MS3RecordPtr(sourceid: {self.record.sourceid}\n"
             f"             filename: {cdata_to_string(self._ptr.filename)}\n"
             f"           fileoffset: {self._ptr.fileoffset}\n"
+            f"            bufferptr: {self._ptr.bufferptr}\n"
             f"               reclen: {self._ptr.msr.reclen}\n"
             f"            starttime: {self.record.starttime_str(timeformat=TimeFormat.ISOMONTHDAY_Z)}\n"
             f"              endtime: {self.record.endtime_str(timeformat=TimeFormat.ISOMONTHDAY_Z)}\n"
@@ -644,9 +645,9 @@ class MS3TraceID:
         return (
             f"MS3TraceID(sourceid: {self.sourceid}\n"
             f"         pubversion: {self.pubversion}\n"
-            f"         earliest: {self.earliest_str(timeformat=TimeFormat.ISOMONTHDAY_DOY_Z)}\n"
-            f"         latest: {self.latest_str(timeformat=TimeFormat.ISOMONTHDAY_DOY_Z)}\n"
-            f"         numsegments: {len(self)}\n"
+            f"           earliest: {self.earliest_str(timeformat=TimeFormat.ISOMONTHDAY_DOY_Z)}\n"
+            f"             latest: {self.latest_str(timeformat=TimeFormat.ISOMONTHDAY_DOY_Z)}\n"
+            f"        numsegments: {len(self)}\n"
             f"{newline.join(formatted_lines)}"
             "\n)"
         )
@@ -1004,6 +1005,7 @@ class MS3TraceList:
             record_list: If True, maintain a list of original records for each
                 trace segment. Required for `unpack_recordlist()` and allows
                 access to individual record metadata. Default: False
+                NOTE: the files must remain accessible to unpack data with a record list
             skip_not_data: If True, skip non-data records in the file instead
                 of raising an error. Useful for files with mixed content. Default: False
             validate_crc: If True, validate CRC checksums if present in records
@@ -1137,6 +1139,8 @@ class MS3TraceList:
             record_list: If True, maintain a list of original records for each
                 trace segment. Required for `unpack_recordlist()` and allows
                 access to individual record metadata. Default: False
+                NOTE: the buffer must remain accessible to unpack data with a record list
+                This can be quite tricky to achieve, for advanced use only
             skip_not_data: If True, skip non-data records in the buffer instead
                 of raising an error. Useful for files with mixed content. Default: False
             validate_crc: If True, validate CRC checksums if present in records
