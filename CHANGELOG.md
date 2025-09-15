@@ -7,8 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- MS3TraceList.from_buffer() to create a trace list from miniSEED in a buffer
+- MS3TraceList.add_buffer() to add miniSEED data from a buffer
+- `buffer` parameter of MS3TracesList initialization
 - system_time() to return the current system time in nanoseconds
-- Add `flush_idle_seconds` parameter to MS3TraceList.pack() to control flushing
+- `flush_idle_seconds` parameter of MS3TraceList.pack() to control flushing
   of data buffers that have not been updated in a specified number of seconds
 - libmseed updated to v3.1.8
 

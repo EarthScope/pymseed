@@ -819,6 +819,7 @@ class MS3TraceList:
     def __init__(
         self,
         file_name=None,
+        buffer=None,
         unpack_data=False,
         record_list=False,
         skip_not_data=False,
@@ -839,6 +840,17 @@ class MS3TraceList:
         if file_name is not None:
             self.add_file(
                 file_name,
+                unpack_data,
+                record_list,
+                skip_not_data,
+                validate_crc,
+                split_version,
+                verbose,
+            )
+
+        if buffer is not None:
+            self.add_buffer(
+                buffer,
                 unpack_data,
                 record_list,
                 skip_not_data,
@@ -980,8 +992,8 @@ class MS3TraceList:
     ) -> None:
         """Read miniSEED data from file and add to existing trace list
 
-        This method reads miniSEED records from a file and appends them to the
-        current trace list. Data are organized by source ID and time, with
+        This method reads miniSEED records from a file and adds the data they contain
+        to the current trace list. Data are organized by source ID and time, with
         overlapping or adjacent data automatically merged into continuous segments.
 
         Args:
@@ -1099,6 +1111,146 @@ class MS3TraceList:
 
         if status != clibmseed.MS_NOERROR:
             raise MiniSEEDError(status, f"Error reading file: {file_name}")
+
+    def add_buffer(
+        self,
+        buffer: bytes,
+        unpack_data: bool = False,
+        record_list: bool = False,
+        skip_not_data: bool = False,
+        validate_crc: bool = True,
+        split_version: bool = False,
+        verbose: int = 0,
+    ) -> None:
+        """Read miniSEED data from a buffer and add to existing trace list
+
+        This method reads miniSEED records from a bytes-like object and adds the
+        data they contain to the current trace list. Data are organized by
+        source ID and time, with overlapping or adjacent data automatically
+        merged into continuous segments.
+
+        Args:
+            buffer: Bytes-like object containing miniSEED data
+            unpack_data: If True, decode data samples immediately. If False, data
+                samples remain packed and must be unpacked later with
+                `unpack_recordlist()`. Default: False
+            record_list: If True, maintain a list of original records for each
+                trace segment. Required for `unpack_recordlist()` and allows
+                access to individual record metadata. Default: False
+            skip_not_data: If True, skip non-data records in the buffer instead
+                of raising an error. Useful for files with mixed content. Default: False
+            validate_crc: If True, validate CRC checksums if present in records
+                (miniSEED v3 only). Provides integrity verification. Default: True
+            split_version: If True, treat different publication versions as
+                separate trace IDs. Default: False (merge by source ID only)
+            verbose: Verbosity level for diagnostic output (0=quiet, 1-3=increasing
+                detail). Default: 0
+
+        Raises:
+            MiniSEEDError: If buffer cannot be read or contains invalid data
+
+        Note:
+            This method adds data to the existing trace list. It does not replace
+            existing data. To start fresh, create a new MS3TraceList instance.
+            To add data from a file, use `add_file()`.
+
+        Examples:
+            Read miniSEED data from a file into a buffer:
+
+            >>> with open("examples/example_data.mseed", "rb") as f:
+            ...     buffer = f.read()
+
+            Basic usage examples:
+
+            >>> from pymseed import MS3TraceList
+            >>> traces = MS3TraceList()
+            >>> traces.add_buffer(buffer)
+            >>> len(traces)
+            3
+
+            Unpacking data while reading for immediate access
+
+            >>> traces = MS3TraceList()
+            >>> traces.add_buffer(buffer, unpack_data=True)
+            >>> traces[0].sourceid
+            'FDSN:IU_COLA_00_L_H_1'
+            >>> segment1 = traces[0][0]
+            >>> segment1.starttime_str()
+            '2010-02-27T06:50:00.069539Z'
+            >>> segment1.endtime_str()
+            '2010-02-27T07:59:59.069538Z'
+            >>> segment1.samprate
+            1.0
+            >>> segment1.samplecnt
+            4200
+            >>> segment1.numsamples
+            4200
+            >>> segment1.sampletype
+            'i'
+
+            Read with record list for later unpacking:
+
+            >>> traces = MS3TraceList()
+            >>> traces.add_buffer(buffer, record_list=True)
+            >>> total_samples = 0
+            >>> for traceid in traces:
+            ...     for segment in traceid:
+            ...         # Unpack when desired, can unpacked to designated buffer
+            ...         samples_count = segment.unpack_recordlist()
+            ...         total_samples += samples_count
+            >>> total_samples
+            12600
+
+            Add multiple buffers to same trace list, in this trivial example the
+            same file is read twice, so the data are duplicated in the trace list:
+
+            >>> traces = MS3TraceList()
+            >>> traces.add_buffer(buffer)
+            >>> traces.add_buffer(buffer)  # Appends to existing data
+            >>> len(traces)
+            3
+            >>> traceid = traces[0]
+            >>> traceid[0].samplecnt
+            4200
+            >>> len(traceid) # Two segments (duplicate in this case)
+            2
+
+        """
+
+        flags = 0
+        if unpack_data:
+            flags |= clibmseed.MSF_UNPACKDATA
+        if record_list:
+            flags |= clibmseed.MSF_RECORDLIST
+        if skip_not_data:
+            flags |= clibmseed.MSF_SKIPNOTDATA
+        if validate_crc:
+            flags |= clibmseed.MSF_VALIDATECRC
+
+        # Create a reference to the current trace list pointer
+        mstl_ptr = ffi.new("MS3TraceList **")
+        mstl_ptr[0] = self._mstl
+
+        # Validate that the buffer supports the buffer protocol
+        try:
+            buffer_ptr = ffi.from_buffer(buffer)
+            buffer_length = len(buffer)
+        except (TypeError, AttributeError):
+            raise ValueError("Buffer must support the buffer protocol") from None
+
+        status = clibmseed.mstl3_readbuffer_selection(
+            mstl_ptr,
+            buffer_ptr,
+            buffer_length,
+            int(split_version),
+            flags,
+            ffi.NULL,  # tolerance
+            ffi.NULL,  # selections
+            verbose,
+        )
+
+        if status < 0:
+            raise MiniSEEDError(status, f"Error reading buffer (status: {status})")
 
     def add_data(
         self,
@@ -1480,5 +1632,10 @@ class MS3TraceList:
 
     @classmethod
     def from_file(cls, filename, **kwargs):
-        """Create MS3TraceList from file"""
+        """Create MS3TraceList from a specified miniSEED file"""
         return cls(file_name=filename, **kwargs)
+
+    @classmethod
+    def from_buffer(cls, buffer: Any, **kwargs):
+        """Create an MS3TraceList from miniSEED data in a memory buffer"""
+        return cls(buffer=buffer, **kwargs)
