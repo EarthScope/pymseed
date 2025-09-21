@@ -1087,7 +1087,10 @@ class MS3TraceList:
         self._c_file_names.append(ffi.new("char[]", file_name.encode("utf-8")))
         c_file_name = self._c_file_names[-1]
 
-        flags = 0
+        # Request storing time of update in the trace list segment
+        # This stores the update time as an nstime_t in the segment's private pointer (seg.prvtptr)
+        flags = clibmseed.MSF_PPUPDATETIME
+
         if unpack_data:
             flags |= clibmseed.MSF_UNPACKDATA
         if record_list:
@@ -1221,7 +1224,10 @@ class MS3TraceList:
 
         """
 
-        flags = 0
+        # Request storing time of update in the trace list segment
+        # This stores the update time as an nstime_t in the segment's private pointer (seg.prvtptr)
+        flags = clibmseed.MSF_PPUPDATETIME
+
         if unpack_data:
             flags |= clibmseed.MSF_UNPACKDATA
         if record_list:
@@ -1500,7 +1506,10 @@ class MS3TraceList:
                         seg_packed_samples = ffi.new("int64_t *")
                         seg_packed_records = 0
 
-                        # segment._seg.prvtptr is a void pointer to nstime_t value
+                        # Do not flush segments without update time information
+                        if segment._seg.prvtptr == ffi.NULL:
+                            continue
+
                         nstime_ptr = ffi.cast("nstime_t *", segment._seg.prvtptr)
                         update_time_seconds = nstime_ptr[0] / clibmseed.NSTMODULUS
 
