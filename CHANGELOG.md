@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Track update time of segments in an MS3TraceList consistently
 
+### Changed
+- Update MS3TraceList.pack() to use new libmseed function for performance
+
 ## [0.0.3] - 2025-9-14
 ### Added
 - MS3TraceList.from_buffer() to create a trace list from miniSEED in a buffer

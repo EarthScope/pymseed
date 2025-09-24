@@ -1481,7 +1481,7 @@ class MS3TraceList:
 
         c_extra = ffi.new("char[]", extra_headers.encode("utf-8")) if extra_headers else ffi.NULL
 
-        packed_records = clibmseed.mstl3_pack(
+        packed_records = clibmseed.mstl3_pack_ppupdate_flushidle(
             self._mstl,
             RECORD_HANDLER,
             ffi.NULL,
@@ -1491,50 +1491,11 @@ class MS3TraceList:
             pack_flags,
             verbose,
             c_extra,
+            flush_idle_seconds,
         )
 
         if packed_records < 0:
             raise MiniSEEDError(packed_records, "Error packing miniSEED record(s)")
-
-        # Iterate through all trace IDs and segments and flush idle data
-        if flush_idle_seconds > 0:
-            for traceid in self:
-                for segment in traceid:
-                    if segment.numsamples > 0 and segment._seg.prvtptr is not None:
-                        # Pack the segment if it has been updated within the specified number of seconds
-
-                        seg_packed_samples = ffi.new("int64_t *")
-                        seg_packed_records = 0
-
-                        # Do not flush segments without update time information
-                        if segment._seg.prvtptr == ffi.NULL:
-                            continue
-
-                        nstime_ptr = ffi.cast("nstime_t *", segment._seg.prvtptr)
-                        update_time_seconds = nstime_ptr[0] / clibmseed.NSTMODULUS
-
-                        if (time() - update_time_seconds) > flush_idle_seconds:
-                            seg_packed_records = clibmseed.mstl3_pack_segment(
-                                self._mstl,
-                                traceid._id,
-                                segment._seg,
-                                RECORD_HANDLER,
-                                ffi.NULL,
-                                record_length,
-                                encoding,
-                                seg_packed_samples,
-                                pack_flags | clibmseed.MSF_FLUSHDATA,
-                                verbose,
-                                c_extra,
-                            )
-
-                            if seg_packed_records < 0:
-                                raise MiniSEEDError(
-                                    seg_packed_samples, "Error packing miniSEED records"
-                                )
-
-                            packed_samples[0] += seg_packed_samples[0]
-                            packed_records += seg_packed_records
 
         return (packed_samples[0], packed_records)
 
