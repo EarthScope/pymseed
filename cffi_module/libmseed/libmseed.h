@@ -29,8 +29,8 @@ extern "C"
 {
 #endif
 
-#define LIBMSEED_VERSION "3.1.8"    //!< Library version
-#define LIBMSEED_RELEASE "2025.257" //!< Library release date
+#define LIBMSEED_VERSION "3.1.9"    //!< Library version
+#define LIBMSEED_RELEASE "2025.267" //!< Library release date
 
 /** @defgroup io-functions File and URL I/O */
 /** @defgroup miniseed-record Record Handling */
@@ -556,8 +556,8 @@ typedef struct MS3RecordList
 
     Trace lists are a container to organize continuous segments of
     data.  By combining miniSEED data records into trace lists, the
-    time series is reconstructed and ready for processing or
-    summarization.
+    time series is reconstructed and ready for processing, conversion,
+    summarization, etc.
 
     A trace list container starts with an ::MS3TraceList, which
     contains one or more ::MS3TraceID entries, which each contain one
@@ -575,6 +575,10 @@ typedef struct MS3RecordList
           - MS3TraceSeg
           - ...
         - ...
+
+    @note A trace list does not contain all of the details of a miniSEED
+    record.  In particular details that are not relevant to represent the series
+    such as header flags, extra headers like event detections, etc.
 
     \sa ms3_readtracelist()
     \sa ms3_readtracelist_timewin()
@@ -668,11 +672,8 @@ extern void mstl3_free (MS3TraceList **ppmstl, int8_t freeprvtptr);
 extern MS3TraceID *mstl3_findID (MS3TraceList *mstl, const char *sid, uint8_t pubversion,
                                  MS3TraceID **prev);
 
-/** @def mstl3_addmsr
-    @brief Add a ::MS3Record to a ::MS3TraceList @see mstl3_addmsr_recordptr() */
-#define mstl3_addmsr(mstl, msr, splitversion, autoheal, flags, tolerance)                          \
-  mstl3_addmsr_recordptr (mstl, msr, NULL, splitversion, autoheal, flags, tolerance)
-
+extern MS3TraceSeg *mstl3_addmsr (MS3TraceList *mstl, const MS3Record *msr, int8_t splitversion,
+                                  int8_t autoheal, uint32_t flags, const MS3Tolerance *tolerance);
 extern MS3TraceSeg *mstl3_addmsr_recordptr (MS3TraceList *mstl, const MS3Record *msr,
                                             MS3RecordPtr **pprecptr, int8_t splitversion,
                                             int8_t autoheal, uint32_t flags,
@@ -691,6 +692,12 @@ extern int mstl3_resize_buffers (MS3TraceList *mstl);
 extern int64_t mstl3_pack (MS3TraceList *mstl, void (*record_handler) (char *, int, void *),
                            void *handlerdata, int reclen, int8_t encoding, int64_t *packedsamples,
                            uint32_t flags, int8_t verbose, char *extra);
+extern int64_t mstl3_pack_ppupdate_flushidle (MS3TraceList *mstl,
+                                              void (*record_handler) (char *, int, void *),
+                                              void *handlerdata, int reclen, int8_t encoding,
+                                              int64_t *packedsamples, uint32_t flags,
+                                              int8_t verbose, char *extra,
+                                              uint32_t flush_idle_seconds);
 extern int64_t mstl3_pack_segment (MS3TraceList *mstl, MS3TraceID *id, MS3TraceSeg *seg,
                                    void (*record_handler) (char *, int, void *), void *handlerdata,
                                    int reclen, int8_t encoding, int64_t *packedsamples,
