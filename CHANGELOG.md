@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.0.05] - 2025-09-27
+## [0.0.5] - 2025-09-27
 ### Fixed
 - MS3Record.samprate consistently returns the rate in samples/second,
   and MS3Record.samprate_raw returns the record's raw value.
