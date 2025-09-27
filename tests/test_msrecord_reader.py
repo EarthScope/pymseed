@@ -67,6 +67,7 @@ def test_msrecord_read_unpack_data():
         assert msr.samplecnt == 296
         assert msr.numsamples == 0
         assert not msr.datasamples
+        assert msr.sampletype is None
 
         # Unpack data
         unpacked = msr.unpack_data()

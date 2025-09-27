@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - MS3Record.samprate consistently returns the rate in samples/second,
   and MS3Record.samprate_raw returns the record's raw value.
+- Properly return None when MS3Record.sampletype is not set.
 
 ### Added
 - MS2Record.unpack_data() to decode sample payload after parsing.

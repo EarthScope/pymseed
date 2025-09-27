@@ -745,10 +745,9 @@ class MS3Record:
     @property
     def sampletype(self) -> Optional[str]:
         """Return sample type code if available, otherwise None"""
-        if self._msr.sampletype:
-            return self._msr.sampletype.decode("ascii")
-        else:
+        if self._msr.sampletype == b"\x00":
             return None
+        return self._msr.sampletype.decode("ascii")
 
     def sampletype_str(self) -> Optional[str]:
         """Return sample type as descriptive string"""
