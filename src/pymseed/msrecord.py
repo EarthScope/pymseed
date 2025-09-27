@@ -819,6 +819,30 @@ class MS3Record:
         """
         clibmseed.msr3_print(self._msr, details)
 
+    def unpack_data(self, verbose: int = 0) -> int:
+        """Unpack the record's data samples
+
+        This method unpacks (decodes) the data samples associated with the
+        record if they were not decoded during the parsing process.  This is
+        useful when only specific records need to be unpacked or for delayed
+        unpacking workflows.
+
+        Args:
+            verbose: Verbosity level for diagnostic output. Default: 0
+
+        Returns:
+            Number of samples unpacked
+
+        Raises:
+            MiniSEEDError: If unpacking fails
+        """
+        samples_unpacked = clibmseed.msr3_unpack_data(self._msr, verbose)
+
+        if samples_unpacked < 0:
+            raise MiniSEEDError(samples_unpacked, "Error unpacking data samples")
+
+        return samples_unpacked
+
     @contextmanager
     def with_datasamples(self, data_samples: Sequence[Any], sample_type: str):
         """Context manager for temporarily setting data samples with automatic cleanup.

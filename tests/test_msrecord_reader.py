@@ -58,6 +58,30 @@ def test_msrecord_read_record_details():
         # Check last 6 samples
         assert msr.datasamples[-6:].tolist() == [-508722, -508764, -508809, -508866, -508927, -508986]
 
+def test_msrecord_read_unpack_data():
+    with MS3Record.from_file(test_path3, unpack_data=False) as msreader:
+
+        # Read first record
+        msr = msreader.read()
+
+        assert msr.samplecnt == 296
+        assert msr.numsamples == 0
+        assert not msr.datasamples
+
+        # Unpack data
+        unpacked = msr.unpack_data()
+        assert unpacked == 296
+
+        assert msr.numsamples == 296
+        assert msr.datasamples
+        assert msr.sampletype == "i"
+
+        # Check first 6 samples
+        assert msr.datasamples[0:6].tolist() == [-502916, -502808, -502691, -502567, -502433, -502331]
+
+        # Check last 6 samples
+        assert msr.datasamples[-6:].tolist() == [-508722, -508764, -508809, -508866, -508927, -508986]
+
 def test_msrecord_read_record_60sec():
     with MS3Record.from_file(test_60sec, unpack_data=True) as msreader:
 

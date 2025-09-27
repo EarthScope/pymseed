@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and MS3Record.samprate_raw returns the record's raw value.
 
 ### Added
+- MS2Record.unpack_data() to decode sample payload after parsing.
 - MS3Record.samprate_period_ns to return sample period in nanoseconds.
 - MS3Record.samprate_period_seconds to return the period in seconds.
 
