@@ -425,6 +425,9 @@ class MS3Record:
         For sampling rates in samples/second (Hz), this value should be positive.
         For sampling rates in seconds/sample, this value should be negative.
 
+        It is recommend to use the sample period notation (negative values) when
+        the sampling rate is less than 1 sample/second to retain accuracy.
+
         Examples:
             >>> from pymseed import MS3Record
             >>> record = MS3Record()
