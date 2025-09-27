@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.0.05] - 2025-09-27
 ### Fixed
 - MS3Record.samprate consistently returns the rate in samples/second,
   and MS3Record.samprate_raw returns the record's raw value.
@@ -67,7 +69,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - MS3Record class for individual records
 - CFFI-based bindings to libmseed
 
-[Unreleased]: https://github.com/EarthScope/pymseed/compare/v0.0.4...HEAD
+[Unreleased]: https://github.com/EarthScope/pymseed/compare/v0.0.5...HEAD
+[0.0.5]: https://github.com/EarthScope/pymseed/releases/tag/v0.0.5
 [0.0.4]: https://github.com/EarthScope/pymseed/releases/tag/v0.0.4
 [0.0.3]: https://github.com/EarthScope/pymseed/releases/tag/v0.0.3
 [0.0.2]: https://github.com/EarthScope/pymseed/releases/tag/v0.0.2
