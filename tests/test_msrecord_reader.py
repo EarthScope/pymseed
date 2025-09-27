@@ -1,7 +1,7 @@
 import pytest
 import sys
 import os
-from pymseed import MS3Record, DataEncoding, TimeFormat, SubSecond
+from pymseed import MS3Record, DataEncoding, TimeFormat, SubSecond, NSTMODULUS
 from pymseed.exceptions import MiniSEEDError
 
 test_dir = os.path.abspath(os.path.dirname(__file__))
@@ -37,6 +37,8 @@ def test_msrecord_read_record_details():
         )
         assert msr.samprate == 20.0
         assert msr.samprate_raw == 20.0
+        assert msr.samprate_period_ns == 0.05 * NSTMODULUS
+        assert msr.samprate_period_seconds == pytest.approx(0.05)
         assert msr.encoding == DataEncoding.STEIM2
         assert msr.encoding_str() == "STEIM-2 integer compression"
         assert msr.pubversion == 4
@@ -66,6 +68,8 @@ def test_msrecord_read_record_60sec():
         assert msr.sourceid == "FDSN:XX_SIN__W_X_Y"
         assert msr.samprate == pytest.approx(0.01666667)
         assert msr.samprate_raw == -60.0
+        assert msr.samprate_period_ns == 60 * NSTMODULUS
+        assert msr.samprate_period_seconds == pytest.approx(60.0)
 
 def test_msrecord_read_record_details_fd():
     # Test reading from a file descriptor - we simulate this using the buffer reader

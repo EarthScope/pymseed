@@ -462,6 +462,44 @@ class MS3Record:
         return self._msr.samprate
 
     @property
+    def samprate_period_ns(self) -> int:
+        """Nominal sample period in nanoseconds.
+
+        Examples:
+            >>> from pymseed import MS3Record
+            >>> record = MS3Record()
+            >>> record.samprate = 40.0    # 40 Hz sampling
+            >>> record.samprate_period_ns
+            25000000
+            >>> record.samprate = -10.0   # 10 second intervals
+            >>> record.samprate_period_ns
+            10000000000
+
+        See Also:
+            samprate_period_seconds: Nominal sample period in seconds
+        """
+        return clibmseed.msr3_nsperiod(self._msr)
+
+    @property
+    def samprate_period_seconds(self) -> float:
+        """Nominal sample period in seconds.
+
+        Examples:
+            >>> from pymseed import MS3Record
+            >>> record = MS3Record()
+            >>> record.samprate = 40.0    # 40 Hz sampling
+            >>> record.samprate_period_seconds
+            0.025
+            >>> record.samprate = -10.0   # 10 second intervals
+            >>> record.samprate_period_seconds
+            10.0
+
+        See Also:
+            samprate_period_ns: Nominal sample period in nanoseconds (for accuracy)
+        """
+        return clibmseed.msr3_nsperiod(self._msr) / clibmseed.NSTMODULUS
+
+    @property
     def encoding(self) -> int:
         """Data encoding format code specifying how data samples are compressed/stored.
 
