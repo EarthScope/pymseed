@@ -264,7 +264,7 @@ class MS3TraceSeg:
 
     @property
     def samprate(self) -> float:
-        """Return sample rate"""
+        """Return sample rate in samples/second (Hz)"""
         return self._seg.samprate
 
     @property

@@ -7,6 +7,7 @@ from pymseed.exceptions import MiniSEEDError
 test_dir = os.path.abspath(os.path.dirname(__file__))
 test_path3 = os.path.join(test_dir, "data", "testdata-COLA-signal.mseed3")
 test_path2 = os.path.join(test_dir, "data", "testdata-COLA-signal.mseed2")
+test_60sec = os.path.join(test_dir, "data", "testdata-60sec-period.mseed3")
 
 
 def test_msrecord_read_record_details():
@@ -23,7 +24,7 @@ def test_msrecord_read_record_details():
         assert msr.flags == 4
         assert msr.flags_dict() == {"clock_locked": True}
         assert msr.starttime == 1267253400019539000
-        assert msr.starttime_seconds == 1267253400.019539
+        assert msr.starttime_seconds == pytest.approx(1267253400.019539)
         assert (
             msr.starttime_str(timeformat=TimeFormat.ISOMONTHDAY_Z)
             == "2010-02-27T06:50:00.019539Z"
@@ -47,7 +48,7 @@ def test_msrecord_read_record_details():
         assert msr.numsamples == 296
         assert msr.sampletype == "i"
         assert msr.endtime == 1267253414769539000
-        assert msr.endtime_seconds == 1267253414.769539
+        assert msr.endtime_seconds == pytest.approx(1267253414.769539)
 
         # Check first 6 samples
         assert msr.datasamples[0:6].tolist() == [-502916, -502808, -502691, -502567, -502433, -502331]
@@ -55,6 +56,16 @@ def test_msrecord_read_record_details():
         # Check last 6 samples
         assert msr.datasamples[-6:].tolist() == [-508722, -508764, -508809, -508866, -508927, -508986]
 
+def test_msrecord_read_record_60sec():
+    with MS3Record.from_file(test_60sec, unpack_data=True) as msreader:
+
+        # Read first record
+        msr = msreader.read()
+
+        assert msr.reclen == 4090
+        assert msr.sourceid == "FDSN:XX_SIN__W_X_Y"
+        assert msr.samprate == pytest.approx(0.01666667)
+        assert msr.samprate_raw == -60.0
 
 def test_msrecord_read_record_details_fd():
     # Test reading from a file descriptor - we simulate this using the buffer reader

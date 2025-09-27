@@ -401,7 +401,41 @@ class MS3Record:
 
     @property
     def samprate(self) -> float:
-        """Nominal sample rate in Hz or sample interval in seconds.
+        """Nominal sample rate in samples per second (Hz)
+
+        Examples:
+            >>> from pymseed import MS3Record
+            >>> record = MS3Record()
+            >>> record.samprate = 100.0   # 100 Hz sampling
+            >>> record.samprate
+            100.0
+            >>> record.samprate = -10.0   # 10 second intervals
+            >>> record.samprate
+            0.1
+
+        See Also:
+            samprate_raw: Nominal sample rate in Hz or sample interval in seconds
+        """
+        return clibmseed.msr3_sampratehz(self._msr)
+
+    @samprate.setter
+    def samprate(self, value: float) -> None:
+        """Set nominal sampling rate
+
+        For sampling rates in samples/second (Hz), this value should be positive.
+        For sampling rates in seconds/sample, this value should be negative.
+
+        Examples:
+            >>> from pymseed import MS3Record
+            >>> record = MS3Record()
+            >>> record.samprate = 100.0   # 100 Hz sampling
+            >>> record.samprate = -10.0   # 10 second intervals
+        """
+        self._msr.samprate = value
+
+    @property
+    def samprate_raw(self) -> float:
+        """Nominal sample rate in samples per second (Hz) or sample interval in seconds.
 
         When positive, this represents samples per second (Hz).
         When negative, this represents the sample period in seconds (-1/period).
@@ -413,28 +447,14 @@ class MS3Record:
             >>> from pymseed import MS3Record
             >>> record = MS3Record()
             >>> record.samprate = 100.0   # 100 Hz sampling
+            >>> record.samprate_raw
+            100.0
             >>> record.samprate = -10.0   # 10 second intervals
-        """
-        return self._msr.samprate
+            >>> record.samprate_raw
+            -10.0
 
-    @samprate.setter
-    def samprate(self, value: float) -> None:
-        """Set nominal sample rate
-
-        For data sampled regularly, this value should be positive and represent
-        samples/second (Hz).
-
-        For data NOT sampled regularly, this value should be negative and
-        represent the sample interval in seconds (-1/interval).
-        """
-        self._msr.samprate = value
-
-    @property
-    def samprate_raw(self) -> float:
-        """Return sample rate for regular data or sample interval for irregular
-
-        This directly returns the value from the structure, negative indicates
-        the data are NOT regularly sampled and the value is an interval period.
+        See Also:
+            samprate: Nominal sample rate in Hz
         """
         return self._msr.samprate
 
