@@ -1,3 +1,21 @@
+2025.315: v3.2.0
+  - Add generator-style packing interfaces for MS3Record and MS3TraceList.
+  Specifically msr3_pack_init(), msr_pack_next(), msr_pack_free() and
+  mstl3_pack_init(), mstl3_pack_next(), mstl_pack_free().
+  - Fix mstl3_pack_ppupdate_flushidle() logic to flush only idle streams.
+  - Fix memory leak in mseh_replace().
+  - Addition of a CMake build system contributed by @lsawade, thank you!
+
+2025.303: v3.1.11
+  - Fix byte swapping in ms3_detect() for v3 records for big-endian systems.
+  - Add MSF_SKIPADJACENTDUPLICATES to skip adjacent duplicate records while
+  populating a MS3TraceList.
+
+2025.298: v3.1.10
+  - Add MSF_SPLITISVERSION flag to control using the splitversion value as the
+  version instead the record publication version for mstl3_addmsr() and variants.
+  - Add missing functions to libmseed.def for Windows library exports.
+
 2025.267: v3.1.9
   - Add mstl3_pack_ppupdate_flushidle() for packing idle streams in combination
   with the use of MSF_PPUPDATETIME during trace list additions.
@@ -16,7 +34,7 @@
   - Add ms_nstime2timestr_n() with string size limit, deprecate ms_nstime2timestr().
   - With ms_nstime2timestr_n() print "ERROR" for NSTERROR and "UNSET" for NSTUNSET.
   - Avoid fatal errors when v2 record blockettes contain invalid time stamps.
-  When SEED "btime" values are encountered they are now set to NSTERROR and
+  When invalid SEED "btime" values are encountered they are now set to NSTERROR and
   serialized in extra headers as "ERROR".
   - Limit float point values in extra headers to single precision to avoid
   unrealistically high precision values in the output
