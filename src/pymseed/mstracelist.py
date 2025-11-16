@@ -530,17 +530,17 @@ class MS3TraceSeg:
             ...             (size, sample_type) = segment.sample_size_type
             ...
             ...             if sample_type == "i":
-            ...                 # Create a pyarrow array to hold the unpacked data
-            ...                 pyarrow_array = pa.array([0] * segment.samplecnt, type=pa.int32())
+            ...                 # Create an arrow array to hold the unpacked data
+            ...                 arrow_array = pa.array([0] * segment.samplecnt, type=pa.int32())
             ...
             ...                 # Get the data buffer for direct writing
-            ...                 array_bitmap, array_buffer = pyarrow_array.buffers()
+            ...                 array_bitmap, array_buffer = arrow_array.buffers()
             ...
             ...                 # Unpack the data directly into our array buffer
             ...                 count = segment.unpack_recordlist(array_buffer)
             ...
             ...                 # Check that the array has no nulls (all values are valid)
-            ...                 assert pyarrow_array.null_count == 0, "Pyarrow array has nulls (should not happen)"
+            ...                 assert arrow_array.null_count == 0, "Arrow array has nulls (should not happen)"
             ...
             ...             # Other sample types would need different pyarrow array types
 

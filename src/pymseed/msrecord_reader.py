@@ -50,8 +50,8 @@ class MS3RecordReader:
 
     >>> with MS3Record.from_file('examples/example_data.mseed', unpack_data=True) as reader:
     ...     total_samples = 0
-    ...     for record in reader:
-    ...         total_samples += record.numsamples
+    ...     for msr in reader:
+    ...         total_samples += msr.numsamples
     ...     print(f"Total samples: {total_samples}")
     Total samples: 12600
 
@@ -62,8 +62,8 @@ class MS3RecordReader:
     >>> fd = os.open('examples/example_data.mseed', os.O_RDONLY)
 
     >>> with MS3Record.from_file(fd, unpack_data=True) as reader:
-    ...     records = list(reader)  # Read all records
-    ...     print(f"Total records: {len(records)}")
+    ...     msrs = list(reader)  # Read all records
+    ...     print(f"Total records: {len(msrs)}")
     Total records: 107
 
     Note:

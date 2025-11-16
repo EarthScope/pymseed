@@ -4,6 +4,7 @@ Core MS3Record implementation for pymseed
 """
 
 import json
+import warnings
 from collections.abc import Sequence
 from contextlib import contextmanager
 from typing import Any, Callable, Optional, Union
@@ -34,38 +35,33 @@ class MS3Record:
 
     Common Usage Patterns:
 
-        Reading records from files:
+        Reading records (from a file):
             >>> from pymseed import MS3Record
-            >>> for record in MS3Record.from_file('examples/example_data.mseed', unpack_data=True):
-            ...     print(f"{record.sourceid}: {record.numsamples} samples")
+            >>> for msr in MS3Record.from_file('examples/example_data.mseed', unpack_data=True):
+            ...     print(f"{msr.sourceid}: {msr.numsamples} samples")
             ...     break # only print the first record to limit testing output
             FDSN:IU_COLA_00_L_H_1: 135 samples
 
-        Creating and writing records:
+        Creating records:
             >>> from pymseed import MS3Record, DataEncoding
-            >>> record = MS3Record()
-            >>> record.sourceid = "FDSN:NET_STA_LOC_B_S_s"
-            >>> record.starttime_str = "2024-01-01T00:00:00Z"
-            >>> record.samprate = 100.0
-            >>> record.encoding = DataEncoding.STEIM2
-            >>> record.reclen = 512
+            >>> msr = MS3Record()
+            >>> msr.sourceid = "FDSN:NET_STA_LOC_B_S_s"
+            >>> msr.starttime_str = "2024-01-01T00:00:00Z"
+            >>> msr.samprate = 100.0
+            >>> msr.encoding = DataEncoding.STEIM2
+            >>> msr.reclen = 512
 
-            >>> # Pack with data and save via handler
-            >>> def write_handler(record_bytes, file_handle):
-            ...     print(f"Packed {len(record_bytes)} byte record")
-
-            >>> (total_samples, total_records) = record.pack(write_handler, data_samples=[1,2,3,4], sample_type='i')
+            >>> for record in msr.generate(data_samples=[1,2,3,4], sample_type='i'):
+            ...     print(f"Packed {len(record)} byte record")
             Packed 126 byte record
-            >>> print(f"Packed {total_samples} samples in {total_records} records")
-            Packed 4 samples in 1 records
 
         Working with data samples:
             # Get data as memoryview (no copy)
-            data_mv = record.datasamples
+            data_mv = msr.datasamples
             # Get data as numpy array (requires numpy, no copy)
-            data_np = record.np_datasamples
+            data_np = msr.np_datasamples
             # Get data as Python list (copy)
-            data_list = record.datasamples[:]
+            data_list = msr.datasamples[:]
 
     Attributes:
         All miniSEED record fields are accessible as properties with both
@@ -78,8 +74,6 @@ class MS3Record:
         - encoding: Data encoding format (Steim1/2, Float, etc.)
 
     See Also:
-        MS3RecordReader: For reading records from files
-        MS3RecordBufferReader: For reading records from memory buffers
         MSTraceList: For working with collections of records as traces
     """
 
@@ -112,12 +106,12 @@ class MS3Record:
         Example:
             >>> # Create empty record
             >>> from pymseed import MS3Record
-            >>> record = MS3Record()
-            >>> record.sourceid = "FDSN:IU_COLA_00_B_H_Z"
-            >>> record.samprate = 20.0
+            >>> msr = MS3Record()
+            >>> msr.sourceid = "FDSN:IU_COLA_00_B_H_Z"
+            >>> msr.samprate = 20.0
             >>>
             >>> # Create with specific encoding for Steim2 compression
-            >>> record = MS3Record(encoding=11, reclen=4096)
+            >>> msr = MS3Record(encoding=11, reclen=4096)
 
         """
         if recordptr is not None:
@@ -308,8 +302,8 @@ class MS3Record:
 
         Example:
             >>> from pymseed import MS3Record
-            >>> record = MS3Record()
-            >>> flags = record.flags_dict()
+            >>> msr = MS3Record()
+            >>> flags = msr.flags_dict()
             >>> if flags.get('time_tag_is_questionable'):
             ...     print("Warning: questionable timing")
 
@@ -338,8 +332,8 @@ class MS3Record:
 
         Example:
             >>> from pymseed import MS3Record
-            >>> record = MS3Record()
-            >>> record.starttime = 1609459200000000000  # 2021-01-01T00:00:00Z
+            >>> msr = MS3Record()
+            >>> msr.starttime = 1609459200000000000  # 2021-01-01T00:00:00Z
 
         See Also:
             starttime_seconds: For working with floating-point seconds
@@ -361,9 +355,10 @@ class MS3Record:
     def starttime_seconds(self, value: float) -> None:
         """Set start time as seconds since Unix/POSIX epoch
 
-        The value is limited to microsecond resolution and will be rounded
-        to to ensure a consistent conversion to the internal representation.
-        This is done to avoid floating point precision issues.
+        The value is limited to microsecond resolution and will be rounded to
+        the nearest microsecond to ensure a consistent conversion to the
+        internal representation. This is done to avoid floating point precision
+        issues.  If you need nanosecond precision, use the starttime setter instead.
         """
         # Scale to microseconds, round to nearest integer, then scale to nanoseconds
         self._msr.starttime = round(value * 1000000) * 1000
@@ -389,9 +384,9 @@ class MS3Record:
 
         Example:
             >>> from pymseed import MS3Record
-            >>> record = MS3Record()
-            >>> record.set_starttime_str("2021-01-01T00:00:00.123456789Z")
-            >>> record.starttime_str()
+            >>> msr = MS3Record()
+            >>> msr.set_starttime_str("2021-01-01T00:00:00.123456789Z")
+            >>> msr.starttime_str()
             '2021-01-01T00:00:00.123456789Z'
 
         See Also:
@@ -405,12 +400,12 @@ class MS3Record:
 
         Examples:
             >>> from pymseed import MS3Record
-            >>> record = MS3Record()
-            >>> record.samprate = 100.0   # 100 Hz sampling
-            >>> record.samprate
+            >>> msr = MS3Record()
+            >>> msr.samprate = 100.0   # 100 Hz sampling
+            >>> msr.samprate
             100.0
-            >>> record.samprate = -10.0   # 10 second intervals
-            >>> record.samprate
+            >>> msr.samprate = -10.0   # 10 second intervals
+            >>> msr.samprate
             0.1
 
         See Also:
@@ -430,9 +425,9 @@ class MS3Record:
 
         Examples:
             >>> from pymseed import MS3Record
-            >>> record = MS3Record()
-            >>> record.samprate = 100.0   # 100 Hz sampling
-            >>> record.samprate = -10.0   # 10 second intervals
+            >>> msr = MS3Record()
+            >>> msr.samprate = 100.0   # 100 Hz sampling
+            >>> msr.samprate = -10.0   # 10 second intervals
         """
         self._msr.samprate = value
 
@@ -448,12 +443,12 @@ class MS3Record:
 
         Examples:
             >>> from pymseed import MS3Record
-            >>> record = MS3Record()
-            >>> record.samprate = 100.0   # 100 Hz sampling
-            >>> record.samprate_raw
+            >>> msr = MS3Record()
+            >>> msr.samprate = 100.0   # 100 Hz sampling
+            >>> msr.samprate_raw
             100.0
-            >>> record.samprate = -10.0   # 10 second intervals
-            >>> record.samprate_raw
+            >>> msr.samprate = -10.0   # 10 second intervals
+            >>> msr.samprate_raw
             -10.0
 
         See Also:
@@ -467,12 +462,12 @@ class MS3Record:
 
         Examples:
             >>> from pymseed import MS3Record
-            >>> record = MS3Record()
-            >>> record.samprate = 40.0    # 40 Hz sampling
-            >>> record.samprate_period_ns
+            >>> msr = MS3Record()
+            >>> msr.samprate = 40.0    # 40 Hz sampling
+            >>> msr.samprate_period_ns
             25000000
-            >>> record.samprate = -10.0   # 10 second intervals
-            >>> record.samprate_period_ns
+            >>> msr.samprate = -10.0   # 10 second intervals
+            >>> msr.samprate_period_ns
             10000000000
 
         See Also:
@@ -486,12 +481,12 @@ class MS3Record:
 
         Examples:
             >>> from pymseed import MS3Record
-            >>> record = MS3Record()
-            >>> record.samprate = 40.0    # 40 Hz sampling
-            >>> record.samprate_period_seconds
+            >>> msr = MS3Record()
+            >>> msr.samprate = 40.0    # 40 Hz sampling
+            >>> msr.samprate_period_seconds
             0.025
-            >>> record.samprate = -10.0   # 10 second intervals
-            >>> record.samprate_period_seconds
+            >>> msr.samprate = -10.0   # 10 second intervals
+            >>> msr.samprate_period_seconds
             10.0
 
         See Also:
@@ -517,9 +512,9 @@ class MS3Record:
 
         Examples:
             >>> from pymseed import MS3Record, DataEncoding
-            >>> record = MS3Record()
-            >>> record.encoding = DataEncoding.STEIM2
-            >>> record.encoding = DataEncoding.FLOAT32
+            >>> msr = MS3Record()
+            >>> msr.encoding = DataEncoding.STEIM2
+            >>> msr.encoding = DataEncoding.FLOAT32
 
         See Also:
             encoding_str(): Human-readable encoding description
@@ -603,20 +598,20 @@ class MS3Record:
         Examples:
             >>> from pymseed import MS3Record
             >>> reader = MS3Record.from_file("examples/example_data.mseed", unpack_data=True)
-            >>> record = reader.read()
+            >>> msr = reader.read()
             >>> # Direct indexing (no copy)
-            >>> first_sample = record.datasamples[0]
-            >>> last_sample = record.datasamples[-1]
+            >>> first_sample = msr.datasamples[0]
+            >>> last_sample = msr.datasamples[-1]
             >>>
             >>> # Slicing (no copy)
-            >>> first_ten = record.datasamples[:10]
+            >>> first_ten = msr.datasamples[:10]
             >>>
             >>> # Copy to Python list
-            >>> data_list = record.datasamples[:]
+            >>> data_list = msr.datasamples[:]
             >>>
             >>> # Copy to new array
             >>> import array
-            >>> data_array = array.array('f', record.datasamples)
+            >>> data_array = array.array('f', msr.datasamples)
 
         See Also:
             np_datasamples: NumPy array view (requires numpy)
@@ -674,16 +669,16 @@ class MS3Record:
         Examples:
             >>> from pymseed import MS3Record
             >>> reader = MS3Record.from_file("examples/example_data.mseed", unpack_data=True)
-            >>> record = reader.read()
+            >>> msr = reader.read()
 
             >>> # Direct NumPy operations (no copy)
             >>> import numpy as np
-            >>> data = record.np_datasamples
+            >>> data = msr.np_datasamples
             >>> mean_value = np.mean(data)
             >>> max_value = np.max(data)
 
             >>> # Copy for permanent storage
-            >>> data_copy = record.np_datasamples.copy()
+            >>> data_copy = msr.np_datasamples.copy()
 
             >>> # Mathematical operations
             >>> filtered = data * 0.5  # Creates new array
@@ -866,14 +861,14 @@ class MS3Record:
             Setting data samples for packing:
 
             >>> from pymseed import MS3Record, DataEncoding
-            >>> record = MS3Record()
-            >>> record.sourceid = "FDSN:XX_TEST__L_S_X"
-            >>> record.reclen = 512
-            >>> record.formatversion = 3
-            >>> record.set_starttime_str("2023-01-02T01:02:03.123456789Z")
-            >>> record.samprate = 100.0
-            >>> record.pubversion = 1
-            >>> record.encoding = DataEncoding.STEIM2
+            >>> msr = MS3Record()
+            >>> msr.sourceid = "FDSN:XX_TEST__L_S_X"
+            >>> msr.reclen = 512
+            >>> msr.formatversion = 3
+            >>> msr.set_starttime_str("2023-01-02T01:02:03.123456789Z")
+            >>> msr.samprate = 100.0
+            >>> msr.pubversion = 1
+            >>> msr.encoding = DataEncoding.STEIM2
 
             # A data array that can be used without copying (zero-copy).  This is
             # a common case for data that is already in a bytearray, numpy array,
@@ -882,26 +877,26 @@ class MS3Record:
             >>> data = array.array('i', [1, 2, 3, 4])
 
             >>> output_file = "output.mseed"
-            >>> with record.with_datasamples(data, 'i'):
-            ...     print (f"Writing records for {record.numsamples} samples of type {record.sampletype}")
-            ...     packed_records = record.to_file(output_file) # doctest: +SKIP
+            >>> with msr.with_datasamples(data, 'i'):
+            ...     print (f"Writing records for {msr.numsamples} samples of type {msr.sampletype}")
+            ...     packed_records = msr.to_file(output_file) # doctest: +SKIP
             Writing records for 4 samples of type i
 
             # Setting data samples for packing from a simple list that will be copied
 
             >>> data = [1.1, 2.6, 3.2, 4.8] # A simple list will be copied (no memoryview)
-            >>> with record.with_datasamples(data, 'f'):
-            ...     print (f"Record has {record.numsamples} samples of type {record.sampletype}")
+            >>> with msr.with_datasamples(data, 'f'):
+            ...     print (f"Record has {msr.numsamples} samples of type {msr.sampletype}")
             Record has 4 samples of type f
 
             # Setting text data can be a string, bytes, bytearray, or a sequenced
             # that is convergted to byte characters.  Text data is always copied.
 
             >>> text_samples = "This is a log entry"
-            >>> record.sourceid = "FDSN:XX_TEST__L_O_G"
-            >>> record.samperate = 0
-            >>> with record.with_datasamples(text_samples, 't'):
-            ...     print (f"Record has {record.numsamples} samples of type {record.sampletype}")
+            >>> msr.sourceid = "FDSN:XX_TEST__L_O_G"
+            >>> msr.samperate = 0
+            >>> with msr.with_datasamples(text_samples, 't'):
+            ...     print (f"Record has {msr.numsamples} samples of type {msr.sampletype}")
             Record has 19 samples of type t
 
         Note:
@@ -1016,15 +1011,18 @@ class MS3Record:
     ) -> tuple[int, int]:
         """Pack data samples into miniSEED record(s) using a custom handler.
 
+        .. deprecated::
+            The `pack()` method is deprecated in favor of the more Pythonic
+            `generate()` method. Use `generate()` for most use cases as it
+            provides a cleaner generator-based interface with equivalent functionality.
+
         This method encodes data samples into one or more miniSEED records according
         to the record's configuration (encoding, record length, etc.) and calls the
         provided handler function for each generated record.
 
         Args:
             handler: Callback function that receives each packed record.
-                    Signature: handler(record_bytes, handler_data)
-                    The record_bytes must be used or copied immediately as the
-                    buffer may be reused for subsequent records.
+                    Signature: handler(record: bytes, handler_data: Any)
             handler_data: Optional data passed to the handler function.
                          Commonly used for file handles, counters, or containers.
             data_samples: Data to pack. If None, uses existing record data.
@@ -1047,26 +1045,31 @@ class MS3Record:
 
         Examples:
             >>> from pymseed import MS3Record, DataEncoding
+            >>> import warnings
             >>> # Write to file
-            >>> def file_handler(record_bytes, file_handle):
-            ...     file_handle.write(record_bytes)
+            >>> def file_handler(record: bytes, file_handle: Any):
+            ...     file_handle.write(record)
             >>>
-            >>> record = MS3Record() # doctest: +SKIP
+            >>> msr = MS3Record() # doctest: +SKIP
             >>> with open('output.mseed', 'wb') as f: # doctest: +SKIP
-            ...     samples, records = record.pack(
-            ...         file_handler, f,
-            ...         data_samples=[1, 2, 3, 4, 5],
-            ...         sample_type='i'
-            ...     )
+            ...     with warnings.catch_warnings():
+            ...         warnings.simplefilter("ignore", DeprecationWarning)
+            ...         samples, records = msr.pack(
+            ...             file_handler, f,
+            ...             data_samples=[1, 2, 3, 4, 5],
+            ...             sample_type='i'
+            ...         )
             >>>
             >>> # Collect records in memory
             >>> records_list = []
-            >>> def collect_handler(record_bytes, container):
-            ...     container.append(bytes(record_bytes))
+            >>> def collect_handler(record: bytes, container: Any):
+            ...     container.append(record)
             >>>
-            >>> record = MS3Record()
-            >>> record.encoding = DataEncoding.FLOAT32
-            >>> record.pack(collect_handler, records_list, data_samples=[1.0, 2.0], sample_type='f')  # doctest: +ELLIPSIS
+            >>> msr = MS3Record()
+            >>> msr.encoding = DataEncoding.FLOAT32
+            >>> with warnings.catch_warnings():
+            ...     warnings.simplefilter("ignore", DeprecationWarning)
+            ...     msr.pack(collect_handler, records_list, data_samples=[1.0, 2.0], sample_type='f')
             (2, 1)
 
         Notes:
@@ -1074,10 +1077,16 @@ class MS3Record:
             may be reused on subsequent iterations.
 
         See Also:
-            encoding: Data encoding format
-            reclen: Maximum record length
-            samplecnt: Expected sample count
+            generate(): Recommended replacement - Pythonic generator-based interface
         """
+        # Issue deprecation warning
+        warnings.warn(
+            "pack() is deprecated and will be removed in a future version. "
+            "Use generate() instead for a more Pythonic generator-based interface.",
+            DeprecationWarning,
+            stacklevel=2
+        )
+
         # Set handler function as CFFI callback function
         self._record_handler = handler
         self._record_handler_data = handler_data
@@ -1113,6 +1122,95 @@ class MS3Record:
 
         return (packed_samples[0], packed_records)
 
+    def generate(
+        self,
+        data_samples: Optional[Union[list[int], list[float], list[str]]] = None,
+        sample_type: Optional[str] = None,
+        verbose: int = 0,
+    ) -> tuple[int, int]:
+        """Create miniSEED record(s) using parameters from the record.
+
+        This method creates miniSEED records using the parameters (encoding,
+        record length, etc.) in this MS3Record. Alternante data samples (and
+        type) can be provided, otherwise the existing record data is used.
+
+        This method is a generator that yields each miniSEED record as it is
+        created as bytes.
+
+        Args:
+            data_samples: Data to pack. If None, uses existing record data.
+                         Types supported: list of int/float/str, numpy arrays,
+                         or any buffer-protocol compatible object.
+            sample_type: Sample type indicator when providing data_samples:
+                        'i' = 32-bit integer 'f' = 32-bit float 'd' = 64-bit
+                        float 't' = text (1 byte per sample) Required when
+                        data_samples is provided.
+            verbose: Verbosity level for diagnostic output (0=quiet, 1+=verbose)
+
+        Yields:
+            bytes: Each miniSEED record as it is created
+
+        Examples:
+            >>> from pymseed import MS3Record, DataEncoding
+            >>>
+            >>> # Create record template with MS3Record()
+            >>> msr = MS3Record()
+            >>> msr.sourceid = "FDSN:XX_TEST__L_H_Z"
+            >>> msr.starttime_str = "2024-01-01T00:00:00Z"
+            >>> msr.samprate = 1
+            >>>
+            >>> # Generate miniSEED records and write to file
+            >>> # (See `MS3Record.to_file()` for a more convenient way to write to a file)
+            >>> with open('output.mseed', 'wb') as f:  # doctest: +SKIP
+            ...     for record in msr.generate(
+            ...         data_samples=[1, 2, 3, 4, 5],
+            ...         sample_type='i'
+            ...     ):
+            ...         f.write(record)
+            >>>
+            >>> # Generate miniSEED records and collect in a list
+            >>> record_list = []
+            >>> msr.encoding = DataEncoding.FLOAT32
+            >>> data_samples = [1.0, 2.1, 3.2, 4.3, 5.4]
+            >>> for record in msr.generate(data_samples=data_samples, sample_type='f'):
+            ...     record_list.append(record)
+            >>> print(f"Generated {len(record_list)} records")
+            Generated 1 records
+
+        See Also:
+            MS3Record: Full record documentation
+        """
+        flags = clibmseed.MSF_FLUSHDATA  # Always flush data when packing
+
+        record_pp = ffi.new("char **")
+        reclen_p = ffi.new("int32_t *")
+
+        # Pack miniSEED records using data samples and type if provided
+        if data_samples is not None and sample_type is not None:
+            with self.with_datasamples(data_samples, sample_type):
+
+                packer = clibmseed.msr3_pack_init(self._msr, flags, verbose)
+
+                if packer is None:
+                    raise MiniSEEDError(-1, "Error initializing packer")
+
+                while clibmseed.msr3_pack_next(packer, record_pp, reclen_p) == 1:
+                    yield ffi.buffer(record_pp[0], reclen_p[0])[:]
+        # Otherwise, pack miniSEED records using the record's existing data
+        else:
+            packer = clibmseed.msr3_pack_init(self._msr, flags, verbose)
+
+            if packer is None:
+                raise MiniSEEDError(-1, "Error initializing packer")
+
+            while clibmseed.msr3_pack_next(packer, record_pp, reclen_p) == 1:
+                yield ffi.buffer(record_pp[0], reclen_p[0])[:]
+
+        # Free packer
+        packer_pp = ffi.new("MS3RecordPacker **")
+        packer_pp[0] = packer
+        clibmseed.msr3_pack_free(packer_pp, ffi.NULL)
+
     def to_file(
         self,
         filename: str,
@@ -1136,7 +1234,7 @@ class MS3Record:
                 file writing (e.g., permission denied, disk full, invalid data).
 
         See Also:
-            pack(): For packing data into a record
+            generate(): For creating record
             MS3Record: Full record documentation
         """
         # Convert filename to bytes (C string)

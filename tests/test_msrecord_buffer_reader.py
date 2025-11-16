@@ -19,7 +19,7 @@ def test_msrecord_read_buffer_details():
             # Read first record
             msr = msreader.read()
 
-            assert msr.reclen == 542
+            assert msr.reclen == 478
             assert msr.swapflag == 2
             assert msr.swapflag_dict() == {
                 "header_swapped": False,
@@ -47,9 +47,9 @@ def test_msrecord_read_buffer_details():
             assert msr.encoding_str() == "STEIM-2 integer compression"
             assert msr.pubversion == 4
             assert msr.samplecnt == 296
-            assert msr.crc == 1977151071
+            assert msr.crc == 0x4DFE46ED
             assert msr.extralength == 33
-            assert msr.datalength == 448
+            assert msr.datalength == 384
             assert msr.extra == '{"FDSN":{"Time":{"Quality":100}}}'
             assert msr.numsamples == 296
             assert msr.sampletype == "i"

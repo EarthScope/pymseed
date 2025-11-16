@@ -400,6 +400,7 @@ def record_handler(record, handler_data):
 
 test_pack3 = os.path.join(test_dir, "data", "packtest_sine2000.mseed3")
 
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")
 def test_mstracelist_pack():
     # Create a new MSTraceList object
     traces = MS3TraceList()

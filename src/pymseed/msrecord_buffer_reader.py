@@ -47,8 +47,8 @@ class MS3RecordBufferReader:
 
     >>> with MS3Record.from_buffer(buffer, unpack_data=True) as reader:
     ...     total_samples = 0
-    ...     for record in reader:
-    ...         total_samples += record.numsamples
+    ...     for msr in reader:
+    ...         total_samples += msr.numsamples
     ...     print(f"Total samples: {total_samples}")
     Total samples: 12600
 

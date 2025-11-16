@@ -7,6 +7,8 @@ from pymseed import MS3Record, DataEncoding
 test_dir = os.path.abspath(os.path.dirname(__file__))
 test_pack3 = os.path.join(test_dir, "data", "packtest_sine500.mseed3")
 test_pack2 = os.path.join(test_dir, "data", "packtest_sine500.mseed2")
+test_repack2_input = os.path.join(test_dir, "data", "testdata-COLA-signal.mseed2")
+test_repack3_output = os.path.join(test_dir, "data", "testdata-COLA-signal.mseed3")
 
 # A sine wave of 500 samples
 sine_500 = list(map(lambda x: int(math.sin(math.radians(x)) * 500), range(0, 500)))
@@ -24,7 +26,49 @@ def record_handler(record, handler_data):
     record_buffer = bytes(record)
 
 
+def test_msrecord_setters():
+    """Test the setters for an MS3Record object."""
+
+    # Test populating an MS3Record object with setters
+    msr = MS3Record()
+    msr.sourceid = "FDSN:XX_TEST__B_S_X"
+    msr.reclen = 512
+    msr.formatversion = 3
+    msr.flags = 0x04  # Set the 4th bit (clock locked) to 1
+    msr.set_starttime_str("2023-01-02T01:02:03.123456789Z")
+    msr.samprate = 50.0
+    msr.encoding = DataEncoding.STEIM2
+    msr.pubversion = 1
+    msr.extra = json.dumps({"FDSN": {"Time": {"Quality": 80}}})
+
+    assert msr.reclen == 512
+    assert msr.sourceid == "FDSN:XX_TEST__B_S_X"
+    assert msr.formatversion == 3
+    assert msr.flags_dict() == {"clock_locked": True}
+    assert msr.starttime == 1672621323123456789
+    assert msr.starttime_seconds == 1672621323.1234567
+    assert msr.samprate == 50.0
+    assert msr.encoding == DataEncoding.STEIM2
+    assert msr.pubversion == 1
+    assert msr.extra == '{"FDSN":{"Time":{"Quality":80}}}'
+
+    # Test nanosecond starttime setter
+    msr.starttime = 1672621323999999999
+    assert msr.starttime == 1672621323999999999
+
+    # Test setter for starttime_seconds, rounding UP to microsecond precision
+    msr.starttime_seconds = 1672621323.123456789
+    assert msr.starttime == 1672621323123457000
+    assert msr.starttime_seconds == 1672621323.123457
+
+    # Test setter for starttime_seconds, rounding DOWN to microsecond precision
+    msr.starttime_seconds = 1672621323.987654321
+    assert msr.starttime == 1672621323987654000
+    assert msr.starttime_seconds == 1672621323.987654
+
+
 class TestMS3RecordSorting:
+    """Test sorting of MS3Record objects."""
     def test_same_time_different_subsource(self):
         msr1 = MS3Record()
         msr1.set_starttime_str("2023-01-02T01:02:03.123456789Z")
@@ -80,9 +124,9 @@ class TestMS3RecordSorting:
         ), "Greater than equal: Same time but different sourceid (location)"
 
 
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")
 def test_msrecord_pack():
 
-    # Test populating an MS3Record object with setters
     msr = MS3Record()
     msr.sourceid = "FDSN:XX_TEST__B_S_X"
     msr.reclen = 512
@@ -93,17 +137,6 @@ def test_msrecord_pack():
     msr.encoding = DataEncoding.STEIM2
     msr.pubversion = 1
     msr.extra = json.dumps({"FDSN": {"Time": {"Quality": 80}}})
-
-    assert msr.reclen == 512
-    assert msr.sourceid == "FDSN:XX_TEST__B_S_X"
-    assert msr.formatversion == 3
-    assert msr.flags_dict() == {"clock_locked": True}
-    assert msr.starttime == 1672621323123456789
-    assert msr.starttime_seconds == 1672621323.1234567
-    assert msr.samprate == 50.0
-    assert msr.encoding == DataEncoding.STEIM2
-    assert msr.pubversion == 1
-    assert msr.extra == '{"FDSN":{"Time":{"Quality":80}}}'
 
     # Test packing of an miniSEED v3 record
     (packed_samples, packed_records) = msr.pack(
@@ -133,14 +166,70 @@ def test_msrecord_pack():
         record_v2 = f.read()
         assert record_buffer == record_v2
 
-    # Alternate setter for starttime_seconds, rounding to microsecond precision
-    msr.starttime_seconds = 1672621323.123456789
-    assert msr.starttime == 1672621323123457000
-    assert msr.starttime_seconds == 1672621323.123457
 
-    msr.starttime_seconds = 1672621323.987654321
-    assert msr.starttime == 1672621323987654000
-    assert msr.starttime_seconds == 1672621323.987654
+def test_msrecord_generate():
+    """Test creating miniSEED with MS3Record.generate() method."""
+
+    msr = MS3Record()
+    msr.sourceid = "FDSN:XX_TEST__B_S_X"
+    msr.reclen = 512
+    msr.formatversion = 3
+    msr.flags = 0x04  # Set the 4th bit (clock locked) to 1
+    msr.set_starttime_str("2023-01-02T01:02:03.123456789Z")
+    msr.samprate = 50.0
+    msr.encoding = DataEncoding.STEIM2
+    msr.pubversion = 1
+    msr.extra = json.dumps({"FDSN": {"Time": {"Quality": 80}}})
+
+    # Test creation of a miniSEED v3 record
+    record_buffer = b""
+    for record in msr.generate(data_samples=sine_500, sample_type="i"):
+        record_buffer += record
+
+    assert len(record_buffer) == 475
+
+    with open(test_pack3, "rb") as f:
+        record_v3 = f.read()
+        assert record_buffer == record_v3
+
+    # Test packing of an miniSEED v2 record
+    msr.formatversion = 2
+
+    record_buffer = b""
+    for record in msr.generate(data_samples=sine_500, sample_type="i"):
+        record_buffer += record
+
+    assert len(record_buffer) == 512
+
+    with open(test_pack2, "rb") as f:
+        record_v2 = f.read()
+        assert record_buffer == record_v2
+
+def test_msrecord_regenerate():
+    """Repack miniSEED v2 to v3 and compare to reference file."""
+
+    record_buffer = b""
+
+    with MS3Record.from_file(test_repack2_input, unpack_data=True) as msreader:
+        for msr in msreader:
+
+            # Set to format version 3
+            msr.formatversion = 3
+
+            # Set record length to 1024 to allow each 512-byte input record to
+            # be regenerated in a single record that may be larger than the
+            # input record length.
+            msr.reclen = 1024
+
+            # Regenerate the record
+            for record in msr.generate():
+                record_buffer += record
+
+    assert len(record_buffer) == 617142
+
+    with open(test_repack3_output, "rb") as f:
+        record_v3 = f.read()
+        assert record_buffer == record_v3
 
 
 def test_msrecord_to_file(tmp_path):
