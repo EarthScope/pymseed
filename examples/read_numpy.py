@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
 """
-Read miniSEED files and convert data samples to NumPy arrays.
+Read miniSEED files and access data samples as NumPy arrays.
 
 This example demonstrates how to:
-- Read miniSEED files using pymseed
-- Extract data samples as NumPy arrays
+- Read miniSEED files using pymseed and create a trace list
+- Extract data samples as NumPy arrays without duplicating data
 - Access basic trace metadata
+
+The strategy used to avoid duplicating the data samples requires
+reading the data from files twice.  Once to create the trace list
+using a record list to maintain pointers to the stored records.
+Then a second time to extract the data samples directly into
+allocated NumPy arrays.
 
 Usage:
 > python read_numpy.py [file1.mseed] [file2.mseed] ...

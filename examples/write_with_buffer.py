@@ -1,30 +1,41 @@
 #!/usr/bin/env python3
-#
-# This example illustrates how to write miniSEED using a rolling
-# buffer of potentially multi-channel data.   This pattern of usage is
-# particularly useful for applications that need to generate miniSEED
-# in a continuous stream for an unknown (long) duration.  Another use
-# would be to avoid large volumes of data in memory by incrementally
-# generating miniSEED.
-#
-# In this example, a sine wave generator is used to create synthetic
-# data for 3 channels by producing 100 samples at a time.
-#
-# The general pattern is:
-#
-#   def record_handler() # A function that is called when records are generated
-#
-#   traces = MS3TraceList() # Create an empty MS3TraceList object
-#
-#   Loop on input data:
-#     traces.add_data()    # Add data to the MS3TraceList object
-#     traces.pack(flush_data=False) # Generate records and call record_handler() for each
-#
-#   traces.pack(flush_data=True) # Flush any data remaining in the buffers
-#
-#
-# This file is part of the the Python pymseed package.
-# Copyright (c) 2025, EarthScope Data Services
+"""
+This example illustrates how to write miniSEED using a rolling
+buffer of potentially multi-channel data.
+
+This pattern of usage is particularly useful for applications that need to:
+a) generate miniSEED in a continuous stream for an unknown (long) duration,
+   i.e. real-time streams.
+b) generate miniSEED from a large volume of data while avoiding the need to
+   have it all in memory.
+
+In this example, a sine wave generator is used to create synthetic data for 3
+channels by producing 100 samples at a time.
+
+The general pattern is (writing bytes to a file for example):
+
+```python
+  traces = MS3TraceList() # Create an empty MS3TraceList object
+
+  Loop on input data:
+    traces.add_data()    # Add data to the MS3TraceList object
+
+    # Generate filled records during regular data flow
+    for record in traces.generate(flush_data=False,
+                                  flush_idle_seconds=60,
+                                  removed_packed=True):
+        # Write the record (bytes) to the output file
+        output_file.write(record)
+
+  # Flush any data remaining in the buffers
+  for record in traces.generate(flush_data=True,
+                                removed_packed=True):
+    output_file.write(record)
+```
+
+This file is part of the the Python pymseed package.
+Copyright (c) 2025, EarthScope Data Services
+"""
 
 import math
 from pymseed import MS3TraceList, timestr2nstime, sample_time
@@ -54,22 +65,10 @@ sine0 = sine_generator(start_degree=0, yield_count=generate_yield_count)
 sine1 = sine_generator(start_degree=45, yield_count=generate_yield_count)
 sine2 = sine_generator(start_degree=90, yield_count=generate_yield_count)
 
-
-def record_handler(buffer, handlerdata):
-    """Write buffer to the file handle in handler data.
-
-    This callback function can be changed to do anything you want
-    with the generated records.  For example, you could write them
-    to a file, to a pipe, or send them over a network connection.
-    """
-    handlerdata["fh"].write(buffer)
-
-
-file_handle = open(output_file, "wb")
+output_file = open(output_file, "wb")
 
 traces = MS3TraceList()
 
-total_samples = 0
 total_records = 0
 sample_rate = 40.0
 start_time = timestr2nstime("2024-01-01T15:13:55.123456789Z")
@@ -110,29 +109,25 @@ for i in range(10):
     start_time = sample_time(start_time, generate_yield_count, sample_rate)
 
     # Generate full records and do not flush the data buffers
-    (packed_samples, packed_records) = traces.pack(
-        record_handler,
-        handlerdata={"fh": file_handle},
+    for record in traces.generate(
         format_version=format_version,
         record_length=record_length,
         flush_data=False,
-    )
-
-    total_samples += packed_samples
-    total_records += packed_records
+        flush_idle_seconds=60,
+        removed_packed=True,
+    ):
+        output_file.write(record)
+        total_records += 1
 
 # Flush the data buffers and write any data to records
-(packed_samples, packed_records) = traces.pack(
-    record_handler,
-    handlerdata={"fh": file_handle},
+for record in traces.generate(
     format_version=format_version,
     record_length=record_length,
     flush_data=True,
-)
+):
+    output_file.write(record)
+    total_records += 1
 
-total_samples += packed_samples
-total_records += packed_records
+output_file.close()
 
-file_handle.close()
-
-print(f"Packed {total_samples} samples in {total_records} records")
+print(f"Packed {total_records} records")

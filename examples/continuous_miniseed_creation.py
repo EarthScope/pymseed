@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Generate miniSEED output from a continuous stream of data.
+Generate miniSEED from a continuous stream of data using a rolling buffer.
 
 This program illustrates the use of an MS3TraceList to function as a temporary,
 or transient, data buffer for a continuous stream of data, and using
@@ -123,10 +123,6 @@ def create_continuous_miniseed(
     """
     global shutdown_requested
 
-    def file_handler(record_bytes: bytes, file_handle: Any) -> None:
-        """Handler function to write packed miniSEED records to file."""
-        file_handle.write(record_bytes)
-
     # Set up signal handlers for graceful shutdown
     signal.signal(signal.SIGTERM, signal_handler)
     signal.signal(signal.SIGINT, signal_handler)
@@ -203,17 +199,19 @@ def create_continuous_miniseed(
                     print(f"Skipped data generation for {sourceid_2} (not 5th loop)")
 
                 # Pack traces with idle data flushing, but don't flush all data yet
-                packed_samples, packed_records = trace_buffer.pack(
-                    handler=file_handler,
-                    handlerdata=output_handle,
-                    flush_data=False,
-                    flush_idle_seconds=flush_idle_seconds,
+                packed_records = 0
+                for record in trace_buffer.generate(
                     record_length=record_length,
                     encoding=encoding,
-                )
+                    flush_data=False,
+                    flush_idle_seconds=flush_idle_seconds,
+                    removed_packed=True,
+                ):
+                    output_handle.write(record)
+                    packed_records += 1
 
                 if packed_records > 0 and verbose > 0:
-                    print(f"Packed {packed_records} records with {packed_samples} samples")
+                    print(f"Wrote {packed_records} records")
 
                 loop_count += 1
 
@@ -229,16 +227,18 @@ def create_continuous_miniseed(
 
         # Perform final packing with flush_data=True to ensure all data is written
         print("\nPerforming final data creation to flush remaining data...")
-        final_packed_samples, final_packed_records = trace_buffer.pack(
-            handler=file_handler,
-            handlerdata=output_handle,
-            flush_data=True,
+        packed_records = 0
+        for record in trace_buffer.generate(
             record_length=record_length,
             encoding=encoding,
-        )
+            flush_data=True,
+            removed_packed=True,
+        ):
+            output_handle.write(record)
+            packed_records += 1
 
         print(
-            f"Final flush: packed {final_packed_records} records with {final_packed_samples} samples"
+            f"Final flush: wrote {packed_records} records"
         )
 
         print(f"miniSEED creation complete. Output written to {output_file}")
