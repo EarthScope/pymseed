@@ -2,11 +2,11 @@
 Core trace list implementation for pymseed
 
 """
-
 from __future__ import annotations
 
-from collections.abc import Sequence
-from time import time
+import warnings
+
+from collections.abc import Iterator, Sequence
 from typing import Any, Callable, Optional
 
 from .clib import cdata_to_string, clibmseed, ffi
@@ -443,6 +443,7 @@ class MS3TraceSeg:
                 must be large enough to hold `self.samplecnt` samples of the appropriate
                 data type. If None, data is unpacked into internal memory owned by this
                 segment instance.
+
             verbose: Verbosity level for diagnostic output (0=quiet, 1-3=increasing
                 detail). Default: 0
 
@@ -453,6 +454,7 @@ class MS3TraceSeg:
             ValueError: If no record list is available (requires `record_list=True` when
                 reading), if data is already unpacked and a buffer is provided, or if
                 the provided buffer doesn't support the buffer protocol
+
             MiniSEEDError: If unpacking fails due to corrupted or invalid record data
 
         Note:
@@ -999,19 +1001,25 @@ class MS3TraceList:
 
         Args:
             file_name: Path to the miniSEED file to read
+
             unpack_data: If True, decode data samples immediately. If False, data
                 samples remain packed and must be unpacked later with
                 `unpack_recordlist()`. Default: False
+
             record_list: If True, maintain a list of original records for each
                 trace segment. Required for `unpack_recordlist()` and allows
                 access to individual record metadata. Default: False
                 NOTE: the files must remain accessible to unpack data with a record list
+
             skip_not_data: If True, skip non-data records in the file instead
                 of raising an error. Useful for files with mixed content. Default: False
+
             validate_crc: If True, validate CRC checksums if present in records
                 (miniSEED v3 only). Provides integrity verification. Default: True
+
             split_version: If True, treat different publication versions as
                 separate trace IDs. Default: False (merge by source ID only)
+
             verbose: Verbosity level for diagnostic output (0=quiet, 1-3=increasing
                 detail). Default: 0
 
@@ -1136,20 +1144,26 @@ class MS3TraceList:
 
         Args:
             buffer: Bytes-like object containing miniSEED data
+
             unpack_data: If True, decode data samples immediately. If False, data
                 samples remain packed and must be unpacked later with
                 `unpack_recordlist()`. Default: False
+
             record_list: If True, maintain a list of original records for each
                 trace segment. Required for `unpack_recordlist()` and allows
                 access to individual record metadata. Default: False
                 NOTE: the buffer must remain accessible to unpack data with a record list
                 This can be quite tricky to achieve, for advanced use only
+
             skip_not_data: If True, skip non-data records in the buffer instead
                 of raising an error. Useful for files with mixed content. Default: False
+
             validate_crc: If True, validate CRC checksums if present in records
                 (miniSEED v3 only). Provides integrity verification. Default: True
+
             split_version: If True, treat different publication versions as
                 separate trace IDs. Default: False (merge by source ID only)
+
             verbose: Verbosity level for diagnostic output (0=quiet, 1-3=increasing
                 detail). Default: 0
 
@@ -1279,33 +1293,41 @@ class MS3TraceList:
         the specific type and sample rate are added to the trace list.
 
         Args:
-            sourceid: Source identifier for the trace (e.g., "FDSN:XX_STA__BHZ").
+            sourceid: Source identifier for the trace (e.g., "FDSN:XX_STA__B_H_Z").
                 Should follow FDSN Source Identifier format.
+
             data_samples: Sequence of data samples. Can be a Python list, numpy array,
                 or any buffer-like object. Data type must match `sample_type`.
+
             sample_type: Data sample type code:
                 - "i": 32-bit signed integers (int32)
                 - "f": 32-bit floating point (float32)
                 - "d": 64-bit floating point (float64)
                 - "t": Text/character data (single bytes)
+
             sample_rate: Sample rate in samples per second (Hz) or period (seconds).
                 Use positive values for samples/second, and negative values for sample period in seconds.
+
             start_time_str: Start time as formatted string (e.g., "2023-01-01T12:00:00.000Z").
                 Mutually exclusive with start_time and start_time_seconds.
+
             start_time: Start time as nanoseconds since Unix epoch.
                 Mutually exclusive with start_time_str and start_time_seconds.
+
             start_time_seconds: Start time as seconds since Unix epoch (float).
                 Mutually exclusive with start_time_str and start_time.
+
             publication_version: Publication version number for the trace. Default: 0
 
         Raises:
             ValueError: If sample_type is invalid, time parameters are conflicting,
                 or data_samples format is incompatible with sample_type
+
             MiniSEEDError: If the data cannot be added to the trace list
 
         Note:
             Data is automatically merged with existing segments based on source ID,
-            time continuity, and sample rate compatibility. Adjacent or overlapping
+            time continuity, and sample rate similarity. Adjacent or overlapping
             segments are combined when possible.
 
         Performance:
@@ -1320,7 +1342,7 @@ class MS3TraceList:
             >>> traces = MS3TraceList()
             >>> data_series = [100, 105, 98, 102, 99, 103, 97]
             >>> traces.add_data(
-            ...     sourceid="FDSN:XX_STA__BHZ",
+            ...     sourceid="FDSN:XX_STA__B_H_Z",
             ...     data_samples=data_series,
             ...     sample_type="i",
             ...     sample_rate=20.0,
@@ -1329,14 +1351,14 @@ class MS3TraceList:
             >>> len(traces)
             1
             >>> traces[0].sourceid
-            'FDSN:XX_STA__BHZ'
+            'FDSN:XX_STA__B_H_Z'
 
             Multiple segments that get merged:
 
             >>> traces = MS3TraceList()
-            >>> traces.add_data("FDSN:XX_STA__BH1", [1, 2, 3], "i", 10.0,
+            >>> traces.add_data("FDSN:XX_STA__B_H_1", [1, 2, 3], "i", 10.0,
             ...                 start_time_str="2023-01-01T00:00:00.000Z")
-            >>> traces.add_data("FDSN:XX_STA__BH1", [4, 5, 6], "i", 10.0,
+            >>> traces.add_data("FDSN:XX_STA__B_H_1", [4, 5, 6], "i", 10.0,
             ...                 start_time_str="2023-01-01T00:00:00.300Z")
             >>> len(traces) # One traceID
             1
@@ -1396,6 +1418,11 @@ class MS3TraceList:
     ) -> tuple[int, int]:
         """Pack trace list data into miniSEED records and call handler function for each record.
 
+        .. deprecated::
+            The `pack()` method is deprecated in favor of the more Pythonic
+            `generate()` method. Use `generate()` for most use cases as it
+            provides a cleaner generator-based interface with equivalent functionality.
+
         This method packages the time series data from all traces in the trace list
         into miniSEED format records. For each generated record, the provided handler
         function is called with the record as a bytes object.
@@ -1404,15 +1431,21 @@ class MS3TraceList:
             handler: Callback function that will be called for each packed record.
                 Must accept two arguments: (record_bytes: bytes, userdata: Any).
                 The record_bytes contains the complete miniSEED record.
+
             handlerdata: Optional user data passed to the handler function as the second argument.
                 Can be any Python object (file handle, list, etc.).
+
             flush_data: If True, forces packing of all available data, even if it doesn't
                 fill a complete record. If False, partial records at the end of traces
                 may be held in internal buffers. Default is True.
+
             flush_idle_seconds: If > 0, forces flushing of data segments that have not been
                 updated within the specified number of seconds. Default is 0 (disabled).
-            record_length: Length of each miniSEED record in bytes. Must be a power of 2
-                between 128 and 65536. Common values are 512, 4096, and 8192. Default is 4096.
+
+            record_length: Maximum length of each miniSEED record in bytes. For miniSEED
+                format version 2, this must be a power of 2 between 128 and 65536.
+                Common values are 512 and 4096. Default is 4096.
+
             encoding: Data encoding format for compression. Options include:
                 - DataEncoding.STEIM1: Steim-1 compression (default, good general purpose for 32-bit ints)
                 - DataEncoding.STEIM2: Steim-2 compression
@@ -1421,10 +1454,13 @@ class MS3TraceList:
                 - DataEncoding.FLOAT32: 32-bit IEEE floats
                 - DataEncoding.FLOAT64: 64-bit IEEE doubles
                 - DataEncoding.TEXT: Text encoding (UTF-8)
+
             format_version: miniSEED format version (2 or 3). If None, uses library default.
                 Version 2 is legacy format, version 3 is latest standard.
+
             extra_headers: Optional extra header fields to include.
                 Must be valid JSON string.
+
             verbose: Verbosity level for libmseed output (0=quiet, 1=info, 2=detailed).
 
         Returns:
@@ -1439,9 +1475,12 @@ class MS3TraceList:
         Examples:
             Simple example writing to a file:
 
+            >>> from pymseed import MS3TraceList
+            >>> import warnings
+
             >>> # Create a trace list with some data
             >>> traces = MS3TraceList()
-            >>> traces.add_data("FDSN:XX_STA__BHZ", [1, 2, 3, 4, 5], "i", 100.0, start_time_str="2023-01-01T00:00:00.000Z")
+            >>> traces.add_data("FDSN:XX_STA__B_H_Z", [1, 2, 3, 4, 5], "i", 100.0, start_time_str="2023-01-01T00:00:00.000Z")
 
             >>> # Pack to file using a simple handler
             >>> def write_to_file(record_bytes, file_handle):
@@ -1459,6 +1498,13 @@ class MS3TraceList:
         See also:
             - to_file()
         """
+        # Issue deprecation warning
+        warnings.warn(
+            "pack() is deprecated and will be removed in a future version. "
+            "Use generate() instead for a more Pythonic generator-based interface.",
+            DeprecationWarning,
+            stacklevel=2
+        )
 
         # Set handler function as CFFI callback function
         self._record_handler = handler
@@ -1499,6 +1545,154 @@ class MS3TraceList:
 
         return (packed_samples[0], packed_records)
 
+    def generate(
+        self,
+        record_length: int = 4096,
+        encoding: DataEncoding = DataEncoding.STEIM1,
+        format_version: Optional[int] = None,
+        extra_headers: Optional[str] = None,
+        flush_data: bool = True,
+        flush_idle_seconds: int = 0,
+        removed_packed: bool = False,
+        verbose: int = 0,
+    ) -> Iterator[bytes]:
+        """Create miniSEED record(s) for data in the trace list.
+
+        This method creates, or packs, miniSEED record(s) for the time series
+        data from all traces in the trace list using the provided parameters
+        (encoding, record length, etc.).
+
+        Args:
+            record_length: Maximum length of each miniSEED record in bytes. For
+                miniSEED format version 2, this must be a power of 2 between 128
+                and 65536. Common values are 512 and 4096. Default is 4096.
+
+            encoding: Data encoding format for compression. Options include:
+                - DataEncoding.STEIM1: Steim-1 compression (default, good
+                  general purpose for 32-bit ints)
+                - DataEncoding.STEIM2: Steim-2 compression
+                - DataEncoding.INT16: 16-bit integers (no compression)
+                - DataEncoding.INT32: 32-bit integers (no compression)
+                - DataEncoding.FLOAT32: 32-bit IEEE floats
+                - DataEncoding.FLOAT64: 64-bit IEEE doubles
+                - DataEncoding.TEXT: Text encoding (UTF-8)
+
+            format_version: miniSEED format version (2 or 3). If None, uses
+                library default. Version 2 is legacy format, version 3 is latest
+                standard. Version 2 is legacy format, version 3 is latest
+                standard.
+
+            extra_headers: Optional extra header fields to include.
+                Must be valid JSON string.
+
+            flush_data: If True, forces creation of records for all
+                data, even if it doesn't fill a complete record. If False, data
+                samplesat the end of traces may be held in internal buffers.
+                Default is True.
+
+            flush_idle_seconds: If > 0, forces flushing of data segments that
+                have not been updated within the specified number of seconds.
+                Default is 0 (disabled).
+
+            removed_packed: If True, data samples packed into records will be
+                removed from the trace list.  See "Rolling buffer" section below
+                for more details. Default is False.
+
+            verbose: Verbosity level for libmseed output (0=quiet, 1=info,
+                2=detailed). Default is 0 (quiet).
+
+        Yields:
+            bytes: Each miniSEED record as it is created
+
+        Raises:
+            ValueError: If format_version is not 2 or 3, or if record_length is
+                invalid.
+            MiniSEEDError: If the underlying libmseed library encounters an
+                error during creation of miniSEED records.
+
+        Examples:
+            Simple example creating miniSEED records:
+
+            >>> # Create a trace list with some data
+            >>> traces = MS3TraceList()
+            >>> traces.add_data("FDSN:XX_STA__H_H_Z", [1, 2, 3, 4, 5], "i", 100.0, start_time_str="2023-01-01T00:00:00.000Z")
+            >>> traces.add_data("FDSN:XX_STA__H_H_1", [6, 7, 8, 9, 9], "i", 100.0, start_time_str="2023-01-01T00:00:00.000Z")
+            >>> traces.add_data("FDSN:XX_STA__H_H_2", [9, 9, 8, 7, 6], "i", 100.0, start_time_str="2023-01-01T00:00:00.000Z")
+
+            >>> record_count = 0
+            >>> for record in traces.generate():
+            ...     record_count += 1
+            >>> print(f"Created {record_count} records")
+            Created 3 records
+
+        Rolling buffer:
+            A common pattern is to use a MS3TraceList as a rolling buffer to
+            generate miniSEED records from an arbitrary number of continuous
+            data streams.  In particular this pattern allows creating filled
+            miniSEED records as much as possible during regular data flow, and
+            then flushing any remaining data at the end. This is particularly
+            useful for converting real-time data streams into miniSEED or for
+            converting large data sets into miniSEED without loading all the
+            source data into memory.
+
+            A few options are needed to properly configure the rolling buffer.
+            For creating filled records during regular data flow:
+            * `flush_data=False` to keep data in the trace list
+            * `flush_idle_seconds=N` to flush data segments that have not been updated within N seconds
+            * `removed_packed=True` to remove packed data from the trace list
+
+            To flush the all data from the buffer on termination:
+            * `flush_data=True` to flush all data from the trace list
+            * `removed_packed=True` to remove packed data from the trace list
+
+        See also:
+            - to_file()
+        """
+        flags = 0
+
+        if flush_data:
+            flags |= clibmseed.MSF_FLUSHDATA
+
+        if not removed_packed:
+            flags |= clibmseed.MSF_MAINTAINMSTL
+
+        if format_version is not None:
+            if format_version not in [2, 3]:
+                raise ValueError(f"Invalid miniSEED format version: {format_version}")
+            if format_version == 2:
+                flags |= clibmseed.MSF_PACKVER2
+
+        c_extra = (
+            ffi.new("char[]", extra_headers.encode("utf-8"))
+            if extra_headers
+            else ffi.NULL
+        )
+
+        packer = clibmseed.mstl3_pack_init(
+            self._mstl,
+            record_length,
+            encoding,
+            flags,
+            verbose,
+            c_extra,
+            flush_idle_seconds,
+        )
+
+        if packer is None:
+            raise MiniSEEDError(-1, "Error initializing packer")
+
+        record_pp = ffi.new("char **")
+        reclen_p = ffi.new("int32_t *")
+
+        # Pack miniSEED records and yield each record
+        while clibmseed.mstl3_pack_next(packer, flags, record_pp, reclen_p) == 1:
+            yield ffi.buffer(record_pp[0], reclen_p[0])[:]
+
+        # Free packer
+        packer_pp = ffi.new("MS3TraceListPacker **")
+        packer_pp[0] = packer
+        clibmseed.mstl3_pack_free(packer_pp, ffi.NULL)
+
     def to_file(
         self,
         filename: str,
@@ -1510,43 +1704,57 @@ class MS3TraceList:
     ) -> int:
         """Write trace list data to a miniSEED file.
 
-        This method packages the time series data from all traces in the trace list
-        into miniSEED format and writes them directly to a file. This is a convenience
-        method that combines packing and file writing in a single operation.
+        This method packages the time series data from all traces in the trace
+        list into miniSEED format and writes them directly to a file. This is a
+        convenience method that combines packing and file writing in a single
+        operation.
 
         Args:
-            filename: Path to the output miniSEED file. The file will be created if it
-                doesn't exist. Directory must already exist.
-            overwrite: If True, overwrites any existing file. If False and file exists,
-                append data to the end of the file. Default is False for safety.
-            max_reclen: Maximum record length in bytes. Must be a power of 2 between
-                128 and 65536. Common values are 512, 4096, and 8192. Default is 4096.
+            filename: Path to the output miniSEED file. The file will be created
+                if it doesn't exist. Directory must already exist.
+
+            overwrite: If True, overwrites any existing file. If False and file
+                exists, append data to the end of the file. Default is False for
+                safety.
+
+            max_reclen: Maximum length of each miniSEED record in bytes. For
+                miniSEED format version 2, this must be a power of 2 between 128 and 65536.
+                Common values are 512 and 4096. Default is 4096.
+
             encoding: Data encoding format for compression. Options include:
-                - DataEncoding.STEIM1: Steim-1 compression (default, good general purpose for 32-bit ints)
+                - DataEncoding.STEIM1: Steim-1 compression (default, good
+                  general purpose for 32-bit ints)
                 - DataEncoding.STEIM2: Steim-2 compression
                 - DataEncoding.INT16: 16-bit integers (no compression)
                 - DataEncoding.INT32: 32-bit integers (no compression)
                 - DataEncoding.FLOAT32: 32-bit IEEE floats
                 - DataEncoding.FLOAT64: 64-bit IEEE doubles
                 - DataEncoding.TEXT: Text encoding (UTF-8)
-            format_version: miniSEED format version (2 or 3). If None, uses library default.
-                Version 2 is legacy format, version 3 is latest standard.
-            verbose: Verbosity level for libmseed output (0=quiet, 1=info, 2=detailed).
+
+            format_version: miniSEED format version (2 or 3). If None, uses
+                library default. Version 2 is legacy format, version 3 is latest
+                standard.
+
+            verbose: Verbosity level for libmseed output (0=quiet, 1=info,
+                2=detailed). Default is 0 (quiet).
 
         Returns:
             int: Number of miniSEED records written to the file.
 
         Raises:
-            ValueError: If format_version is not 2 or 3, or if max_reclen is invalid.
-            MiniSEEDError: If the underlying libmseed library encounters an error during
-                file writing (e.g., permission denied, disk full, invalid data).
+            ValueError: If format_version is not 2 or 3, or if max_reclen is
+                invalid.
+
+            MiniSEEDError: If the underlying libmseed library
+                encounters an error during file writing (e.g., permission
+                denied, disk full, invalid data).
 
         Examples:
             Simple file writing:
 
             >>> # Create a trace list with some data
             >>> traces = MS3TraceList()
-            >>> traces.add_data("FDSN:XX_STA__BHZ", [1, 2, 3, 4, 5], "i", 100.0, start_time_str="2023-01-01T00:00:00Z")
+            >>> traces.add_data("FDSN:XX_STA__B_H_Z", [1, 2, 3, 4, 5], "i", 100.0, start_time_str="2023-01-01T00:00:00Z")
 
             >>> # Write to file (basic usage)
             >>> records_written = traces.to_file("output.mseed") # doctest: +SKIP
@@ -1567,14 +1775,11 @@ class MS3TraceList:
             Wrote 1 records to output.mseed
 
         Note:
-            - This method is more convenient than using pack() with a file handler
-            - File permissions and disk space are checked during writing
-            - All data is written in a single operation - use pack() for streaming
-            - The output file contains all traces from the trace list
-            - Record boundaries depend on max_reclen and data compression
+            This method is more convenient and efficient than using generate()
+            and writing to a file with a file handler.
 
         See also:
-            - pack(): Lower-level method with custom record handlers
+            - generate(): Lower-level method to create miniSEED records
             - add_data(): Add time series data to the trace list
             - from_file(): Read miniSEED data from file
         """

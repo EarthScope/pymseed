@@ -447,6 +447,152 @@ def test_mstracelist_pack():
         data_v3 = f.read()
         assert record_buffer == data_v3
 
+def test_mstracelist_generate_rollingbuffer():
+    """Test creation of miniSEED v3 records from a trace list using a rolling buffer.
+
+    The rolling buffer usage removes packed data from the trace list after each
+    pack, data is then added and packed in later calls.  After the final pack to
+    flush any remaining data, the trace list is empty.
+    """
+    # Create a new MSTraceList object
+    traces = MS3TraceList()
+
+    sample_rate = 40.0
+    start_time = timestr2nstime("2024-01-01T15:13:55.123456789Z")
+    format_version = 3
+    record_length = 512
+
+    # Test creation of a miniSEED v3 records
+    record_buffer = b""
+    record_count = 0
+
+    # Mimic generating miniSEED records from a continuous data stream by adding
+    # data to the trace list and generating filled records
+    for new_data in sine_generator(yield_count=100, total=2000):
+        traces.add_data(
+            sourceid="FDSN:XX_TEST__B_S_X",
+            data_samples=new_data,
+            sample_type="i",
+            sample_rate=sample_rate,
+            start_time=start_time,
+        )
+
+        start_time = sample_time(start_time, len(new_data), sample_rate)
+
+        # Generate filled records during regular data flow
+        for record in traces.generate(
+            record_length=record_length,
+            format_version=format_version,
+            flush_data=False,
+            flush_idle_seconds=10,
+            removed_packed=True,
+        ):
+            record_buffer += record
+            record_count += 1
+
+    # Final record creation to flush any remaining data
+    for record in traces.generate(
+        record_length=record_length,
+        format_version=format_version,
+        flush_data=True,
+        removed_packed=True,
+    ):
+        record_buffer += record
+        record_count += 1
+
+    assert record_count == 5
+    assert len(record_buffer) == 2471
+
+    with open(test_pack3, "rb") as f:
+        data_v3 = f.read()
+        assert record_buffer == data_v3
+
+    assert len(traces) == 0 # Trace list should be empty after final pack
+
+test_pack3_x3 = os.path.join(test_dir, "data", "packtest_sine500x3.mseed3")
+test_pack2_x3 = os.path.join(test_dir, "data", "packtest_sine500x3.mseed2")
+
+def test_mstracelist_generate():
+    """Test creation of miniSEED v3 and v2 records from a trace list.
+
+    The same trace list is used for both versions to ensure that the data is
+    maintained in the trace list after packing.
+    """
+
+    # A sine wave of 500 samples
+    sine_500 = [int(math.sin(math.radians(x)) * 500) for x in range(0, 500)]
+
+    # Create a new MSTraceList object
+    traces = MS3TraceList()
+
+    sample_rate = 40.0
+    start_time = timestr2nstime("2024-01-01T15:13:55.123456789Z")
+    record_length = 512
+
+    # Add 3 traces to the list
+    traces.add_data(
+        sourceid="FDSN:XX_TEST__B_S_1",
+        data_samples=sine_500,
+        sample_type="i",
+        sample_rate=sample_rate,
+        start_time=start_time,
+    )
+    traces.add_data(
+        sourceid="FDSN:XX_TEST__B_S_2",
+        data_samples=sine_500,
+        sample_type="i",
+        sample_rate=sample_rate,
+        start_time=start_time,
+    )
+    traces.add_data(
+        sourceid="FDSN:XX_TEST__B_S_3",
+        data_samples=sine_500,
+        sample_type="i",
+        sample_rate=sample_rate,
+        start_time=start_time,
+    )
+
+    # Test creation of a miniSEED v3 records
+    record_buffer = b""
+    record_count = 0
+
+    for record in traces.generate(
+        record_length=record_length,
+        format_version=3
+    ):
+        record_buffer += record
+        record_count += 1
+
+    assert record_count == 6
+    assert len(record_buffer) == 2082
+
+    with open(test_pack3_x3, "rb") as f:
+        data_v3 = f.read()
+        assert record_buffer == data_v3
+
+    # Test creation of a miniSEED v2 records
+    record_buffer = b""
+    record_count = 0
+
+    for record in traces.generate(
+        record_length=record_length,
+        format_version=2
+    ):
+        record_buffer += record
+        record_count += 1
+
+    assert record_count == 6
+    assert len(record_buffer) == 3072
+
+    with open(test_pack2_x3, "rb") as f:
+        data_v2 = f.read()
+        assert record_buffer == data_v2
+
+    assert len(traces) == 3 # Traces should remain in the list
+    assert traces[0][0].numsamples == 500
+    assert traces[1][0].numsamples == 500
+    assert traces[2][0].numsamples == 500
+
 
 test_pack2 = os.path.join(test_dir, "data", "packtest_sine2000.mseed2")
 

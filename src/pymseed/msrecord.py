@@ -5,7 +5,7 @@ Core MS3Record implementation for pymseed
 
 import json
 import warnings
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from typing import Any, Callable, Optional, Union
 
@@ -1046,10 +1046,11 @@ class MS3Record:
         Examples:
             >>> from pymseed import MS3Record, DataEncoding
             >>> import warnings
+
             >>> # Write to file
             >>> def file_handler(record: bytes, file_handle: Any):
             ...     file_handle.write(record)
-            >>>
+
             >>> msr = MS3Record() # doctest: +SKIP
             >>> with open('output.mseed', 'wb') as f: # doctest: +SKIP
             ...     with warnings.catch_warnings():
@@ -1059,12 +1060,12 @@ class MS3Record:
             ...             data_samples=[1, 2, 3, 4, 5],
             ...             sample_type='i'
             ...         )
-            >>>
+
             >>> # Collect records in memory
             >>> records_list = []
             >>> def collect_handler(record: bytes, container: Any):
             ...     container.append(record)
-            >>>
+
             >>> msr = MS3Record()
             >>> msr.encoding = DataEncoding.FLOAT32
             >>> with warnings.catch_warnings():
@@ -1127,7 +1128,7 @@ class MS3Record:
         data_samples: Optional[Union[list[int], list[float], list[str]]] = None,
         sample_type: Optional[str] = None,
         verbose: int = 0,
-    ) -> tuple[int, int]:
+    ) -> Iterator[bytes]:
         """Create miniSEED record(s) using parameters from the record.
 
         This method creates miniSEED records using the parameters (encoding,

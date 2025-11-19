@@ -1,7 +1,8 @@
-import pytest
-import os
 import json
 import math
+import os
+
+import pytest
 from pymseed import MS3Record, DataEncoding
 
 test_dir = os.path.abspath(os.path.dirname(__file__))
@@ -11,7 +12,7 @@ test_repack2_input = os.path.join(test_dir, "data", "testdata-COLA-signal.mseed2
 test_repack3_output = os.path.join(test_dir, "data", "testdata-COLA-signal.mseed3")
 
 # A sine wave of 500 samples
-sine_500 = list(map(lambda x: int(math.sin(math.radians(x)) * 500), range(0, 500)))
+sine_500 = [int(math.sin(math.radians(x)) * 500) for x in range(0, 500)]
 
 # A global record buffer
 record_buffer = b""

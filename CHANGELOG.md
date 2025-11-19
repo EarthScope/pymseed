@@ -8,9 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Added
 - `MS3Record.generate()`, a generator to produce miniSEED records
+- `MS3TraceList.generate()`, a generator to produce miniSEED records
 
 ### Deprecated
 - `MS3Record.pack()` functionality, use `MS3Record.generate()` instead.
+- `MS3TraceList.pack()` functionality, use `MS3TraceList.generate()` instead.
 
 ### Changed
 - libmseed updated to v3.2.0
