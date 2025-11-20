@@ -50,15 +50,15 @@ class StreamStats:
             "sourceids": sourceids_copy,
         }
 
-    def update(self, record):
+    def update(self, msr):
         """Update statistics with data from a miniSEED record."""
         # Update global statistics
         self.record_count += 1
-        self.sample_count += record.samplecnt
-        self.bytes += record.reclen
+        self.sample_count += msr.samplecnt
+        self.bytes += msr.reclen
 
         # Track per-sourceid statistics
-        sid = record.sourceid
+        sid = msr.sourceid
         if sid not in self.sourceids:
             self.sourceids[sid] = {
                 "record_count": 0,
@@ -70,14 +70,14 @@ class StreamStats:
 
         sid_stats = self.sourceids[sid]
         sid_stats["record_count"] += 1
-        sid_stats["sample_count"] += record.samplecnt
-        sid_stats["bytes"] += record.reclen
+        sid_stats["sample_count"] += msr.samplecnt
+        sid_stats["bytes"] += msr.reclen
 
-        if sid_stats["earliest"] is None or record.starttime < sid_stats["earliest"]:
-            sid_stats["earliest"] = record.starttime
+        if sid_stats["earliest"] is None or msr.starttime < sid_stats["earliest"]:
+            sid_stats["earliest"] = msr.starttime
 
-        if sid_stats["latest"] is None or record.endtime > sid_stats["latest"]:
-            sid_stats["latest"] = record.endtime
+        if sid_stats["latest"] is None or msr.endtime > sid_stats["latest"]:
+            sid_stats["latest"] = msr.endtime
 
 
 def main():
@@ -86,15 +86,15 @@ def main():
 
     # Read miniSEED from stdin and accumulate stats for each record
     stats = StreamStats()
-    with MS3Record.from_file(sys.stdin.fileno()) as reader:
-        for record in reader:
-            # Update statistics with data from the record
-            stats.update(record)
+    for msr in MS3Record.from_file(sys.stdin.fileno()):
+        # Update statistics with data from the record
+        stats.update(msr)
 
-            # Write raw miniSEED record to stdout
-            sys.stdout.buffer.write(record.record)
+        # Write raw miniSEED record to stdout
+        sys.stdout.buffer.write(msr.record)
 
     print(stats, file=sys.stderr)
+
 
 if __name__ == "__main__":
     main()

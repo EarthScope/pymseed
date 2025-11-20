@@ -1264,8 +1264,12 @@ class MS3Record:
     def from_file(cls, filename, **kwargs):
         """Create a record reader for miniSEED files.
 
-        This convenience method returns an MS3RecordReader that can iterate
-        over all records in a miniSEED file.
+        This convenience method returns an MS3RecordReader that can iterate over
+        all records in a miniSEED file.
+
+        Note that the objects returned by this iterator are only valid during
+        the lifetime of the iterator. Once the iterator is exhausted, the
+        objects are no longer valid and should not be used.
 
         Args:
             filename: Path to miniSEED file
@@ -1287,8 +1291,12 @@ class MS3Record:
     def from_buffer(cls, buffer, **kwargs):
         """Create a record reader for miniSEED data in memory.
 
-        This convenience method returns an MS3RecordBufferReader that can iterate
-        over records stored in a memory buffer (bytes-like object).
+        This convenience method returns an MS3RecordBufferReader that can
+        iterate over records stored in a memory buffer (bytes-like object).
+
+        Note that the objects returned by this iterator are only valid during
+        the lifetime of the iterator. Once the iterator is exhausted, the
+        objects are no longer valid and should not be used.
 
         Args:
             buffer: Bytes-like object containing miniSEED data

@@ -24,6 +24,10 @@ class MS3RecordBufferReader:
     parsed sequentially from the beginning of the buffer using the underlying
     libmseed library.
 
+    Note that the objects returned by this iterator are only valid during
+    the lifetime of the iterator. Once the iterator is exhausted, the objects
+    are no longer valid and should not be used.
+
     Args:
         buffer: A buffer-like object containing miniSEED records. Must support
             the buffer protocol (e.g., bytearray, bytes, memoryview, numpy.ndarray).
@@ -45,11 +49,10 @@ class MS3RecordBufferReader:
     >>> with open('examples/example_data.mseed', 'rb') as f:
     ...     buffer = f.read()
 
-    >>> with MS3Record.from_buffer(buffer, unpack_data=True) as reader:
-    ...     total_samples = 0
-    ...     for msr in reader:
-    ...         total_samples += msr.numsamples
-    ...     print(f"Total samples: {total_samples}")
+    >>> total_samples = 0
+    >>> for msr in MS3Record.from_buffer(buffer, unpack_data=True):
+    ...     total_samples += msr.numsamples
+    >>> print(f"Total samples: {total_samples}")
     Total samples: 12600
 
     Notes:

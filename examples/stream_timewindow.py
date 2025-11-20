@@ -26,27 +26,24 @@ def process_stream(args):
     print("Reading miniSEED from stdin, writing to stdout", file=sys.stderr)
 
     # Read miniSEED from stdin
-    with MS3Record.from_file(sys.stdin.fileno()) as msreader:
-        for msr in msreader:
-            # Skip records completely outside the time window
-            if (args.earliest and msr.endtime < args.earliest) or (
-                args.latest and msr.starttime > args.latest
-            ):
-                continue
-
-            # Trim if record overlaps with time window boundaries
-            output_record = msr.record
-            if (args.earliest and msr.starttime < args.earliest <= msr.endtime) or (
-                args.latest and msr.starttime <= args.latest < msr.endtime
-            ):
-                trimmed_record = trim_record(msr, args.earliest, args.latest)
-                if trimmed_record:
-                    output_record = trimmed_record
-
-            # Write record to stdout
-            sys.stdout.buffer.write(output_record)
-            records_written += 1
-            bytes_written += msr.reclen
+    for msr in MS3Record.from_file(sys.stdin.fileno()):
+        # Skip records completely outside the time window
+        if (args.earliest and msr.endtime < args.earliest) or (
+            args.latest and msr.starttime > args.latest
+        ):
+            continue
+        # Trim if record overlaps with time window boundaries
+        output_record = msr.record
+        if (args.earliest and msr.starttime < args.earliest <= msr.endtime) or (
+            args.latest and msr.starttime <= args.latest < msr.endtime
+        ):
+            trimmed_record = trim_record(msr, args.earliest, args.latest)
+            if trimmed_record:
+                output_record = trimmed_record
+        # Write record to stdout
+        sys.stdout.buffer.write(output_record)
+        records_written += 1
+        bytes_written += msr.reclen
 
     print(f"Wrote {records_written} records, {bytes_written} bytes", file=sys.stderr)
 
@@ -57,17 +54,17 @@ def trim_record(msr, earliest, latest):
     if msr.samplecnt == 0 and msr.samprate == 0.0:
         return None
 
-    # Re-parse the record and decode the data samples
+    # Re-parse the single miniSEED record and decode the data samples
     buffer = bytearray(msr.record)  # Mutable/writable buffer required
     with MS3Record.from_buffer(buffer, unpack_data=True) as msreader:
 
         # Read/parse the single record
-        record = msreader.read()
+        msr_trimmed = msreader.read()
 
-        data_samples = record.datasamples[:]
-        start_time = record.starttime
-        end_time = record.endtime
-        sample_period_ns = int(NSTMODULUS / record.samprate)
+        data_samples = msr_trimmed.datasamples[:]
+        start_time = msr_trimmed.starttime
+        end_time = msr_trimmed.endtime
+        sample_period_ns = int(NSTMODULUS / msr_trimmed.samprate)
 
         # Trim early samples to the earliest time
         if earliest and start_time < earliest <= end_time:
@@ -90,10 +87,10 @@ def trim_record(msr, earliest, latest):
             return None
 
         # Pack the trimmed record
-        record.starttime = start_time
+        msr_trimmed.starttime = start_time
         record_buffer = b""
-        for packed_record in record.generate(
-            data_samples=data_samples, sample_type=record.sampletype
+        for packed_record in msr_trimmed.generate(
+            data_samples=data_samples, sample_type=msr_trimmed.sampletype
         ):
             record_buffer += packed_record
 

@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `MS3TraceList.pack()` functionality, use `MS3TraceList.generate()` instead.
 
 ### Changed
+- Examples updated to reflect current recommended patterns
+
+### Changed
 - libmseed updated to v3.2.0
 
 ## [0.0.5] - 2025-09-27

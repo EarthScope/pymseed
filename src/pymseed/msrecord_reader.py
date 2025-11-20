@@ -21,21 +21,29 @@ class MS3RecordReader:
     The reader can be used as an iterator to process records sequentially, or as
     a context manager for automatic resource cleanup.
 
+    Note that the objects returned by this iterator are only valid during
+    the lifetime of the iterator. Once the iterator is exhausted, the results
+    are no longer valid and should not be used.
+
     Args:
         input (Union[str, int]): File path (string) or open file descriptor (integer).
             If an integer, it must be a valid open file descriptor. The file or
             descriptor will be automatically closed when close() is called or when
             the object is used as a context manager.
+
         unpack_data (bool, optional): Whether to decode/unpack the data samples from
             the records. If False, only metadata is parsed and data remains in
             compressed format. Defaults to False for better performance when only
             metadata is needed.
+
         skip_not_data (bool, optional): Whether to skip non-data bytes in the input
             stream until a valid miniSEED record is found. Useful for reading from
             streams that may contain other data mixed with miniSEED records.
             Defaults to False.
+
         validate_crc (bool, optional): If True, validate CRC checksums when present in records.
             miniSEED v3 records contain CRCs, but v2 records do not. Default is True.
+
         verbose (int, optional): Verbosity level for for libmseed operations. Higher values
             produce more detailed output. 0 = no output, 1+ = increasing verbosity.
             Defaults to 0 (silent).
@@ -48,11 +56,10 @@ class MS3RecordReader:
 
     >>> from pymseed import MS3Record
 
-    >>> with MS3Record.from_file('examples/example_data.mseed', unpack_data=True) as reader:
-    ...     total_samples = 0
-    ...     for msr in reader:
-    ...         total_samples += msr.numsamples
-    ...     print(f"Total samples: {total_samples}")
+    >>> total_samples = 0
+    >>> for msr in MS3Record.from_file('examples/example_data.mseed', unpack_data=True):
+    ...     total_samples += msr.numsamples
+    >>> print(f"Total samples: {total_samples}")
     Total samples: 12600
 
 
@@ -61,9 +68,10 @@ class MS3RecordReader:
     >>> import os
     >>> fd = os.open('examples/example_data.mseed', os.O_RDONLY)
 
-    >>> with MS3Record.from_file(fd, unpack_data=True) as reader:
-    ...     msrs = list(reader)  # Read all records
-    ...     print(f"Total records: {len(msrs)}")
+    >>> total_records = 0
+    >>> for msr in MS3Record.from_file(fd, unpack_data=False):
+    ...     total_records += 1
+    >>> print(f"Total records: {total_records}")
     Total records: 107
 
     Note:
