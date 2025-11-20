@@ -30,14 +30,14 @@ from pymseed import MS3Record, TimeFormat
 
 input_file = "examples/example_data.mseed"
 
-for record in MS3Record.from_file(input_file):
+for msr in MS3Record.from_file(input_file):
     # Print values directly
-    print(f'   SourceID: {record.sourceid}, record length {record.reclen}')
-    print(f' Start Time: {record.starttime_str(timeformat=TimeFormat.ISOMONTHDAY_SPACE_Z)}')
-    print(f'    Samples: {record.samplecnt}')
+    print(f'   SourceID: {msr.sourceid}, record length {msr.reclen}')
+    print(f' Start Time: {msr.starttime_str(timeformat=TimeFormat.ISOMONTHDAY_SPACE_Z)}')
+    print(f'    Samples: {msr.samplecnt}')
 
     # Alternatively, use the library print function
-    record.print()
+    msr.print()
 ```
 
 Read a file into a trace list and print the list:
