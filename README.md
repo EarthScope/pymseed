@@ -57,9 +57,6 @@ for traceid in traces:
         print('  ', segment)
 ```
 
-Writing miniSEED requires specifying a "record handler" function that is
-a callback to consume, and do whatever you want, with generated records.
-
 Simple example of writing multiple channels of data:
 ```python
 import math
