@@ -106,7 +106,7 @@ class MS3RecordReader:
 
         # If the stream is an integer, assume an open file descriptor
         if isinstance(input, int):
-            self._msfp_ptr[0] = clibmseed.ms3_mstl_init_fd(input)
+            self._msfp_ptr[0] = clibmseed.ms3_msfp_init_fd(input)
 
             if self._msfp_ptr[0] == ffi.NULL:
                 raise MiniSEEDError(

@@ -72,7 +72,7 @@ libmseed_url_support (void)
  * @ref MessageOnError - this function logs a message on error
  ***************************************************************************/
 MS3FileParam *
-ms3_mstl_init_fd (int fd)
+ms3_msfp_init_fd (int fd)
 {
   MS3FileParam *msfp;
 
@@ -117,7 +117,7 @@ ms3_shift_msfp (MS3FileParam *msfp, int shift)
     return;
   }
 
-  if (shift <= 0 && shift > msfp->readlength)
+  if (shift <= 0 || shift > msfp->readlength)
   {
     ms_log (2, "Cannot shift buffer, shift: %d, readlength: %d, readoffset: %d\n", shift,
             msfp->readlength, msfp->readoffset);

@@ -29,8 +29,8 @@ extern "C"
 {
 #endif
 
-#define LIBMSEED_VERSION "3.2.0"   //!< Library version
-#define LIBMSEED_RELEASE "2025.315" //!< Library release date
+#define LIBMSEED_VERSION "3.2.1"    //!< Library version
+#define LIBMSEED_RELEASE "2025.354" //!< Library release date
 
 /** @defgroup io-functions File and URL I/O */
 /** @defgroup miniseed-record Record Handling */
@@ -113,8 +113,6 @@ typedef unsigned __int64 uint64_t;
 
 #define snprintf _snprintf
 #define vsnprintf _vsnprintf
-#define strcasecmp _stricmp
-#define strncasecmp _strnicmp
 #define strtoull _strtoui64
 #define fileno _fileno
 #define fdopen _fdopen
@@ -845,7 +843,9 @@ extern int64_t msr3_writemseed (MS3Record *msr, const char *mspath, int8_t overw
 extern int64_t mstl3_writemseed (MS3TraceList *mstl, const char *mspath, int8_t overwrite,
                                  int maxreclen, int8_t encoding, uint32_t flags, int8_t verbose);
 extern int libmseed_url_support (void);
-extern MS3FileParam *ms3_mstl_init_fd (int fd);
+extern MS3FileParam *ms3_msfp_init_fd (int fd);
+/* Backwards compatibility alias for ms3_msfp_init_fd() */
+#define ms3_mstl_init_fd(fd) ms3_msfp_init_fd(fd)
 /** @} */
 
 /** @addtogroup string-functions
@@ -1339,6 +1339,8 @@ extern int lmp_fseek64 (FILE *stream, int64_t offset, int whence);
 extern uint64_t lmp_nanosleep (uint64_t nanoseconds);
 /** Portable function to return the current system time */
 extern nstime_t lmp_systemtime (void);
+/** Portable function for case-insensitive, ASCII-only string comparison */
+extern int lmp_strncasecmp (const char *s1, const char *s2, size_t n);
 
 /** Return CRC32C value of supplied buffer, with optional starting CRC32C value */
 extern uint32_t ms_crc32c (const uint8_t *input, int length, uint32_t previousCRC32C);
@@ -1351,7 +1353,7 @@ ms_gswap2 (void *data2)
 
   memcpy (&dat, data2, 2);
 
-  dat = ((dat & 0xff00) >> 8) | ((dat & 0x00ff) << 8);
+  dat = (uint16_t)(((dat & 0xff00) >> 8) | ((dat & 0x00ff) << 8));
 
   memcpy (data2, &dat, 2);
 }

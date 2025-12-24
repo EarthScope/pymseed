@@ -354,7 +354,7 @@ extern int64_t msr3_writemseed (MS3Record *msr, const char *mspath, int8_t overw
 extern int64_t mstl3_writemseed (MS3TraceList *mstl, const char *mspath, int8_t overwrite,
                                  int maxreclen, int8_t encoding, uint32_t flags, int8_t verbose);
 extern int libmseed_url_support (void);
-extern MS3FileParam *ms3_mstl_init_fd (int fd);
+extern MS3FileParam *ms3_msfp_init_fd (int fd);
 
 extern int ms_sid2nslc_n (const char *sid,
                           char *net, size_t netsize, char *sta, size_t stasize,

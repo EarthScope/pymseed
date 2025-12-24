@@ -28,6 +28,12 @@ endif()
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
+# MSVC-specific settings
+if(MSVC)
+    # Disable deprecation warnings for standard C functions
+    add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
+endif()
+
 # Library source files
 set(LIB_SRCS
     fileutils.c
@@ -52,18 +58,6 @@ set(LIB_SRCS
 # Public header files
 set(PUBLIC_HEADERS
     libmseed.h
-)
-
-# Internal header files
-set(INTERNAL_HEADERS
-    extraheaders.h
-    gmtime64.h
-    mseedformat.h
-    msio.h
-    packdata.h
-    unpack.h
-    unpackdata.h
-    yyjson.h
 )
 
 # Handle URL support with libcurl
@@ -97,21 +91,31 @@ if(BUILD_SHARED_LIBS)
             MACOSX_RPATH ON
             BUILD_WITH_INSTALL_RPATH OFF
         )
-    elseif(UNIX)
+    elseif(UNIX AND NOT MINGW)
         # Use version script on Linux for symbol visibility
         if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/libmseed.map")
             set_target_properties(mseed_shared PROPERTIES
                 LINK_FLAGS "-Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/libmseed.map"
             )
         endif()
+    elseif(WIN32)
+        # Use module definition file for symbol exports on Windows
+        if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/libmseed.def")
+            target_sources(mseed_shared PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/libmseed.def")
+        endif()
     endif()
 
     # Position independent code
-    target_compile_options(mseed_shared PRIVATE -fPIC)
+    set_target_properties(mseed_shared PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
     # Link libraries
     if(LIBMSEED_URL)
         target_link_libraries(mseed_shared PRIVATE ${LIBMSEED_URL_LIBS})
+    endif()
+
+    # Windows socket library needed for select() in msio.c
+    if(WIN32)
+        target_link_libraries(mseed_shared PRIVATE ws2_32)
     endif()
 
     # Include directories
@@ -143,6 +147,11 @@ if(BUILD_STATIC_LIBS)
     # Link libraries
     if(LIBMSEED_URL)
         target_link_libraries(mseed_static PRIVATE ${LIBMSEED_URL_LIBS})
+    endif()
+
+    # Windows socket library needed for select() in msio.c
+    if(WIN32)
+        target_link_libraries(mseed_static PRIVATE ws2_32)
     endif()
 
     # Include directories
@@ -224,13 +233,6 @@ install(FILES
 )
 
 # Generate and install pkg-config file
-configure_file(
-    ${CMAKE_CURRENT_SOURCE_DIR}/mseed.pc.in
-    ${CMAKE_CURRENT_BINARY_DIR}/mseed.pc
-    @ONLY
-)
-
-# Set variables for pkg-config
 set(PREFIX ${CMAKE_INSTALL_PREFIX})
 set(EXEC_PREFIX ${CMAKE_INSTALL_PREFIX})
 set(LIBDIR ${CMAKE_INSTALL_FULL_LIBDIR})
