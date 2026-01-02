@@ -7,6 +7,7 @@ import json
 import warnings
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
+from importlib.resources import files
 from typing import Any, Callable, Optional, Union
 
 from .clib import cdata_to_string, clibmseed, ffi
@@ -583,7 +584,7 @@ class MS3Record:
             ...                    "Correction": 1.234
             ...                  },
             ...                  "Flags": {
-            ...                   "MassPositionOffscale": true
+            ...                    "MassPositionOffscale": true
             ...                  },
             ...                },
             ...                "Operator": {
@@ -629,7 +630,7 @@ class MS3Record:
             ...                    "Correction": 1.234
             ...                  },
             ...                  "Flags": {
-            ...                   "MassPositionOffscale": true
+            ...                    "MassPositionOffscale": true
             ...                  }
             ...                },
             ...                "Operator": {
@@ -646,6 +647,9 @@ class MS3Record:
             True
             >>> msr.get_extra_header("/Operator/Battery/Status")
             'CHARGING'
+
+            # Returns None when header does not exist
+            >>> assert msr.get_extra_header("/Nonexistent/Header") is None
 
         See Also:
             set_extra_header(): Set an extra header value
@@ -820,6 +824,100 @@ class MS3Record:
 
         if status < 0:
             raise ValueError(f"Error merging extra header: {status}")
+
+    def valid_extra_headers(self, schema_id: str = "FDSN-v1.0", schema_file: str = None) -> bool:
+        """Check if the extra headers are valid
+
+        The selected schema should conform to the JSON Schema 2020-12 specification:
+        https://json-schema.org/draft/2020-12#draft-2020-12
+
+        Any specified _schema_file_ will take precedence over _schema_id_.
+
+        The _schema_id_ is a known schema ID that can be used to select a schema from the package.
+        As of this writing only "FDSN-v1.0" is an accepted value and uses the published
+        schema: `ExtraHeaders-FDSN-v1.0.schema-2020-12.json`
+
+        Args:
+            schema_id: ID of the known schema to use, defaults to "FDSN-v1.0"
+            schema_file: Path to specific schema file to use, defaults to None
+
+        Returns:
+            True if the extra headers are valid, False otherwise.
+
+        Notes:
+            The maximum length of a string extra header is 4094 bytes, longer
+            strings will result in an exception.  This should be sufficient for
+            most use cases.  If you need to store longer strings, you can extract
+            the header JSON and process it in Python.
+
+        Examples:
+            >>> from pymseed import MS3Record
+            >>> msr = MS3Record()
+            >>> msr.extra = '''{
+            ...                "FDSN": {
+            ...                  "Time": {
+            ...                    "Quality": 100,
+            ...                    "Correction": 1.234
+            ...                  },
+            ...                  "Flags": {
+            ...                    "MassPositionOffscale": true
+            ...                  }
+            ...                },
+            ...                "Operator": {
+            ...                  "Battery": {
+            ...                    "Status": "CHARGING"
+            ...                  }
+            ...                }}'''
+            >>> msr.valid_extra_headers()
+            True
+
+            # INVALID headers
+            >>> msr.extra = '''{
+            ...                "FDSN": {
+            ...                  "Time": {
+            ...                    "Quality": "really good",
+            ...                    "Correction": false
+            ...                  },
+            ...                  "Flags": {
+            ...                    "MassPositionOffscale": 1.2345
+            ...                  },
+            ...                  "Invalid": {
+            ...                    "Header": "value not allowed in FDSN section"
+            ...                  }
+            ...                }}'''
+            >>> msr.valid_extra_headers()
+            False
+
+        """
+        # No extra headers are valid
+        if not self.extra:
+            return True
+
+        try:
+            from jsonschema import Draft202012Validator
+        except ImportError:
+            raise ImportError(
+                "jsonschema is not installed. Install jsonschema or this package with [jsonschema] optional dependency"
+            ) from None
+
+        # Resolve schema bytes
+        if schema_file is None:
+            if schema_id == "FDSN-v1.0":
+                schema_bytes = files("pymseed.schemas").joinpath(
+                    "ExtraHeaders-FDSN-v1.0.schema-2020-12.json"
+                ).read_bytes()
+            else:
+                raise ValueError(f"Unknown schema_id: {schema_id}")
+        else:
+            with open(schema_file, "rb") as fh:
+                schema_bytes = fh.read()
+
+        schema = json.loads(schema_bytes)
+        instance = json.loads(self.extra)
+
+        validator = Draft202012Validator(schema)
+
+        return validator.is_valid(instance)
 
     @property
     def datasamples(self) -> memoryview:

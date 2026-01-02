@@ -44,12 +44,16 @@ dev = [
     "ruff>=0.1.0",
     "mypy>=1.0.0",
     "pre-commit>=3.0.0",
+    "numpy>=1.21.0",
+    "jsonschema>=4.0.0",
 ]
 
 # NumPy support for data arrays
 numpy = [
     "numpy>=1.21.0",
 ]
+
+jsonschema = ["jsonschema>=4.0.0"]
 
 # Documentation dependencies
 docs = [
@@ -90,7 +94,7 @@ zip-safe = false
 where = ["src"]
 
 [tool.setuptools.package-data]
-pymseed = ["*.so", "*.pyd", "*.dll", "*.py"]
+pymseed = ["*.so", "*.pyd", "*.dll", "*.py", "schemas/*.json"]
 
 [tool.setuptools.dynamic]
 version = {attr = "pymseed.__version__.__version__"}
