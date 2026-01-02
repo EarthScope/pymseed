@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-01-02
+
 ### Added
 - `MS3Record.get_extra_header()` to get a specified extra header
 - `MS3Record.set_extra_header()` to set a specified extra header
