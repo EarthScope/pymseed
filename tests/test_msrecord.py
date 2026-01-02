@@ -67,6 +67,79 @@ def test_msrecord_setters():
     assert msr.starttime == 1672621323987654000
     assert msr.starttime_seconds == 1672621323.987654
 
+def test_msrecord_extra_header():
+    """Test the extra header functions for an MS3Record object."""
+
+    # Test populating an MS3Record object with extra headers
+    msr = MS3Record()
+    msr.extra = """{
+                   "FDSN": {
+                       "Time": {
+                       "Quality": 100,
+                       "Correction": 1.234
+                       },
+                       "Flags": {
+                           "MassPositionOffscale": true
+                       }
+                   },
+                   "Operator": {
+                        "Battery": {
+                            "Status": "CHARGING"
+                        }
+                   }
+                }"""
+
+    assert msr.get_extra_header("/FDSN/Time/Quality") == 100
+    assert msr.get_extra_header("/FDSN/Time/Correction") == 1.234
+    assert msr.get_extra_header("/Operator/Battery/Status") == "CHARGING"
+    assert msr.get_extra_header("/FDSN/Flags/MassPositionOffscale") == True
+
+    assert msr.get_extra_header("/Nonexistent/Header") == None
+
+    # Malformed JSON Pointer
+    with pytest.raises(ValueError):
+        msr.get_extra_header("Invalid/JSON/Pointer")
+
+    # Setting existing headers
+    msr.set_extra_header("/FDSN/Time/Quality", 90)
+    assert msr.get_extra_header("/FDSN/Time/Quality") == 90
+    msr.set_extra_header("/FDSN/Flags/MassPositionOffscale", False)
+    assert msr.get_extra_header("/FDSN/Flags/MassPositionOffscale") == False
+    msr.set_extra_header("/FDSN/Time/Correction", 4.321)
+    assert msr.get_extra_header("/FDSN/Time/Correction") == 4.321
+    msr.set_extra_header("/Operator/Battery/Status", "DISCHARGING")
+    assert msr.get_extra_header("/Operator/Battery/Status") == "DISCHARGING"
+
+    # Setting a new header
+    msr.set_extra_header("/New/Header/String", "Value")
+    assert msr.get_extra_header("/New/Header/String") == "Value"
+    msr.set_extra_header("/New/Header/Integer", 123)
+    assert msr.get_extra_header("/New/Header/Integer") == 123
+    msr.set_extra_header("/New/Header/Float", 1.234)
+    assert msr.get_extra_header("/New/Header/Float") == 1.234
+    msr.set_extra_header("/New/Header/Boolean", True)
+    assert msr.get_extra_header("/New/Header/Boolean") == True
+
+    # Malformed JSON Pointer
+    with pytest.raises(ValueError):
+        msr.set_extra_header("Invalid/JSON/Pointer", "Value")
+
+    # Test merging, replacing the existing value
+    msr.merge_extra_headers('{"FDSN": {"Time": {"Quality": 80}}}')
+    assert msr.get_extra_header("/FDSN/Time/Quality") == 80
+
+    # Test merging, remove the existing value
+    msr.merge_extra_headers('{"FDSN": {"Time": {"Quality": null}}}')
+    assert msr.get_extra_header("/FDSN/Time/Quality") == None
+
+    # Test merging, add a new value
+    msr.merge_extra_headers('{"New": {"Header2": "Value2"}}')
+    assert msr.get_extra_header("/New/Header2") == "Value2"
+
+    # Malformed JSON Merge Patch
+    with pytest.raises(ValueError):
+        msr.merge_extra_headers("Invalid/JSON/Merge/Patch")
+
 
 class TestMS3RecordSorting:
     """Test sorting of MS3Record objects."""

@@ -565,15 +565,261 @@ class MS3Record:
 
     @extra.setter
     def extra(self, value: str) -> None:
-        """Set extra headers as JSON string, will be minified to reduce size"""
+        """Set extra headers as JSON string, will be minified to reduce size
+
+        Args:
+            value (str): JSON, serialized to a string, to set as extra headers
+
+        Raises:
+            ValueError: If the JSON string is not valid or cannot be set
+
+        Examples:
+            >>> from pymseed import MS3Record
+            >>> msr = MS3Record()
+            >>> msr.extra = '''{
+            ...                "FDSN": {
+            ...                  "Time": {
+            ...                    "Quality": 100,
+            ...                    "Correction": 1.234
+            ...                  },
+            ...                  "Flags": {
+            ...                   "MassPositionOffscale": true
+            ...                  },
+            ...                },
+            ...                "Operator": {
+            ...                  "Battery": {
+            ...                    "Status": "CHARGING"
+            ...                  }
+            ...                }}'''
+        """
         if value:
             # Minify the JSON string to ensure valid JSON and minimize size
             minified = json.dumps(json.loads(value), separators=(",", ":"))
 
             c_value = ffi.new("char[]", minified.encode("utf-8"))
+
             status = clibmseed.mseh_replace(self._msr, c_value)
+
             if status < 0:
                 raise ValueError(f"Error setting extra headers: {status}")
+
+    def get_extra_header(self, ptr: str) -> Union[bool, int, float, str, None]:
+        """Get an extra header value specified by JSON Pointer
+
+        Args:
+            ptr: JSON Pointer (RFC 6901) to the header value to get
+
+        Returns:
+            Value of the header, can be a boolean, integer, float, string,
+            or None if the header does not exist.
+
+        Notes:
+            The maximum length of a string extra header is 4094 bytes, longer
+            strings will result in an exception.  This should be sufficient for
+            most use cases.  If you need to store longer strings, you can extract
+            the header JSON and process it in Python.
+
+        Examples:
+            >>> from pymseed import MS3Record
+            >>> msr = MS3Record()
+            >>> msr.extra = '''{
+            ...                "FDSN": {
+            ...                  "Time": {
+            ...                    "Quality": 100,
+            ...                    "Correction": 1.234
+            ...                  },
+            ...                  "Flags": {
+            ...                   "MassPositionOffscale": true
+            ...                  }
+            ...                },
+            ...                "Operator": {
+            ...                  "Battery": {
+            ...                    "Status": "CHARGING"
+            ...                  }
+            ...                }}'''
+
+            >>> msr.get_extra_header("/FDSN/Time/Quality")
+            100
+            >>> msr.get_extra_header("/FDSN/Time/Correction")
+            1.234
+            >>> msr.get_extra_header("/FDSN/Flags/MassPositionOffscale")
+            True
+            >>> msr.get_extra_header("/Operator/Battery/Status")
+            'CHARGING'
+
+        See Also:
+            set_extra_header(): Set an extra header value
+        """
+        c_ptr = ffi.new("char[]", ptr.encode("utf-8"))
+
+        parsestate = ffi.new("LM_PARSED_JSON **", None)
+        detected_type = clibmseed.mseh_get_ptr_type(self._msr, c_ptr, parsestate)
+
+        if detected_type < 0:
+            clibmseed.mseh_free_parsestate(parsestate)
+            raise ValueError(
+                f"Error getting extra header type at {ptr}: {detected_type}"
+            )
+
+        if detected_type == 0:
+            clibmseed.mseh_free_parsestate(parsestate)
+            return None
+
+        max_string_length = 0
+
+        if detected_type == ord("u"):
+            type = b"u"
+            value = ffi.new("uint64_t *", None)
+        elif detected_type == ord("i"):
+            type = b"i"
+            value = ffi.new("int64_t *", None)
+        elif detected_type == ord("n"):
+            type = b"n"
+            value = ffi.new("double *", None)
+        elif detected_type == ord("s"):
+            type = b"s"
+            # Allocate a fixed buffer for string values
+            max_string_length = 4096
+            value = ffi.new("char[]", max_string_length)
+        elif detected_type == ord("b"):
+            type = b"b"
+            value = ffi.new("int *", None)
+        else:
+            clibmseed.mseh_free_parsestate(parsestate)
+            raise ValueError(f"Unsupported extra header type at {ptr}: {detected_type}")
+
+        status = clibmseed.mseh_get_ptr_r(
+            self._msr, c_ptr, value, type, max_string_length, parsestate
+        )
+
+        clibmseed.mseh_free_parsestate(parsestate)
+
+        if status < 0:
+            raise ValueError(f"Error getting extra header at {ptr}: {status}")
+        elif status > 0:
+            raise ValueError(
+                f"Extra header at {ptr} is missing or of a different type: {status}"
+            )
+
+        if type == b"u":
+            return int(value[0])
+        elif type == b"i":
+            return int(value[0])
+        elif type == b"n":
+            return float(value[0])
+        elif type == b"s":
+            string = ffi.string(value).decode("utf-8")
+
+            # Assume that if all possible bytes are used, the string was truncated
+            if len(string) >= max_string_length - 1:
+                raise ValueError(
+                    f"Extra header string at {ptr} is too long, max length: {max_string_length - 1}"
+                )
+
+            return string if string else None
+        elif type == b"b":
+            return bool(value[0])
+        else:
+            # We should never get here because types are filtered above
+            raise ValueError(f"Unknown extra header type at {ptr}: {type}")
+
+    def set_extra_header(self, ptr: str, value: Union[str, int, float, bool]) -> None:
+        """Set an extra header value specified by JSON Pointer
+
+        The header value at the specified JSON Pointer will be set
+        to the value provided, either replacing or creating the value.
+
+        Args:
+            ptr: JSON Pointer (RFC 6901) to the header value to set
+            value: Value to set, can be a boolean, number, or string.
+
+        Raises:
+            ValueError: If the header value cannot be set or type is unsupported
+
+        Examples:
+            >>> from pymseed import MS3Record
+            >>> msr = MS3Record()
+            >>> msr.set_extra_header("/FDSN/Time/Quality", 100)
+            >>> msr.set_extra_header("/FDSN/Time/Correction", 1.234)
+            >>> msr.set_extra_header("/FDSN/Flags/MassPositionOffscale", True)
+            >>> msr.set_extra_header("/Operator/Battery/Status", "CHARGING")
+
+        See Also:
+            merge_extra_header(): Apply a JSON Merge Patch to extra headers
+        """
+        # Determine value type and create appropriate C value
+        if isinstance(value, bool):
+            type_code = b"b"
+            c_value = ffi.new("int *", 1 if value else 0)
+        elif isinstance(value, int):
+            if value >= 0:
+                type_code = b"u"
+                c_value = ffi.new("uint64_t *", value)
+            else:
+                type_code = b"i"
+                c_value = ffi.new("int64_t *", value)
+        elif isinstance(value, float):
+            type_code = b"n"
+            c_value = ffi.new("double *", value)
+        elif isinstance(value, str):
+            type_code = b"s"
+            c_value = ffi.new("char[]", value.encode("utf-8"))
+        else:  # type: ignore[unreachable]
+            raise ValueError(f"Unsupported value type: {type(value)}")
+
+        c_ptr = ffi.new("char[]", ptr.encode("utf-8"))
+
+        status = clibmseed.mseh_set_ptr_r(
+            self._msr, c_ptr, c_value, type_code, ffi.NULL
+        )
+
+        if status < 0:
+            raise ValueError(f"Error setting extra header at {ptr}: {status}")
+
+    def merge_extra_headers(self, value: str) -> None:
+        """Apply a JSON Merge (RFC 7386) Patch to extra headers
+
+        A JSON Merge Patch can be used to create, update, or delete extra headers.
+
+        Args:
+            value: Dictionary of JSON Merge Patch to apply
+
+        Raises:
+            ValueError: If the header value cannot be set, is unsupported, or
+                cannot be serialized to JSON
+
+        Examples:
+            >>> from pymseed import MS3Record
+            >>> msr = MS3Record()
+            >>> merge_patch = '{"FDSN": {"Time": {"Quality": 100}}}'
+            >>> msr.merge_extra_headers(merge_patch)
+            >>> msr.extra
+            '{"FDSN":{"Time":{"Quality":100}}}'
+
+            Remove time /FDSN/Time/Quality header and add an /FDSN/Time/Correction header:
+            >>> merge_patch = '''{
+            ...                  "FDSN": {
+            ...                    "Time": {
+            ...                      "Quality": null,
+            ...                      "Correction": 1.234
+            ...                    }
+            ...                  }}'''
+            >>> msr.merge_extra_headers(merge_patch)
+            >>> msr.extra
+            '{"FDSN":{"Time":{"Correction":1.234}}}'
+        """
+        # Minify the JSON string to ensure valid JSON and minimize size
+        minified = json.dumps(json.loads(value), separators=(",", ":"))
+
+        # Merge at the root: pass an explicit empty C string for the pointer
+        c_ptr = ffi.new("char[]", b"")
+
+        c_value = ffi.new("char[]", minified.encode("utf-8"))
+
+        status = clibmseed.mseh_set_ptr_r(self._msr, c_ptr, c_value, b"M", ffi.NULL)
+
+        if status < 0:
+            raise ValueError(f"Error merging extra header: {status}")
 
     @property
     def datasamples(self) -> memoryview:

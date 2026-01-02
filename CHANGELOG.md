@@ -7,8 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `MS3Record.get_extra_header()` to get a specified extra header
+- `MS3Record.set_extra_header()` to set a specified extra header
+- `MS3Record.merge_extra_headers()` to apply a JSON Merge Patch to extra headers
+
 ### Changed
-- libmseed updated to v3.2.1
+- libmseed updated to v3.2.3
 
 ## [0.1.0] - 2025-11-19
 ### Added
