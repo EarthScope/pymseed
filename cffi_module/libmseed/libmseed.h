@@ -29,8 +29,8 @@ extern "C"
 {
 #endif
 
-#define LIBMSEED_VERSION "3.2.2"    //!< Library version
-#define LIBMSEED_RELEASE "2025.360" //!< Library release date
+#define LIBMSEED_VERSION "3.2.3"    //!< Library version
+#define LIBMSEED_RELEASE "2026.001" //!< Library release date
 
 /** @defgroup io-functions File and URL I/O */
 /** @defgroup miniseed-record Record Handling */
@@ -1001,18 +1001,24 @@ typedef struct MSEHRecenter
  */
 typedef struct LM_PARSED_JSON_s LM_PARSED_JSON;
 
+extern int mseh_get_ptr_type (const MS3Record *msr, const char *ptr, LM_PARSED_JSON **parsestate);
+
 /** @def mseh_get
     @brief A simple wrapper to access any type of extra header */
 #define mseh_get(msr, ptr, valueptr, type, maxlength)                                              \
   mseh_get_ptr_r (msr, ptr, valueptr, type, maxlength, NULL)
 
+/** @def mseh_get_uint64
+    @brief A simple wrapper to access an unsigned integer type extra header */
+#define mseh_get_uint64(msr, ptr, valueptr) mseh_get_ptr_r (msr, ptr, valueptr, 'u', 0, NULL)
+
+/** @def mseh_get_int64
+        @brief A simple wrapper to access an integer type extra header */
+#define mseh_get_int64(msr, ptr, valueptr) mseh_get_ptr_r (msr, ptr, valueptr, 'i', 0, NULL)
+
 /** @def mseh_get_number
     @brief A simple wrapper to access a number type extra header */
 #define mseh_get_number(msr, ptr, valueptr) mseh_get_ptr_r (msr, ptr, valueptr, 'n', 0, NULL)
-
-/** @def mseh_get_int64
-    @brief A simple wrapper to access a number type extra header */
-#define mseh_get_int64(msr, ptr, valueptr) mseh_get_ptr_r (msr, ptr, valueptr, 'i', 0, NULL)
 
 /** @def mseh_get_string
     @brief A simple wrapper to access a string type extra header */
@@ -1034,13 +1040,17 @@ extern int mseh_get_ptr_r (const MS3Record *msr, const char *ptr, void *value, c
     @brief A simple wrapper to set any type of extra header */
 #define mseh_set(msr, ptr, valueptr, type) mseh_set_ptr_r (msr, ptr, valueptr, type, NULL)
 
-/** @def mseh_set_number
-    @brief A simple wrapper to set a number type extra header */
-#define mseh_set_number(msr, ptr, valueptr) mseh_set_ptr_r (msr, ptr, valueptr, 'n', NULL)
+/** @def mseh_set_uint64
+    @brief A simple wrapper to set an unsigned integer type extra header */
+#define mseh_set_uint64(msr, ptr, valueptr) mseh_set_ptr_r (msr, ptr, valueptr, 'u', NULL)
 
 /** @def mseh_set_int64
     @brief A simple wrapper to set a number type extra header */
 #define mseh_set_int64(msr, ptr, valueptr) mseh_set_ptr_r (msr, ptr, valueptr, 'i', NULL)
+
+/** @def mseh_set_number
+    @brief A simple wrapper to set a number type extra header */
+#define mseh_set_number(msr, ptr, valueptr) mseh_set_ptr_r (msr, ptr, valueptr, 'n', NULL)
 
 /** @def mseh_set_string
     @brief A simple wrapper to set a string type extra header */

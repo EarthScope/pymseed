@@ -369,15 +369,15 @@ extern int ms_strncpopen (char *dest, const char *source, int length);
 
 typedef struct LM_PARSED_JSON LM_PARSED_JSON;
 
-// mseh_set_ptr_r() type/value:
-// 'n' - value is type double
-// 'i' - value is type int64_t
-// 's' - value is type char*
-// 'b' - value is type int (boolean value of 0 or 1)
-// 'M' - value is type char* and a Merge Patch to apply at ptr
+extern int mseh_get_ptr_type (const MS3Record *msr, const char *ptr, LM_PARSED_JSON **parsestate);
+
+extern int mseh_get_ptr_r (const MS3Record *msr, const char *ptr, void *value, char type,
+                           uint32_t maxlength, LM_PARSED_JSON **parsestate);
 
 extern int mseh_set_ptr_r (MS3Record *msr, const char *ptr, void *value, char type,
                            LM_PARSED_JSON **parsestate);
+
+extern void mseh_free_parsestate (LM_PARSED_JSON **parsestate);
 
 extern int mseh_replace (MS3Record *msr, char *jsonstring);
 
