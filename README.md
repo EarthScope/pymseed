@@ -93,6 +93,32 @@ traces.to_file(output_file,
                max_reclen = record_length)
 ```
 
+## Threaded usage
+
+The pymseed package is safe to use with threads as long as the threads
+are not sharing data, e.g. a `MS3traceList`.
+
+The underlying libmseed library uses thread-local storage for logging,
+allowing each thread to have its own logging configuration.
+
+When using threads, call `configure_logging()` in each thread to initialize
+the logging registry for that thread. This can be done either explicitly at
+the start of the thread function or as an initializer for thread pools:
+
+```python
+from concurrent.futures import ThreadPoolExecutor
+from pymseed import configure_logging, MS3TraceList
+
+def process_file(filename):
+    traces = MS3TraceList.from_file(filename)
+    # ... process traces ...
+    return len(traces)
+
+# Using initializer to configure logging for each worker thread
+with ThreadPoolExecutor(max_workers=4, initializer=configure_logging) as executor:
+    results = executor.map(process_file, file_list)
+```
+
 ## Package design rationale
 
 The package functionality and exposed API are designed to support the most

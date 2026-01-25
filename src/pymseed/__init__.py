@@ -6,20 +6,30 @@ from .definitions import (
     TimeFormat,
 )
 from .exceptions import MiniSEEDError
+from .logging import (
+    clear_error_messages,
+    configure_logging,
+    get_error_messages,
+)
 from .msrecord import MS3Record
 from .msrecord_buffer_reader import MS3RecordBufferReader
 from .msrecord_reader import MS3RecordReader
 from .mstracelist import MS3TraceList
 from .util import (
     nslc2sourceid,
-    sourceid2nslc,
     nstime2timestr,
-    timestr2nstime,
     sample_time,
+    sourceid2nslc,
     system_time,
+    timestr2nstime,
 )
 
 libmseed_version = ffi.string(clibmseed.LIBMSEED_VERSION).decode('utf-8')
+
+# Initialize libmseed logging registry at import time
+# This ensures all entry points share the same registry and errors/warnings
+# are captured instead of being printed to stderr/stdout
+configure_logging()
 
 # Re-export these constants from the CFFI interface
 NSTERROR = clibmseed.NSTERROR
@@ -46,5 +56,7 @@ __all__ = [
     "timestr2nstime",
     "sample_time",
     "system_time",
+    "configure_logging",
+    "clear_error_messages",
+    "get_error_messages",
 ]
-

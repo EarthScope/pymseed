@@ -381,6 +381,15 @@ extern void mseh_free_parsestate (LM_PARSED_JSON **parsestate);
 
 extern int mseh_replace (MS3Record *msr, char *jsonstring);
 
+#define MAX_LOG_MSG_LENGTH 200
+
+typedef struct MSLogParam MSLogParam;
+
+extern void ms_rloginit (void (*log_print) (const char *), const char *logprefix,
+                         void (*diag_print) (const char *), const char *errprefix, int maxmessages);
+extern int ms_rlog_pop (MSLogParam *logp, char *message, size_t size, int context);
+extern int ms_rlog_free (MSLogParam *logp);
+
 extern uint8_t ms_samplesize (char sampletype);
 extern int ms_encoding_sizetype (uint8_t encoding, uint8_t *samplesize, char *sampletype);
 extern const char *ms_encodingstr (uint8_t encoding);
