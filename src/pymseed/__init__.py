@@ -15,6 +15,7 @@ from .msrecord import MS3Record
 from .msrecord_buffer_reader import MS3RecordBufferReader
 from .msrecord_reader import MS3RecordReader
 from .mstracelist import MS3TraceList
+from .record_validator import MS3RecordValidator
 from .util import (
     nslc2sourceid,
     nstime2timestr,
@@ -49,6 +50,7 @@ __all__ = [
     "MS3Record",
     "MS3RecordReader",
     "MS3RecordBufferReader",
+    "MS3RecordValidator",
     "MS3TraceList",
     "nslc2sourceid",
     "sourceid2nslc",
