@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Capture libmseed error/warning console output and include in MiniSEEDError exceptions
+- Add MS3RecordValidator for validating records in buffers and files
 - libmseed updated to v3.2.4
 
 ## [0.2.0] - 2026-01-02
