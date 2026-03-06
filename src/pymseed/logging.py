@@ -6,6 +6,7 @@ using the logging registry, instead of having them printed to stderr/stdout.
 """
 
 import atexit
+import threading
 from typing import Optional
 
 from .clib import clibmseed, ffi
@@ -15,6 +16,9 @@ DEFAULT_MAX_MESSAGES = 10
 
 # Track whether atexit cleanup has been registered
 _atexit_registered_clear_error_messages = False
+
+# Thread-local storage for keeping prefix strings alive
+_thread_local_prefixes = threading.local()
 
 
 def configure_logging(
@@ -41,14 +45,25 @@ def configure_logging(
     """
     global _atexit_registered_clear_error_messages
 
-    # Convert prefixes to C strings or NULL
-    c_log_prefix = ffi.NULL if log_prefix is None else log_prefix.encode("utf-8")
-    c_error_prefix = ffi.NULL if error_prefix is None else error_prefix.encode("utf-8")
+    # Convert prefixes to C strings or NULL and store in thread-local storage to prevent
+    # Python's garbage collector from freeing them. The C library stores pointers to these
+    # strings, so they must remain valid for the lifetime of the thread's logging configuration.
+    if log_prefix is None:
+        c_log_prefix = ffi.NULL
+        _thread_local_prefixes.log_prefix = None
+    else:
+        _thread_local_prefixes.log_prefix = log_prefix.encode("utf-8")
+        c_log_prefix = _thread_local_prefixes.log_prefix
+
+    if error_prefix is None:
+        c_error_prefix = ffi.NULL
+        _thread_local_prefixes.error_prefix = None
+    else:
+        _thread_local_prefixes.error_prefix = error_prefix.encode("utf-8")
+        c_error_prefix = _thread_local_prefixes.error_prefix
 
     # Initialize with NULL print functions to suppress console output
-    clibmseed.ms_rloginit(
-        ffi.NULL, c_log_prefix, ffi.NULL, c_error_prefix, max_messages
-    )
+    clibmseed.ms_rloginit(ffi.NULL, c_log_prefix, ffi.NULL, c_error_prefix, max_messages)
 
     # Register cleanup at exit (only once)
     if not _atexit_registered_clear_error_messages:
