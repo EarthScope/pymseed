@@ -52,7 +52,7 @@ class MS3Record:
             >>> from pymseed import MS3Record, DataEncoding
             >>> msr = MS3Record()
             >>> msr.sourceid = "FDSN:NET_STA_LOC_B_S_s"
-            >>> msr.starttime_str = "2024-01-01T00:00:00Z"
+            >>> msr.set_starttime_str("2024-01-01T00:00:00Z")
             >>> msr.samprate = 100.0
             >>> msr.encoding = DataEncoding.STEIM2
             >>> msr.reclen = 512
@@ -82,6 +82,10 @@ class MS3Record:
     See Also:
         MSTraceList: For working with collections of records as traces
     """
+
+    # Restrict instance attributes to prevent silent assignment to misspelled
+    # or non-existent names (e.g. msr.samperate = 0 silently succeeds without this).
+    __slots__ = ("_msr", "_msr_allocated", "_record_handler", "_record_handler_data")
 
     def __init__(
         self,
@@ -375,6 +379,11 @@ class MS3Record:
         subsecond: SubSecond = SubSecond.NANO_MICRO_NONE,
     ) -> Optional[str]:
         """Return start time as formatted string"""
+        if self._msr.starttime == clibmseed.NSTERROR:
+            return "ERROR"
+        if self._msr.starttime == clibmseed.NSTUNSET:
+            return "UNSET"
+
         return nstime2timestr(self._msr.starttime, timeformat, subsecond)
 
     def set_starttime_str(self, value: str) -> None:
@@ -504,6 +513,9 @@ class MS3Record:
     def encoding(self) -> int:
         """Data encoding format code specifying how data samples are compressed/stored.
 
+        Returns -1 when not set, matching the C library convention used by
+        other unset fields (reclen, samplecnt).
+
         miniSEED supports various encoding formats optimized for different data types
         and compression requirements. Common encoding values:
 
@@ -514,11 +526,13 @@ class MS3Record:
         - DataEncoding.FLOAT64: IEEE Float64 (little-endian)
 
         Returns:
-            int: Encoding format code
+            int: Encoding format code, or -1 if not set.
 
         Examples:
             >>> from pymseed import MS3Record, DataEncoding
             >>> msr = MS3Record()
+            >>> msr.encoding
+            -1
             >>> msr.encoding = DataEncoding.STEIM2
             >>> msr.encoding = DataEncoding.FLOAT32
 
@@ -1175,6 +1189,11 @@ class MS3Record:
         subsecond: SubSecond = SubSecond.NANO_MICRO_NONE,
     ) -> Optional[str]:
         """Return end time as formatted string"""
+        if self.endtime == clibmseed.NSTERROR:
+            return "ERROR"
+        if self.endtime == clibmseed.NSTUNSET:
+            return "UNSET"
+
         return nstime2timestr(self.endtime, timeformat, subsecond)
 
     def encoding_str(self) -> Optional[str]:
@@ -1283,7 +1302,7 @@ class MS3Record:
 
             >>> text_samples = "This is a log entry"
             >>> msr.sourceid = "FDSN:XX_TEST__L_O_G"
-            >>> msr.samperate = 0
+            >>> msr.samprate = 0
             >>> with msr.with_datasamples(text_samples, 't'):
             ...     print (f"Record has {msr.numsamples} samples of type {msr.sampletype}")
             Record has 19 samples of type t
@@ -1521,7 +1540,7 @@ class MS3Record:
         """Create miniSEED record(s) using parameters from the record.
 
         This method creates miniSEED records using the parameters (encoding,
-        record length, etc.) in this MS3Record. Alternante data samples (and
+        record length, etc.) in this MS3Record. Alternate data samples (and
         type) can be provided, otherwise the existing record data is used.
 
         This method is a generator that yields each miniSEED record as it is
@@ -1546,7 +1565,7 @@ class MS3Record:
             >>> # Create record template with MS3Record()
             >>> msr = MS3Record()
             >>> msr.sourceid = "FDSN:XX_TEST__L_H_Z"
-            >>> msr.starttime_str = "2024-01-01T00:00:00Z"
+            >>> msr.set_starttime_str("2024-01-01T00:00:00Z")
             >>> msr.samprate = 1
             >>>
             >>> # Generate miniSEED records and write to file
@@ -1575,31 +1594,37 @@ class MS3Record:
         record_pp = ffi.new("char **")
         reclen_p = ffi.new("int32_t *")
 
+        def _free_packer(pkr):
+            pkr_pp = ffi.new("MS3RecordPacker **")
+            pkr_pp[0] = pkr
+            clibmseed.msr3_pack_free(pkr_pp, ffi.NULL)
+
         # Pack miniSEED records using data samples and type if provided
         if data_samples is not None and sample_type is not None:
             with self.with_datasamples(data_samples, sample_type):
 
                 packer = clibmseed.msr3_pack_init(self._msr, flags, verbose)
 
-                if packer is None:
+                if not packer:
                     raise MiniSEEDError(-1, "Error initializing packer")
 
-                while clibmseed.msr3_pack_next(packer, record_pp, reclen_p) == 1:
-                    yield ffi.buffer(record_pp[0], reclen_p[0])[:]
+                try:
+                    while clibmseed.msr3_pack_next(packer, record_pp, reclen_p) == 1:
+                        yield ffi.buffer(record_pp[0], reclen_p[0])[:]
+                finally:
+                    _free_packer(packer)
         # Otherwise, pack miniSEED records using the record's existing data
         else:
             packer = clibmseed.msr3_pack_init(self._msr, flags, verbose)
 
-            if packer is None:
+            if not packer:
                 raise MiniSEEDError(-1, "Error initializing packer")
 
-            while clibmseed.msr3_pack_next(packer, record_pp, reclen_p) == 1:
-                yield ffi.buffer(record_pp[0], reclen_p[0])[:]
-
-        # Free packer
-        packer_pp = ffi.new("MS3RecordPacker **")
-        packer_pp[0] = packer
-        clibmseed.msr3_pack_free(packer_pp, ffi.NULL)
+            try:
+                while clibmseed.msr3_pack_next(packer, record_pp, reclen_p) == 1:
+                    yield ffi.buffer(record_pp[0], reclen_p[0])[:]
+            finally:
+                _free_packer(packer)
 
     def to_file(
         self,

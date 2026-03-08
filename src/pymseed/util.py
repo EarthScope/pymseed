@@ -83,6 +83,8 @@ def nslc2sourceid(net: str, sta: str, loc: str, chan: str) -> str:
 
 def encoding_string(encoding: int) -> Optional[str]:
     """Get descriptive string for encoding format"""
+    if encoding < 0:
+        return None
     return cdata_to_string(clibmseed.ms_encodingstr(encoding))
 
 
