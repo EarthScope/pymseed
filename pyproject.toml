@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=65.0.0", "wheel", "cffi>=1.15.0"]
+requires = ["setuptools>=68.0.0", "cffi>=2.0.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -11,7 +11,7 @@ authors = [
 readme = "README.md"
 requires-python = ">=3.9"
 keywords = ["seismology", "miniseed", "mseed", "data", "waveform", "seismic"]
-license = "Apache-2.0"
+license = { text = "Apache-2.0" }
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
@@ -26,6 +26,7 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Programming Language :: Python :: Implementation :: CPython",
     "Programming Language :: Python :: Implementation :: PyPy",
 ]
@@ -33,41 +34,36 @@ dynamic = ["version"]
 
 # Core runtime dependencies
 dependencies = [
-    "cffi>=1.15.0",
+    "cffi>=2.0.0",
 ]
 
 [project.optional-dependencies]
-# Core development dependencies (testing, linting, type checking)
-dev = [
+numpy = ["numpy>=1.21.0"]
+
+# jsonschema is used for validation of miniSEED3 extra headers against FDSN schemas
+jsonschema = ["jsonschema>=4.0.0"]
+
+# Testing with numpy
+test = [
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
+    "pymseed[numpy]",
+]
+
+dev = [
+    "pymseed[test]",
     "pytest-markdown-docs>=0.9.0",
     "ruff>=0.1.0",
     "mypy>=1.0.0",
     "pre-commit>=3.0.0",
-    "numpy>=1.21.0",
-    "jsonschema>=4.0.0",
+    "pymseed[jsonschema]",
 ]
-
-# NumPy support for data arrays
-numpy = [
-    "numpy>=1.21.0",
-]
-
-jsonschema = ["jsonschema>=4.0.0"]
 
 # Documentation dependencies
 docs = [
     "sphinx>=5.0.0",
     "sphinx-rtd-theme>=1.0.0",
     "sphinxcontrib-napoleon>=0.7",
-]
-
-# Testing with numpy
-test = [
-    "pytest>=7.0.0",
-    "pytest-cov>=4.0.0",
-    "numpy>=1.21.0",
 ]
 
 # Release/publishing dependencies (for maintainers only)
@@ -78,7 +74,7 @@ release = [
 
 # All optional dependencies for development
 all = [
-    "pymseed[dev,numpy,docs,test]",
+    "pymseed[dev,docs]",
 ]
 
 [project.urls]
@@ -89,7 +85,6 @@ Issues = "https://github.com/EarthScope/pymseed/issues"
 [tool.setuptools]
 package-dir = {"" = "src"}
 include-package-data = true
-zip-safe = false
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -113,14 +108,13 @@ doctest_optionflags = [
     "IGNORE_EXCEPTION_DETAIL",
     "ELLIPSIS",
 ]
-
-[tool.pytest_markdown_docs]
-include = ["*.md"]
-
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "integration: marks tests as integration tests",
 ]
+
+[tool.pytest_markdown_docs]
+include = ["*.md"]
 
 # Coverage configuration options (use with --cov when needed)
 # Example: pytest --cov=pymseed --cov-report=term-missing --cov-report=html --cov-report=xml
@@ -210,14 +204,16 @@ exclude_lines = [
 ]
 
 [tool.cibuildwheel]
-# Enable builds for PyPy
+build-frontend = "uv"
+
+# Enable builds for PyPy (CFFI is well-supported on PyPy)
 enable = ["pypy"]
 
 # Skip:
-# CPython 3.14 builds (unreleased), until cffi wheels are released for it
-# Windows ARM builds for Python < 3.11 (limited support)
-skip = "cp314-* cp314t-* cp39-win_arm64 cp310-win_arm64"
+# Windows ARM builds for Python < 3.11 (limited ecosystem support)
+skip = "cp39-win_arm64 cp310-win_arm64"
 
 # Testing configuration
+# Runs tests and src doctests mirroring [tool.pytest.ini_options] testpaths
 test-requires = "pytest pytest-markdown-docs numpy"
-test-command = "pytest {project}/tests"
+test-command = "pytest {project}/tests {project}/src"
