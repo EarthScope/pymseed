@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add `MS3Record.validate_extra_headers()` to return detailed validation errors
 - Add `MS3RecordValidator` class for validating records in buffers and files
 - Numerous edge-case fixes and usability improvements
+- Build wheels for Python 3.14
 - libmseed updated to v3.2.4
 
 ## [0.2.0] - 2026-01-02

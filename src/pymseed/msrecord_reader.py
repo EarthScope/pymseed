@@ -66,7 +66,8 @@ class MS3RecordReader:
         Using with an open file descriptor:
 
     >>> import os
-    >>> fd = os.open('examples/example_data.mseed', os.O_RDONLY)
+    >>> flags = os.O_RDONLY | getattr(os, 'O_BINARY', 0) # For Windows portability
+    >>> fd = os.open('examples/example_data.mseed', flags)
 
     >>> total_records = 0
     >>> for msr in MS3Record.from_file(fd, unpack_data=False):

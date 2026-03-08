@@ -62,10 +62,6 @@ ffi.set_source(
 
 # --- Setuptools Configuration ---
 setup(
-    # Tell setuptools that CFFI is a build-time requirement.
-    setup_requires=["cffi>=1.0.0"],
-    # And also an install-time requirement for the end-user.
-    install_requires=["cffi>=1.0.0"],
     # This is where the magic happens: ffi.distutils_extension() creates
     # the Extension object that setuptools will build.
     ext_modules=[ffi.distutils_extension()],

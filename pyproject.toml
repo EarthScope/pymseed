@@ -11,7 +11,7 @@ authors = [
 readme = "README.md"
 requires-python = ">=3.9"
 keywords = ["seismology", "miniseed", "mseed", "data", "waveform", "seismic"]
-license = { text = "Apache-2.0" }
+license = "Apache-2.0"
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
@@ -38,7 +38,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-numpy = ["numpy>=1.21.0"]
+numpy = ["numpy>=1.24.0"]
 
 # jsonschema is used for validation of miniSEED3 extra headers against FDSN schemas
 jsonschema = ["jsonschema>=4.0.0"]
@@ -61,9 +61,8 @@ dev = [
 
 # Documentation dependencies
 docs = [
-    "sphinx>=5.0.0",
-    "sphinx-rtd-theme>=1.0.0",
-    "sphinxcontrib-napoleon>=0.7",
+    "sphinx>=9.0.0",
+    "sphinx-rtd-theme>=3.0.0",
 ]
 
 # Release/publishing dependencies (for maintainers only)
@@ -216,4 +215,4 @@ skip = "cp39-win_arm64 cp310-win_arm64"
 # Testing configuration
 # Run unit tests from the source tree and doctests from the installed package
 test-requires = "pytest pytest-markdown-docs numpy jsonschema"
-test-command = "cd {project} && pytest tests --doctest-modules --pyargs pymseed"
+test-command = "pytest {project}/tests --doctest-modules --pyargs pymseed"
