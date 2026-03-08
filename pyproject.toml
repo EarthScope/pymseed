@@ -215,4 +215,8 @@ skip = "cp39-win_arm64 cp310-win_arm64"
 # Testing configuration
 # Run unit tests from the source tree and doctests from the installed package
 test-requires = "pytest pytest-markdown-docs numpy jsonschema"
-test-command = "pytest {project}/tests --doctest-modules --pyargs pymseed"
+test-command = "cd {project} && pytest tests --doctest-modules --pyargs pymseed"
+
+[tool.cibuildwheel.windows]
+# cmd.exe needs /d flag to change drives (e.g. C: to D:)
+test-command = "cd /d {project} && pytest tests --doctest-modules --pyargs pymseed"
