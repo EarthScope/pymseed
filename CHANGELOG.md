@@ -7,10 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-03-08
+
+### Added
+- `MS3Record.validate_extra_headers()` to return detailed validation errors
+- `MS3RecordValidator` class for validating records in buffers and files
+
 ### Changed
 - Capture libmseed error/warning console output and include in MiniSEEDError exceptions
-- Add `MS3Record.validate_extra_headers()` to return detailed validation errors
-- Add `MS3RecordValidator` class for validating records in buffers and files
 - Numerous edge-case fixes and usability improvements
 - Build wheels for Python 3.14
 - libmseed updated to v3.2.4
