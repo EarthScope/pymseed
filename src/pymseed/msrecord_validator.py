@@ -8,17 +8,23 @@ parse when possible.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
 from dataclasses import dataclass
+from importlib.resources import files
 from typing import Any
 
 from .clib import clibmseed, ffi
 from .logging import clear_error_messages, get_error_messages
-from .msrecord import MS3Record
 from .mstracelist import MS3TraceList
 
 # (buf_ptr, absolute_offset, record_length) — or (None, offset, error_code) for detection failure
 _RecordTuple = tuple[Any, int, int]
+
+# Maps supported schema IDs to their bundled JSON Schema filenames
+_KNOWN_SCHEMAS: dict[str, str] = {
+    "FDSN-v1.0": "ExtraHeaders-FDSN-v1.0.schema-2020-12.json",
+}
 
 
 @dataclass(frozen=True)
@@ -82,6 +88,7 @@ class _FileSource:
     def __iter__(self) -> Iterator[_RecordTuple]:
         format_version = ffi.new("uint8_t *")
         buf = bytearray()
+        buf_offset = 0
         file_offset = 0
         eof = False
 
@@ -90,16 +97,20 @@ class _FileSource:
                 if not eof:
                     chunk = f.read(self._chunk_size)
                     if chunk:
+                        if buf_offset > 0:
+                            del buf[:buf_offset]
+                            buf_offset = 0
                         buf.extend(chunk)
                     else:
                         eof = True
 
-                if not buf:
+                remaining = len(buf) - buf_offset
+                if remaining <= 0:
                     return
 
                 reclen = clibmseed.ms3_detect(
-                    ffi.from_buffer(buf),
-                    len(buf),
+                    ffi.from_buffer(buf) + buf_offset,
+                    remaining,
                     format_version,
                 )
 
@@ -107,27 +118,27 @@ class _FileSource:
                     yield (None, file_offset, reclen)
                     return
 
-                if reclen == 0 or reclen > len(buf):
+                if reclen == 0 or reclen > remaining:
                     if eof:
                         return
                     continue
 
-                record_bytes = bytes(buf[:reclen])
+                record_bytes = bytes(buf[buf_offset : buf_offset + reclen])
                 yield (ffi.from_buffer(record_bytes), file_offset, reclen)
-
-                buf = buf[reclen:]
+                buf_offset += reclen
                 file_offset += reclen
 
 
 class MS3RecordValidator:
     """Validate miniSEED records with comprehensive error detection.
 
-    Processes records from a buffer or file using a 4-step process:
+    Processes records from a buffer or file using a 5-step process:
 
     1. Determine record length (handled by the record source)
     2. Parse record metadata without unpacking data
-    3. Optionally add record to a trace coverage list (with no data samples)
-    4. Optionally decompress data samples and test for decoding errors
+    3. Optionally validate extra headers
+    4. Optionally add record to a trace coverage list (with no data samples)
+    5. Optionally decompress data samples and test for decoding errors
 
     This approach ensures maximum information recovery — all records with
     parseable headers are added to the trace list, with complete error tracking.
@@ -260,6 +271,24 @@ class MS3RecordValidator:
 
         msr_ptr = ffi.new("MS3Record **")
 
+        # Pre-load JSON schema validator once — avoid reloading per-record
+        _eh_validator: Any = None
+        _eh_import_error = False
+        if self._validate_extra_headers:
+            if self._extra_headers_schema not in _KNOWN_SCHEMAS:
+                raise ValueError(f"Unknown schema_id: {self._extra_headers_schema}")
+            try:
+                from jsonschema import Draft202012Validator
+
+                schema_bytes = (
+                    files("pymseed.schemas")
+                    .joinpath(_KNOWN_SCHEMAS[self._extra_headers_schema])
+                    .read_bytes()
+                )
+                _eh_validator = Draft202012Validator(json.loads(schema_bytes))
+            except ImportError:
+                _eh_import_error = True
+
         try:
             for buf_ptr, offset, record_length in self._source:
                 # Detection failure — source signals this with buf_ptr=None
@@ -278,7 +307,7 @@ class MS3RecordValidator:
 
                 clear_error_messages()
 
-                # Step 2: Parse record structure (without unpacking data samples)
+                # Step 2: Parse record metadata (without unpacking data samples)
                 status = clibmseed.msr3_parse(
                     buf_ptr,
                     record_length,
@@ -304,10 +333,11 @@ class MS3RecordValidator:
                         )
                     continue
 
-                record = MS3Record(recordptr=msr_ptr[0])
+                # Read metadata directly from C struct
+                msr = msr_ptr[0]
                 rec_fields = {
-                    "sourceid": record.sourceid,
-                    "starttime": record.starttime,
+                    "sourceid": ffi.string(msr.sid).decode("utf-8"),
+                    "starttime": msr.starttime,
                     "reclen": record_length,
                 }
 
@@ -323,20 +353,9 @@ class MS3RecordValidator:
                             )
                         )
 
-                if self._validate_extra_headers and record.extralength > 0:
-                    try:
-                        validation_errors = record.validate_extra_headers(
-                            schema_id=self._extra_headers_schema
-                        )
-                        for validation_error in validation_errors:
-                            errors.append(
-                                ValidationError(
-                                    offset=offset,
-                                    message=f"Extra headers validation error: {validation_error.message} at {validation_error.json_path}",
-                                    **rec_fields,
-                                )
-                            )
-                    except ImportError:
+                # Step 3: Optionally validate extra headers
+                if self._validate_extra_headers and msr.extralength > 0:
+                    if _eh_import_error:
                         errors.append(
                             ValidationError(
                                 offset=offset,
@@ -344,20 +363,36 @@ class MS3RecordValidator:
                                 **rec_fields,
                             )
                         )
-                    except Exception as e:
-                        errors.append(
-                            ValidationError(
-                                offset=offset,
-                                message=f"Extra headers validation error: {e}",
-                                **rec_fields,
+                    else:
+                        try:
+                            extra_str = (
+                                ffi.string(msr.extra).decode("utf-8")
+                                if msr.extra != ffi.NULL
+                                else ""
                             )
-                        )
+                            if extra_str:
+                                for ve in _eh_validator.iter_errors(json.loads(extra_str)):
+                                    errors.append(
+                                        ValidationError(
+                                            offset=offset,
+                                            message=f"Extra headers validation error: {ve.message} at {ve.json_path}",
+                                            **rec_fields,
+                                        )
+                                    )
+                        except Exception as e:
+                            errors.append(
+                                ValidationError(
+                                    offset=offset,
+                                    message=f"Extra headers validation error: {e}",
+                                    **rec_fields,
+                                )
+                            )
 
-                # Step 3: Add record to trace list
+                # Step 4: Add record to trace list
                 if tracelist is not None:
                     segptr = clibmseed.mstl3_addmsr_recordptr(
                         tracelist._mstl,
-                        record._msr,
+                        msr,
                         ffi.NULL,
                         0,  # splitversion
                         1,  # autoheal
@@ -375,10 +410,10 @@ class MS3RecordValidator:
                         )
                         continue
 
-                # Step 4: Optionally decompress data samples to detect decoding errors
+                # Step 5: Optionally decompress data samples to detect decoding errors
                 if self._unpack_data:
                     clear_error_messages()
-                    status = clibmseed.msr3_unpack_data(msr_ptr[0], self._verbose)
+                    status = clibmseed.msr3_unpack_data(msr, self._verbose)
 
                     error_messages = get_error_messages()
 
