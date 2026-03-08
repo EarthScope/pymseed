@@ -3,7 +3,6 @@ Tests for MS3RecordValidator - record-by-record buffer parsing with error accumu
 """
 
 import os
-import tempfile
 
 import pytest
 
@@ -124,7 +123,7 @@ class TestMS3RecordValidatorBasic:
 
         assert len(traces) == 0
         assert len(errors) == 1
-        assert "miniSEED" in errors[0].message
+        assert "No miniSEED detected" in errors[0].message
 
     def test_validate_incomplete_record(self) -> None:
         """Test that a truncated record (header parseable, body missing) stops silently."""
@@ -178,13 +177,11 @@ class TestMS3RecordValidatorDataUnpacking:
         """Test that an invalid encoding triggers an unpack error."""
         buffer = _get_record_with_bad_encoding()
 
-        errors, traces = MS3RecordValidator.from_buffer(
+        errors, _ = MS3RecordValidator.from_buffer(
             buffer, unpack_data=True, validate_crc=False,
         ).validate()
 
-        assert len(traces) > 0
-        unpack_errors = [e for e in errors if "unpack" in e.message.lower()]
-        assert len(unpack_errors) >= 1
+        assert len(errors) >= 1
 
     def test_unpack_data_disabled_suppresses_errors(self) -> None:
         """Test that unpack_data=False suppresses data unpacking errors."""
@@ -197,10 +194,8 @@ class TestMS3RecordValidatorDataUnpacking:
             buffer, unpack_data=False, validate_crc=False,
         ).validate()
 
-        unpack_on = [e for e in errors_on if "unpack" in e.message.lower()]
-        unpack_off = [e for e in errors_off if "unpack" in e.message.lower()]
-        assert len(unpack_on) >= 1
-        assert len(unpack_off) == 0
+        assert len(errors_on) >= 1
+        assert len(errors_off) == 0
 
 
 class TestMS3RecordValidatorExtraHeaders:
@@ -413,7 +408,7 @@ class TestMS3RecordValidatorFromFile:
         assert len(errors) == len(reference_errors)
         assert len(traces) == len(reference_traces)
 
-    def test_from_file_error_tracking(self) -> None:
+    def test_from_file_error_tracking(self, tmp_path) -> None:
         """Test that from_file reports byte offsets matching from_buffer."""
         records = get_test_records(TEST_MSEED3_FILE)
         corrupted = bytearray(records[0])
@@ -425,18 +420,14 @@ class TestMS3RecordValidatorFromFile:
         ).validate()
         buf_offsets = [e.offset for e in buf_errors]
 
-        with tempfile.NamedTemporaryFile(suffix=".mseed", delete=False) as tmp:
-            tmp.write(mixed)
-            tmp_path = tmp.name
+        tmp_file = tmp_path / "mixed.mseed"
+        tmp_file.write_bytes(mixed)
 
-        try:
-            file_errors, _ = MS3RecordValidator.from_file(
-                tmp_path, validate_crc=True
-            ).validate()
-            file_offsets = [e.offset for e in file_errors]
-            assert buf_offsets == file_offsets
-        finally:
-            os.unlink(tmp_path)
+        file_errors, _ = MS3RecordValidator.from_file(
+            str(tmp_file), validate_crc=True
+        ).validate()
+        file_offsets = [e.offset for e in file_errors]
+        assert buf_offsets == file_offsets
 
     def test_from_file_sample_counts(self) -> None:
         """Test that from_file reports same sample counts as from_buffer for mseed2."""
@@ -461,18 +452,14 @@ class TestMS3RecordValidatorFromFile:
         with pytest.raises(FileNotFoundError):
             validator.validate()
 
-    def test_from_file_non_mseed_content(self) -> None:
+    def test_from_file_non_mseed_content(self, tmp_path) -> None:
         """Test that a file with non-miniSEED content produces a detection error."""
-        with tempfile.NamedTemporaryFile(suffix=".mseed", delete=False) as tmp:
-            tmp.write(b"This is not miniSEED data at all." * 10)
-            tmp_path = tmp.name
+        tmp_file = tmp_path / "bad.mseed"
+        tmp_file.write_bytes(b"This is not miniSEED data at all." * 10)
 
-        try:
-            errors, traces = MS3RecordValidator.from_file(tmp_path).validate()
-            assert len(errors) >= 1
-            assert len(traces) == 0
-        finally:
-            os.unlink(tmp_path)
+        errors, traces = MS3RecordValidator.from_file(str(tmp_file)).validate()
+        assert len(errors) >= 1
+        assert len(traces) == 0
 
 
 class TestMS3RecordValidatorIntegration:

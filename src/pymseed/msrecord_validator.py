@@ -229,9 +229,9 @@ class MS3RecordValidator:
 
             errors, traces = MS3RecordValidator.from_file("data.mseed").validate()
         """
-        if (chunk_size <= 0):
+        if chunk_size <= 0:
             raise ValueError("chunk_size must be greater than 0")
-        elif (chunk_size > 1_073_741_824):
+        elif chunk_size > 1_073_741_824:
             raise ValueError("chunk_size must be less than 1 GiB")
 
         return cls(_FileSource(filename, chunk_size), **kwargs)
@@ -257,8 +257,6 @@ class MS3RecordValidator:
         tracelist = MS3TraceList() if self._return_trace_list else None
 
         msr_ptr = ffi.new("MS3Record **")
-
-        clear_error_messages()
 
         try:
             for buf_ptr, offset, record_length in self._source:
@@ -288,18 +286,20 @@ class MS3RecordValidator:
                 )
 
                 if status != clibmseed.MS_NOERROR:
-                    parse_messages = get_error_messages()
-                    error_msg = f"Parse error: {status}"
-                    if parse_messages:
-                        error_msg += f" ({'; '.join(parse_messages)})"
+                    error_messages = get_error_messages()
 
-                    errors.append(
-                        ValidationError(
-                            offset=offset,
-                            message=error_msg,
-                            reclen=record_length,
+                    # Add a default error message if no messages are available
+                    if not error_messages:
+                        error_messages = [f"Parse error: {status}"]
+
+                    for msg in error_messages:
+                        errors.append(
+                            ValidationError(
+                                offset=offset,
+                                message=msg,
+                                reclen=record_length,
+                            )
                         )
-                    )
                     continue
 
                 record = MS3Record(recordptr=msr_ptr[0])
@@ -323,13 +323,14 @@ class MS3RecordValidator:
 
                 if self._validate_extra_headers and record.extralength > 0:
                     try:
-                        if not record.valid_extra_headers(
+                        validation_errors = record.validate_extra_headers(
                             schema_id=self._extra_headers_schema
-                        ):
+                        )
+                        for validation_error in validation_errors:
                             errors.append(
                                 ValidationError(
                                     offset=offset,
-                                    message="Extra headers validation failed",
+                                    message=f"Extra headers validation error: {validation_error.message} at {validation_error.json_path}",
                                     **rec_fields,
                                 )
                             )
@@ -377,27 +378,33 @@ class MS3RecordValidator:
                     clear_error_messages()
                     status = clibmseed.msr3_unpack_data(msr_ptr[0], self._verbose)
 
-                    if status < 0:
-                        unpack_messages = get_error_messages()
-                        error_msg = f"Data unpack error: {status}"
-                        if unpack_messages:
-                            error_msg += f" ({'; '.join(unpack_messages)})"
-                        errors.append(
-                            ValidationError(
-                                offset=offset,
-                                message=error_msg,
-                                **rec_fields,
-                            )
-                        )
+                    error_messages = get_error_messages()
 
-                    if record.samplecnt > 0 and record.numsamples == 0:
-                        errors.append(
-                            ValidationError(
-                                offset=offset,
-                                message=f"Data unpacking incomplete: expected {record.samplecnt}, got {record.numsamples}",
-                                **rec_fields,
+                    # Check for unpack errors
+                    if status < 0:
+                        # Add a default error message if no messages are available
+                        if not error_messages:
+                            error_messages = [f"Data unpack error: {status}"]
+
+                        for msg in error_messages:
+                            errors.append(
+                                ValidationError(
+                                    offset=offset,
+                                    message=msg,
+                                    **rec_fields,
+                                )
                             )
-                        )
+                    # Check for unpack warning messages, e.g. decoding integrity checks
+                    # (historically common for these to be warnings, not errors)
+                    elif error_messages:
+                        for msg in error_messages:
+                            errors.append(
+                                ValidationError(
+                                    offset=offset,
+                                    message=msg,
+                                    **rec_fields,
+                                )
+                            )
 
         finally:
             if msr_ptr[0] != ffi.NULL:

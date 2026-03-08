@@ -3,12 +3,17 @@ Core MS3Record implementation for pymseed
 
 """
 
+from __future__ import annotations
+
 import json
 import warnings
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from importlib.resources import files
-from typing import Any, Callable, Optional, Union
+from typing import TYPE_CHECKING, Any, Callable, Optional, Union
+
+if TYPE_CHECKING:
+    from jsonschema.exceptions import ValidationError as JsonSchemaValidationError
 
 from .clib import cdata_to_string, clibmseed, ffi
 from .definitions import SubSecond, TimeFormat
@@ -173,16 +178,16 @@ class MS3Record:
             f"    record pointer: {self._msr})"
         )
 
-    def __lt__(self, obj: "MS3Record") -> bool:
+    def __lt__(self, obj: MS3Record) -> bool:
         return (self.sourceid, self.starttime) < (obj.sourceid, obj.starttime)
 
-    def __gt__(self, obj: "MS3Record") -> bool:
+    def __gt__(self, obj: MS3Record) -> bool:
         return (self.sourceid, self.starttime) > (obj.sourceid, obj.starttime)
 
-    def __le__(self, obj: "MS3Record") -> bool:
+    def __le__(self, obj: MS3Record) -> bool:
         return (self.sourceid, self.starttime) <= (obj.sourceid, obj.starttime)
 
-    def __ge__(self, obj: "MS3Record") -> bool:
+    def __ge__(self, obj: MS3Record) -> bool:
         return (self.sourceid, self.starttime) >= (obj.sourceid, obj.starttime)
 
     def __str__(self) -> str:
@@ -615,7 +620,7 @@ class MS3Record:
             or None if the header does not exist.
 
         Notes:
-            The maximum length of a string extra header is 4094 bytes, longer
+            The maximum length of a string extra header is 4095 bytes, longer
             strings will result in an exception.  This should be sufficient for
             most use cases.  If you need to store longer strings, you can extract
             the header JSON and process it in Python.
@@ -825,15 +830,15 @@ class MS3Record:
         if status < 0:
             raise ValueError(f"Error merging extra header: {status}")
 
-    def valid_extra_headers(self, schema_id: str = "FDSN-v1.0", schema_file: str = None) -> bool:
-        """Check if the extra headers are valid
+    def validate_extra_headers(self, schema_id: str = "FDSN-v1.0", schema_file: str = None) -> list[JsonSchemaValidationError]:
+        """Validate the extra headers against a JSON Schema
 
         The selected schema should conform to the JSON Schema 2020-12 specification:
         https://json-schema.org/draft/2020-12#draft-2020-12
 
-        Any specified _schema_file_ will take precedence over _schema_id_.
+        Any specified `schema_file` will take precedence over `schema_id`.
 
-        The _schema_id_ is a known schema ID that can be used to select a schema from the package.
+        The `schema_id` is a known schema ID that can be used to select a schema from the package.
         As of this writing only "FDSN-v1.0" is an accepted value and uses the published
         schema: `ExtraHeaders-FDSN-v1.0.schema-2020-12.json`
 
@@ -842,13 +847,7 @@ class MS3Record:
             schema_file: Path to specific schema file to use, defaults to None
 
         Returns:
-            True if the extra headers are valid, False otherwise.
-
-        Notes:
-            The maximum length of a string extra header is 4094 bytes, longer
-            strings will result in an exception.  This should be sufficient for
-            most use cases.  If you need to store longer strings, you can extract
-            the header JSON and process it in Python.
+            A list of ``jsonschema.exceptions.ValidationError`` instances, empty if no errors.
 
         Examples:
             >>> from pymseed import MS3Record
@@ -868,8 +867,8 @@ class MS3Record:
             ...                    "Status": "CHARGING"
             ...                  }
             ...                }}'''
-            >>> msr.valid_extra_headers()
-            True
+            >>> msr.validate_extra_headers()
+            []
 
             # INVALID headers
             >>> msr.extra = '''{
@@ -885,13 +884,12 @@ class MS3Record:
             ...                    "Header": "value not allowed in FDSN section"
             ...                  }
             ...                }}'''
-            >>> msr.valid_extra_headers()
-            False
-
+            >>> errors = msr.validate_extra_headers()
+            >>> len(errors)
+            4
         """
-        # No extra headers are valid
         if not self.extra:
-            return True
+            return []
 
         try:
             from jsonschema import Draft202012Validator
@@ -917,7 +915,54 @@ class MS3Record:
 
         validator = Draft202012Validator(schema)
 
-        return validator.is_valid(instance)
+        return list(validator.iter_errors(instance))
+
+    def valid_extra_headers(self, schema_id: str = "FDSN-v1.0", schema_file: str = None) -> bool:
+        """Check if the extra headers are valid
+
+        The selected schema should conform to the JSON Schema 2020-12 specification:
+        https://json-schema.org/draft/2020-12#draft-2020-12
+
+        Any specified `schema_file` will take precedence over `schema_id`.
+
+        The `schema_id` is a known schema ID that can be used to select a schema from the package.
+        As of this writing only "FDSN-v1.0" is an accepted value and uses the published
+        schema: `ExtraHeaders-FDSN-v1.0.schema-2020-12.json`
+
+        Args:
+            schema_id: ID of the known schema to use, defaults to "FDSN-v1.0"
+            schema_file: Path to specific schema file to use, defaults to None
+
+        Returns:
+            True if the extra headers are valid, False otherwise.
+
+        Examples:
+            >>> from pymseed import MS3Record
+            >>> msr = MS3Record()
+            >>> msr.extra = '''{
+            ...                "FDSN": {
+            ...                  "Time": {
+            ...                    "Quality": 100
+            ...                  }
+            ...                }
+            ...                }'''
+            >>> msr.valid_extra_headers()
+            True
+
+            >>> from pymseed import MS3Record
+            >>> msr = MS3Record()
+            >>> msr.extra = '''{
+            ...                "FDSN": {
+            ...                  "Emit": {
+            ...                    "Ytilauq": 100
+            ...                  }
+            ...                }
+            ...                }'''
+            >>> msr.valid_extra_headers()
+            False
+
+        """
+        return len(self.validate_extra_headers(schema_id, schema_file)) == 0
 
     @property
     def datasamples(self) -> memoryview:
