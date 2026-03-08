@@ -214,6 +214,6 @@ enable = ["pypy"]
 skip = "cp39-win_arm64 cp310-win_arm64"
 
 # Testing configuration
-# Runs tests and src doctests mirroring [tool.pytest.ini_options] testpaths
+# Run unit tests from the source tree and doctests from the installed package
 test-requires = "pytest pytest-markdown-docs numpy"
-test-command = "pytest {project}/tests {project}/src"
+test-command = "pytest {project}/tests --doctest-modules --pyargs pymseed"
