@@ -10,7 +10,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.5.0] - 2026-03-11
 
 ### Added
-- `MS3Record.parse()` for parsing a single record from bytes-like buffer
+- `MS3Record.parse()` for parsing a single record from a bytes-like buffer.
+
+### Changed
+- **Breaking:** `MS3Record.from_buffer()` is now a generator. The context
+  manager protocol (`with from_buffer(...) as reader`) and `.read()` method
+  are no longer available. Plain `for` iteration is unchanged.
+  - Replace `with from_buffer(buf) as r: for msr in r:` with
+    `for msr in from_buffer(buf):`
+  - Replace `with from_buffer(buf) as r: msr = r.read()` with
+    `msr = MS3Record.parse(buf)`
+
+### Removed
+- `MS3RecordBufferReader` class removed. Use `MS3Record.from_buffer()`
+  (generator) or `MS3Record.parse()` for single records.
 
 ## [0.4.0] - 2026-03-08
 

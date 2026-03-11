@@ -199,9 +199,8 @@ class TestThreadedLogging:
 
             # Trigger an error by parsing corrupted data
             try:
-                with MS3Record.from_buffer(corrupted_data, unpack_data=True) as reader:
-                    for _ in reader:
-                        pass
+                for _ in MS3Record.from_buffer(corrupted_data, unpack_data=True):
+                    pass
             except MiniSEEDError:
                 pass
 
@@ -359,9 +358,8 @@ class TestLoggingIsolation:
             if should_error:
                 # Generate error
                 try:
-                    with MS3Record.from_buffer(corrupted_data, unpack_data=True) as reader:
-                        for _ in reader:
-                            pass
+                    for _ in MS3Record.from_buffer(corrupted_data, unpack_data=True):
+                        pass
                 except MiniSEEDError:
                     pass
 
@@ -403,9 +401,8 @@ class TestLoggingIsolation:
 
             # Both threads generate errors
             try:
-                with MS3Record.from_buffer(corrupted_data, unpack_data=True) as reader:
-                    for _ in reader:
-                        pass
+                for _ in MS3Record.from_buffer(corrupted_data, unpack_data=True):
+                    pass
             except MiniSEEDError:
                 pass
 

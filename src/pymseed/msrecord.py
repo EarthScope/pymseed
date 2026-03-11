@@ -1702,31 +1702,85 @@ class MS3Record:
         return MS3RecordReader(filename, **kwargs)
 
     @classmethod
-    def from_buffer(cls, buffer, **kwargs):
-        """Create a record reader for miniSEED data in memory.
+    def from_buffer(
+        cls,
+        buffer: Any,
+        unpack_data: bool = False,
+        validate_crc: bool = True,
+        verbose: int = 0,
+    ) -> Iterator[MS3Record]:
+        """Iterate over miniSEED records in a memory buffer.
 
-        This convenience method returns an MS3RecordBufferReader that can
-        iterate over records stored in a memory buffer (bytes-like object).
+        Parses miniSEED records sequentially from a bytes-like object and
+        yields each record. All state is kept in local variables for maximum
+        iteration speed.
 
-        Note that the objects returned by this iterator are only valid during
-        the lifetime of the iterator. Once the iterator is exhausted, the
-        objects are no longer valid and should not be used.
+        Note that each yielded :class:`MS3Record` shares a C struct with the
+        generator. The record is only valid until the next ``next()`` call on
+        the generator. If you need to retain a record beyond the current
+        iteration step, copy the fields you need or use :meth:`parse` instead.
 
         Args:
-            buffer: Bytes-like object containing miniSEED data
-            **kwargs: Additional arguments passed to MS3RecordBufferReader
+            buffer: Bytes-like object containing miniSEED data. Must support
+                the buffer protocol (e.g. ``bytes``, ``bytearray``,
+                ``memoryview``, ``numpy.ndarray``).
+            unpack_data: If ``True``, decode data samples for each record.
+                Default is ``False``.
+            validate_crc: If ``True``, validate CRC checksums when present
+                (miniSEED v3 only). Default is ``True``.
+            verbose: Verbosity level for libmseed diagnostics. Default is 0.
 
-        Returns:
-            MS3RecordBufferReader: Iterator over records in the buffer
+        Yields:
+            MS3Record: Each parsed record. Valid only until the next iteration.
+
+        Raises:
+            MiniSEEDError: If a record cannot be parsed.
+
+        Examples:
+            >>> from pymseed import MS3Record
+            >>> with open('examples/example_data.mseed', 'rb') as f:
+            ...     buffer = f.read()
+            >>> total_samples = 0
+            >>> for msr in MS3Record.from_buffer(buffer, unpack_data=True):
+            ...     total_samples += msr.numsamples
+            >>> print(f"Total samples: {total_samples}")
+            Total samples: 12600
 
         See Also:
-            from_file(): Read from file
-            MS3RecordBufferReader: Full buffer reader documentation
+            parse(): Parse a single record from a buffer (owns the C struct)
+            from_file(): Iterate over records in a file
         """
-        # Lazy import to avoid circular dependency
-        from .msrecord_buffer_reader import MS3RecordBufferReader
+        msr_ptr = ffi.new("MS3Record **")
+        buf_ptr = ffi.from_buffer(buffer)
+        offset = 0
 
-        return MS3RecordBufferReader(buffer, **kwargs)
+        parse_flags = 0
+        if unpack_data:
+            parse_flags |= clibmseed.MSF_UNPACKDATA
+        if validate_crc:
+            parse_flags |= clibmseed.MSF_VALIDATECRC
+
+        try:
+            while True:
+                remaining = len(buf_ptr) - offset
+                if remaining < clibmseed.MINRECLEN:
+                    return
+
+                status = clibmseed.msr3_parse(
+                    buf_ptr + offset, remaining, msr_ptr, parse_flags, verbose,
+                )
+
+                if status == clibmseed.MS_NOERROR:
+                    offset += msr_ptr[0].reclen
+                    yield cls(recordptr=msr_ptr[0])
+                elif status > 0:
+                    return
+                else:
+                    raise MiniSEEDError(status, "Error parsing miniSEED record")
+        finally:
+            if msr_ptr[0] != ffi.NULL:
+                clibmseed.msr3_free(msr_ptr)
+                msr_ptr[0] = ffi.NULL
 
     @classmethod
     def parse(

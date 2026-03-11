@@ -12,7 +12,6 @@ from .logging import (
     get_error_messages,
 )
 from .msrecord import MS3Record
-from .msrecord_buffer_reader import MS3RecordBufferReader
 from .msrecord_reader import MS3RecordReader
 from .msrecord_validator import MS3RecordValidator, ValidationError
 from .mstracelist import MS3TraceList
@@ -49,7 +48,6 @@ __all__ = [
     "MiniSEEDError",
     "MS3Record",
     "MS3RecordReader",
-    "MS3RecordBufferReader",
     "MS3RecordValidator",
     "ValidationError",
     "MS3TraceList",

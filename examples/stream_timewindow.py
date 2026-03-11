@@ -55,46 +55,42 @@ def trim_record(msr, earliest, latest):
         return None
 
     # Re-parse the single miniSEED record and decode the data samples
-    buffer = bytearray(msr.record)  # Mutable/writable buffer required
-    with MS3Record.from_buffer(buffer, unpack_data=True) as msreader:
+    msr_trimmed = MS3Record.parse(msr.record, unpack_data=True)
 
-        # Read/parse the single record
-        msr_trimmed = msreader.read()
+    data_samples = msr_trimmed.datasamples[:]
+    start_time = msr_trimmed.starttime
+    end_time = msr_trimmed.endtime
+    sample_period_ns = int(NSTMODULUS / msr_trimmed.samprate)
 
-        data_samples = msr_trimmed.datasamples[:]
-        start_time = msr_trimmed.starttime
-        end_time = msr_trimmed.endtime
-        sample_period_ns = int(NSTMODULUS / msr_trimmed.samprate)
+    # Trim early samples to the earliest time
+    if earliest and start_time < earliest <= end_time:
+        # Use ceiling division to ensure we skip enough samples
+        samples_to_skip = -((start_time - earliest) // sample_period_ns)
+        start_time += samples_to_skip * sample_period_ns
+        data_samples = data_samples[samples_to_skip:]
 
-        # Trim early samples to the earliest time
-        if earliest and start_time < earliest <= end_time:
-            # Use ceiling division to ensure we skip enough samples
-            samples_to_skip = -((start_time - earliest) // sample_period_ns)
-            start_time += samples_to_skip * sample_period_ns
-            data_samples = data_samples[samples_to_skip:]
+    # Trim late samples to the latest time
+    if latest and start_time <= latest < end_time:
+        # Use ceiling division to ensure we remove enough samples
+        samples_to_remove = -((latest - end_time) // sample_period_ns)
+        data_samples = (
+            data_samples[:-samples_to_remove]
+            if samples_to_remove > 0
+            else data_samples
+        )
 
-        # Trim late samples to the latest time
-        if latest and start_time <= latest < end_time:
-            # Use ceiling division to ensure we remove enough samples
-            samples_to_remove = -((latest - end_time) // sample_period_ns)
-            data_samples = (
-                data_samples[:-samples_to_remove]
-                if samples_to_remove > 0
-                else data_samples
-            )
+    if not data_samples:
+        return None
 
-        if not data_samples:
-            return None
+    # Pack the trimmed record
+    msr_trimmed.starttime = start_time
+    record_buffer = b""
+    for packed_record in msr_trimmed.generate(
+        data_samples=data_samples, sample_type=msr_trimmed.sampletype
+    ):
+        record_buffer += packed_record
 
-        # Pack the trimmed record
-        msr_trimmed.starttime = start_time
-        record_buffer = b""
-        for packed_record in msr_trimmed.generate(
-            data_samples=data_samples, sample_type=msr_trimmed.sampletype
-        ):
-            record_buffer += packed_record
-
-        return record_buffer
+    return record_buffer
 
 
 def parse_timestr(timestr):

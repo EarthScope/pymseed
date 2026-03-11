@@ -68,9 +68,8 @@ class TestLoggingCapture:
         corrupted_data = get_corrupted_record()
 
         with pytest.raises(MiniSEEDError):
-            with MS3Record.from_buffer(corrupted_data, unpack_data=True) as reader:
-                for _ in reader:
-                    pass
+            for _ in MS3Record.from_buffer(corrupted_data, unpack_data=True):
+                pass
 
         # Check that error messages were captured
         messages = get_error_messages()
@@ -96,9 +95,8 @@ class TestLoggingCapture:
         # Generate multiple errors by trying to parse corrupted data multiple times
         for _ in range(3):
             try:
-                with MS3Record.from_buffer(corrupted_data, unpack_data=True) as reader:
-                    for _ in reader:
-                        pass
+                for _ in MS3Record.from_buffer(corrupted_data, unpack_data=True):
+                    pass
             except MiniSEEDError:
                 pass
 
@@ -117,9 +115,8 @@ class TestLoggingCapture:
 
         # Generate some error messages
         try:
-            with MS3Record.from_buffer(corrupted_data, unpack_data=True) as reader:
-                for _ in reader:
-                    pass
+            for _ in MS3Record.from_buffer(corrupted_data, unpack_data=True):
+                pass
         except MiniSEEDError:
             pass
 
@@ -143,9 +140,8 @@ class TestLoggingCapture:
 
         # Generate an error
         try:
-            with MS3Record.from_buffer(corrupted_data, unpack_data=True) as reader:
-                for _ in reader:
-                    pass
+            for _ in MS3Record.from_buffer(corrupted_data, unpack_data=True):
+                pass
         except MiniSEEDError:
             pass
 
