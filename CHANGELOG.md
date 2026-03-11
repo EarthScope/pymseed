@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `for msr in from_buffer(buf):`
   - Replace `with from_buffer(buf) as r: msr = r.read()` with
     `msr = MS3Record.parse(buf)`
+- Optimize `MS3Record.from_file()` iteration by inlining next, eliminating a
+  method dispatch per record
 
 ### Removed
 - `MS3RecordBufferReader` class removed. Use `MS3Record.from_buffer()`

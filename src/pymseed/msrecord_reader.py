@@ -134,11 +134,21 @@ class MS3RecordReader:
 
     def __next__(self) -> MS3Record:
         """Iterator protocol - returns the next record or raises StopIteration."""
-        next = self.read()
-        if next is not None:
-            return next
-        else:
+        status = clibmseed.ms3_readmsr_selection(
+            self._msfp_ptr,
+            self._msr_ptr,
+            self.stream_name,
+            self.parse_flags,
+            self._selections,
+            self.verbose,
+        )
+
+        if status == clibmseed.MS_NOERROR:
+            return MS3Record(recordptr=self._msr_ptr[0])
+        elif status == clibmseed.MS_ENDOFFILE:
             raise StopIteration
+        else:
+            raise MiniSEEDError(status, "Error reading miniSEED record")
 
     def read(self) -> Optional[MS3Record]:
         """Read the next miniSEED record from the file or file descriptor"""
