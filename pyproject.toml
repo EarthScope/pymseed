@@ -101,6 +101,7 @@ addopts = [
     "--strict-markers",
     "--strict-config",
     "--doctest-modules",
+    "--markdown-docs",
 ]
 doctest_optionflags = [
     "NORMALIZE_WHITESPACE",

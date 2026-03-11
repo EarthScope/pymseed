@@ -5,7 +5,7 @@ Both [miniSEED version 2](https://fdsn.org/pdf/SEEDManual_V2.4.pdf)
 (defined in the SEED standard) and [miniSEED version 3](https://docs.fdsn.org/projects/miniseed3)
 are supported.
 
-The package is uses the C-language [libmseed](https://earthscope.github.io/libmseed)
+The package uses the C-language [libmseed](https://earthscope.github.io/libmseed)
 for most of the data format and manipulation work.
 
 ## Installation
@@ -16,7 +16,7 @@ directly from PyPI with, for example, `pip install pymseed`.
 If using numpy features use optional dependency "numpy" or install it independently
 e.g. `pip install pymseed[numpy]`.
 
-For package develop use optional dependency "dev" for needed dependencies
+For package development use optional dependency "dev" for needed dependencies
 e.g. `pip install pymseed[dev]`.
 
 ## Example usage
@@ -96,7 +96,7 @@ traces.to_file(output_file,
 ## Threaded usage
 
 The pymseed package is safe to use with threads as long as the threads
-are not sharing data, e.g. a `MS3traceList`.
+are not sharing data structures, e.g. a `MS3TraceList`.
 
 The underlying libmseed library uses thread-local storage for logging,
 allowing each thread to have its own logging configuration.
@@ -113,6 +113,10 @@ def process_file(filename):
     traces = MS3TraceList.from_file(filename)
     # ... process traces ...
     return len(traces)
+
+# A list of files to process (silly example)
+file_list = ["examples/example_data.mseed",
+             "examples/example_data.mseed"]
 
 # Using initializer to configure logging for each worker thread
 with ThreadPoolExecutor(max_workers=4, initializer=configure_logging) as executor:
