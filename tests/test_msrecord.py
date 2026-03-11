@@ -3,7 +3,7 @@ import math
 import os
 
 import pytest
-from pymseed import MS3Record, DataEncoding
+from pymseed import MS3Record, DataEncoding, MiniSEEDError
 
 test_dir = os.path.abspath(os.path.dirname(__file__))
 test_pack3 = os.path.join(test_dir, "data", "packtest_sine500.mseed3")
@@ -340,3 +340,110 @@ def test_msrecord_to_file(tmp_path):
         with open(temp_file, "rb") as f:
             test_data = f.read()
             assert reference_data == test_data
+
+
+class TestMS3RecordParse:
+    """Tests for MS3Record.parse() — single-record buffer parsing."""
+
+    def test_parse_v3_metadata(self):
+        """Parse a v3 record and verify all header fields."""
+        with open(test_pack3, "rb") as f:
+            buf = f.read()
+
+        msr = MS3Record.parse(buf)
+
+        assert msr.formatversion == 3
+        assert msr.sourceid == "FDSN:XX_TEST__B_S_X"
+        assert msr.samprate == 50.0
+        assert msr.encoding == DataEncoding.STEIM2
+        assert msr.pubversion == 1
+        assert msr.samplecnt == 500
+        assert msr.reclen == 475
+
+    def test_parse_v2_metadata(self):
+        """Parse a v2 record and verify all header fields."""
+        with open(test_pack2, "rb") as f:
+            buf = f.read()
+
+        msr = MS3Record.parse(buf)
+
+        assert msr.formatversion == 2
+        assert msr.sourceid == "FDSN:XX_TEST__B_S_X"
+        assert msr.samprate == 50.0
+        assert msr.encoding == DataEncoding.STEIM2
+        assert msr.samplecnt == 500
+        assert msr.reclen == 512
+
+    def test_parse_header_only(self):
+        """Parse without unpacking data — header fields accessible, samples not."""
+        with open(test_pack3, "rb") as f:
+            buf = f.read()
+
+        msr = MS3Record.parse(buf, unpack_data=False)
+
+        assert msr.sourceid == "FDSN:XX_TEST__B_S_X"
+        assert msr.samplecnt == 500
+        assert msr.numsamples == 0
+
+    def test_parse_with_data(self):
+        """Parse with unpack_data=True — samples decoded and accessible."""
+        with open(test_pack3, "rb") as f:
+            buf = f.read()
+
+        msr = MS3Record.parse(buf, unpack_data=True)
+
+        assert msr.numsamples == 500
+        assert msr.sampletype == "i"
+        samples = list(msr.datasamples)
+        assert samples == sine_500
+
+    def test_parse_ownership(self):
+        """Returned MS3Record owns its C struct — valid after parse() returns."""
+        with open(test_pack3, "rb") as f:
+            buf = f.read()
+
+        msr = MS3Record.parse(buf, unpack_data=True)
+        buf = None  # drop the input buffer; msr must remain valid
+
+        assert msr.sourceid == "FDSN:XX_TEST__B_S_X"
+        assert msr.numsamples == 500
+        assert msr.samplecnt == 500
+        assert list(msr.datasamples) == sine_500
+
+    def test_parse_v2_to_v3_repack(self):
+        """Parse v2 with data, switch formatversion, generate() produces a valid v3 record."""
+        with open(test_pack2, "rb") as f:
+            v2_buf = f.read()
+
+        msr = MS3Record.parse(v2_buf, unpack_data=True)
+        assert msr.formatversion == 2
+
+        original_samples = list(msr.datasamples)
+        original_sourceid = msr.sourceid
+        original_samprate = msr.samprate
+        original_samplecnt = msr.samplecnt
+
+        msr.formatversion = 3
+
+        output = b"".join(msr.generate())
+
+        # Re-parse the output to verify it is a valid v3 record with the same data
+        reparsed = MS3Record.parse(output, unpack_data=True)
+        assert reparsed.formatversion == 3
+        assert reparsed.sourceid == original_sourceid
+        assert reparsed.samprate == original_samprate
+        assert reparsed.samplecnt == original_samplecnt
+        assert list(reparsed.datasamples) == original_samples
+
+    def test_parse_error_truncated_buffer(self):
+        """Raise MiniSEEDError when buffer is too small to contain a record."""
+        with open(test_pack3, "rb") as f:
+            buf = f.read()
+
+        with pytest.raises(MiniSEEDError):
+            MS3Record.parse(buf[:10])
+
+    def test_parse_error_empty_buffer(self):
+        """Raise MiniSEEDError on empty buffer."""
+        with pytest.raises(MiniSEEDError):
+            MS3Record.parse(b"")

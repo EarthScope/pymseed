@@ -1727,3 +1727,81 @@ class MS3Record:
         from .msrecord_buffer_reader import MS3RecordBufferReader
 
         return MS3RecordBufferReader(buffer, **kwargs)
+
+    @classmethod
+    def parse(
+        cls,
+        buffer: Any,
+        unpack_data: bool = False,
+        validate_crc: bool = True,
+        verbose: int = 0,
+    ) -> MS3Record:
+        """Parse a single miniSEED record from a buffer.
+
+        This method is designed as an optimized path to parse a single
+        miniSEED record from a memory buffer.
+
+        Args:
+            buffer: Bytes-like object containing a single miniSEED record.
+                Must support the buffer protocol (e.g. ``bytes``,
+                ``bytearray``, ``memoryview``).
+            unpack_data: If ``True``, decode and unpack data samples. Required
+                when the record will be repacked (e.g. format conversion).
+                Default is ``False``.
+            validate_crc: If ``True``, validate the CRC checksum when present
+                (miniSEED v3 only). Default is ``True``.
+            verbose: Verbosity level for libmseed diagnostics. Default is 0.
+
+        Returns:
+            MS3Record: Fully self-contained record instance.
+
+        Raises:
+            MiniSEEDError: If the buffer does not contain a complete, valid
+                miniSEED record.
+
+        Examples:
+            Parse header metadata only (fastest):
+
+            >>> from pymseed import MS3Record
+            >>> with open('examples/example_data.mseed', 'rb') as f:
+            ...     raw = f.read(512)  # first record
+            >>> msr = MS3Record.parse(raw)
+            >>> msr.sourceid is not None
+            True
+
+            Parse with data samples for repacking (v2 to v3 conversion):
+
+            >>> with open('examples/example_data.mseed', 'rb') as f:
+            ...     raw = f.read(512)
+            >>> msr = MS3Record.parse(raw, unpack_data=True)
+            >>> msr.formatversion = 3
+            >>> records = list(msr.generate())
+            >>> len(records) > 0
+            True
+
+        See Also:
+            from_buffer(): Iterate over multiple records in a buffer
+        """
+        buf_ptr = ffi.from_buffer(buffer)
+        msr_ptr = ffi.new("MS3Record **")
+
+        parse_flags = 0
+        if unpack_data:
+            parse_flags |= clibmseed.MSF_UNPACKDATA
+        if validate_crc:
+            parse_flags |= clibmseed.MSF_VALIDATECRC
+
+        status = clibmseed.msr3_parse(
+            buf_ptr,
+            len(buf_ptr),
+            msr_ptr,
+            parse_flags,
+            verbose,
+        )
+
+        if status == clibmseed.MS_NOERROR:
+            msr = cls(recordptr=msr_ptr[0])
+            msr._msr_allocated = True
+            return msr
+        else:
+            raise MiniSEEDError(status, "Error parsing miniSEED record")
