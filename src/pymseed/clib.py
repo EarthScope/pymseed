@@ -38,4 +38,4 @@ def cdata_to_string(cdata: Any, encoding: str = "utf-8") -> Optional[str]:
     if cdata == ffi.NULL:
         return None
     else:
-        return str(ffi.string(cdata).decode(encoding))
+        return ffi.string(cdata).decode(encoding)
