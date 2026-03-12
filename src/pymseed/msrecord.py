@@ -51,7 +51,7 @@ class MS3Record:
         Creating records:
             >>> from pymseed import MS3Record, DataEncoding
             >>> msr = MS3Record()
-            >>> msr.sourceid = "FDSN:NET_STA_LOC_B_S_s"
+            >>> msr.sourceid = "FDSN:NET_STA_LOC_B_S_X"
             >>> msr.set_starttime_str("2024-01-01T00:00:00Z")
             >>> msr.samprate = 100.0
             >>> msr.encoding = DataEncoding.STEIM2
@@ -117,7 +117,7 @@ class MS3Record:
             >>> # Create empty record
             >>> from pymseed import MS3Record
             >>> msr = MS3Record()
-            >>> msr.sourceid = "FDSN:IU_COLA_00_B_H_Z"
+            >>> msr.sourceid = "FDSN:XX_TEST__B_S_X"
             >>> msr.samprate = 20.0
             >>>
             >>> # Create with specific encoding for Steim2 compression
@@ -249,7 +249,7 @@ class MS3Record:
         Returns:
             Source identifier string, or None if not set
         """
-        return cdata_to_string(self._msr.sid)
+        return ffi.string(self._msr.sid).decode("utf-8")
 
     @sourceid.setter
     def sourceid(self, value: str) -> None:
@@ -1270,7 +1270,7 @@ class MS3Record:
 
             >>> from pymseed import MS3Record, DataEncoding
             >>> msr = MS3Record()
-            >>> msr.sourceid = "FDSN:XX_TEST__L_S_X"
+            >>> msr.sourceid = "FDSN:XX_TEST__H_S_X"
             >>> msr.reclen = 512
             >>> msr.formatversion = 3
             >>> msr.set_starttime_str("2023-01-02T01:02:03.123456789Z")
@@ -1820,7 +1820,7 @@ class MS3Record:
             >>> with open('examples/example_data.mseed', 'rb') as f:
             ...     raw = f.read(512)  # first record
             >>> msr = MS3Record.parse(raw)
-            >>> msr.sourceid is not None
+            >>> msr.sourceid != ''
             True
 
             Parse with data samples for repacking (v2 to v3 conversion):
@@ -1859,3 +1859,74 @@ class MS3Record:
             return msr
         else:
             raise MiniSEEDError(status, "Error parsing miniSEED record")
+
+    def parse_into(
+        self,
+        buffer: Any,
+        unpack_data: bool = False,
+        validate_crc: bool = True,
+        verbose: int = 0,
+    ) -> "MS3Record":
+        """Parse a miniSEED record into this existing instance, reusing the C struct.
+
+        This is an optimized alternative to :meth:`parse` for high-throughput loops
+        where the same ``MS3Record`` object is reused across many records.  By passing
+        the existing C struct pointer to ``msr3_parse``, the library can reuse the
+        allocation rather than free and reallocate on every call, eliminating the
+        ``__init__``/``__del__`` overhead in tight loops.
+
+        Args:
+            buffer: Bytes-like object containing a single miniSEED record.
+                Must support the buffer protocol (e.g. ``bytes``,
+                ``bytearray``, ``memoryview``).
+            unpack_data: If ``True``, decode and unpack data samples.
+                Default is ``False``.
+            validate_crc: If ``True``, validate the CRC checksum when present
+                (miniSEED v3 only). Default is ``True``.
+            verbose: Verbosity level for libmseed diagnostics. Default is 0.
+
+        Returns:
+            MS3Record: ``self``, updated in place with the new record's fields.
+
+        Raises:
+            MiniSEEDError: If the buffer does not contain a complete, valid
+                miniSEED record.
+
+        Example:
+            >>> from pymseed import MS3Record
+            >>> msr = MS3Record()
+            >>> with open('examples/example_data.mseed', 'rb') as f:
+            ...     buf = f.read(512)
+            >>> _ = msr.parse_into(buf)
+            >>> msr.samplecnt > 0
+            True
+            >>> msr.sourceid != ''
+            True
+
+        See Also:
+            parse(): Classmethod that allocates a new MS3Record per call
+            from_buffer(): Iterate over multiple records in a buffer
+        """
+        buf_ptr = ffi.from_buffer(buffer)
+        msr_ptr = ffi.new("MS3Record **")
+        msr_ptr[0] = self._msr
+
+        parse_flags = 0
+        if unpack_data:
+            parse_flags |= clibmseed.MSF_UNPACKDATA
+        if validate_crc:
+            parse_flags |= clibmseed.MSF_VALIDATECRC
+
+        status = clibmseed.msr3_parse(
+            buf_ptr,
+            len(buf_ptr),
+            msr_ptr,
+            parse_flags,
+            verbose,
+        )
+
+        if status != clibmseed.MS_NOERROR:
+            raise MiniSEEDError(status, "Error parsing miniSEED record")
+
+        self._msr = msr_ptr[0]
+        return self

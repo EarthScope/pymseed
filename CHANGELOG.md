@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-03-12
+
+### Added
+- `MS3Record.parse_into()` instance method for reuse-based parsing in high-throughput
+  loops to eliminating per-record allocation/deallocation overhead.
+
+### Changed
+- `MS3Record.sourceid` property now skips an unnecessary NULL check.
+- `cdata_to_string()` no longer wraps `.decode()` in a redundant `str()` call.
+
 ## [0.5.0] - 2026-03-11
 
 ### Added
