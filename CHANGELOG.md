@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1]
+
 ### Added
 - `MS2Record.from_file()` now includes `start_byte_offset` and `end_byte_offset`
   supporting reads of specific byte ranges.
