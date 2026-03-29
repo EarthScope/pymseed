@@ -96,6 +96,38 @@ def test_msrecord_read_record_60sec():
         assert msr.samprate_period_ns == 60 * NSTMODULUS
         assert msr.samprate_period_seconds == pytest.approx(60.0)
 
+
+def test_msrecord_read_record_offsets():
+    # miniSEED v3 file
+    with MS3Record.from_file(
+        test_path3, start_byte_offset=408442, end_byte_offset=408600, unpack_data=True
+    ) as msreader:
+
+        # Read first record
+        msr = msreader.read()
+
+        assert msr.reclen == 158
+        assert msr.sourceid == "FDSN:IU_COLA_00_B_H_Z"
+        assert msr.samprate == 20.0
+
+        # Check first 6 samples
+        assert msr.datasamples[0:6].tolist() == [-231394, -231367, -231376, -231404, -231437, -231474]
+
+    # miniSEED v2 file
+    with MS3Record.from_file(
+        test_path2, start_byte_offset=386560, end_byte_offset=387072, unpack_data=True
+    ) as msreader:
+        # Read first record
+        msr = msreader.read()
+
+        assert msr.reclen == 512
+        assert msr.sourceid == "FDSN:IU_COLA_00_B_H_Z"
+        assert msr.samprate == 20.0
+
+        # Check first 6 samples
+        assert msr.datasamples[0:6].tolist() == [-231394, -231367, -231376, -231404, -231437, -231474]
+
+
 def test_msrecord_read_record_details_fd():
     # Test reading from a file descriptor - we simulate this using the buffer reader
 

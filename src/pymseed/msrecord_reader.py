@@ -31,6 +31,12 @@ class MS3RecordReader:
             descriptor will be automatically closed when close() is called or when
             the object is used as a context manager.
 
+        start_byte_offset (int, optional): Start byte offset in the input bytes stream.
+            Defaults to 0.
+
+        end_byte_offset (int, optional): End byte offset in the input bytes stream.
+            Defaults to 0, which means read until the end of the stream.
+
         unpack_data (bool, optional): Whether to decode/unpack the data samples from
             the records. If False, only metadata is parsed and data remains in
             compressed format. Defaults to False for better performance when only
@@ -86,6 +92,8 @@ class MS3RecordReader:
     def __init__(
         self,
         input: Union[str, int],
+        start_byte_offset: int = 0,
+        end_byte_offset: int = 0,
         unpack_data: bool = False,
         skip_not_data: bool = False,
         validate_crc: bool = True,
@@ -107,7 +115,9 @@ class MS3RecordReader:
 
         # If the stream is an integer, assume an open file descriptor
         if isinstance(input, int):
-            self._msfp_ptr[0] = clibmseed.ms3_msfp_init_fd(input)
+            self._msfp_ptr[0] = clibmseed.ms3_msfp_init(
+                start_byte_offset, end_byte_offset, input
+            )
 
             if self._msfp_ptr[0] == ffi.NULL:
                 raise MiniSEEDError(
@@ -116,8 +126,18 @@ class MS3RecordReader:
                 )
 
             self.stream_name = ffi.new("char[]", f"File Descriptor {input}".encode())
-        # Otherwise, assume a path name
+        # Otherwise, assume a path name, which will be opened by the library
         else:
+            self._msfp_ptr[0] = clibmseed.ms3_msfp_init(
+                start_byte_offset, end_byte_offset, -1
+            )
+
+            if self._msfp_ptr[0] == ffi.NULL:
+                raise MiniSEEDError(
+                    clibmseed.MS_GENERROR,
+                    f"Error initializing file {input}",
+                )
+
             self.stream_name = ffi.new("char[]", input.encode())
 
     def __enter__(self) -> "MS3RecordReader":
@@ -190,6 +210,6 @@ class MS3RecordReader:
                 self._selections,
                 self.verbose,
             )
-            # Mark as closed to prevent double cleanup
+            # Set to NULL to prevent double cleanup
             self._msfp_ptr[0] = ffi.NULL
             self._msr_ptr[0] = ffi.NULL
