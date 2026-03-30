@@ -74,14 +74,9 @@ class _BufferSource:
 
 
 class _FileSource:
-    """Iterate over detected records in a file using a sliding buffer.
+    """Iterate over detected records in a file using a sliding buffer."""
 
-    Reads the file in chunks so the entire file need not fit in memory.
-    Each yielded record is backed by its own bytes object, so the pointer
-    remains valid regardless of subsequent buffer operations.
-    """
-
-    def __init__(self, filename: str, chunk_size: int = 1_048_576) -> None:
+    def __init__(self, filename: str, chunk_size: int = 10_485_760) -> None:
         self._filename = filename
         self._chunk_size = chunk_size
 
@@ -91,16 +86,24 @@ class _FileSource:
         buf_offset = 0
         file_offset = 0
         eof = False
+        buf_base = None
+        buf_generation = -1
+        generation = 0
 
         with open(self._filename, "rb") as f:
             while True:
+                # --- Fill buffer ---
                 if not eof:
                     chunk = f.read(self._chunk_size)
                     if chunk:
-                        if buf_offset > 0:
+                        buf_base = None
+
+                        if buf_offset > self._chunk_size:
                             del buf[:buf_offset]
                             buf_offset = 0
+
                         buf.extend(chunk)
+                        generation += 1
                     else:
                         eof = True
 
@@ -108,25 +111,44 @@ class _FileSource:
                 if remaining <= 0:
                     return
 
-                reclen = clibmseed.ms3_detect(
-                    ffi.from_buffer(buf) + buf_offset,
-                    remaining,
-                    format_version,
-                )
+                # --- Drain records from current buffer ---
+                while True:
+                    remaining = len(buf) - buf_offset
+                    if remaining <= 0:
+                        break
 
-                if reclen < 0:
-                    yield (None, file_offset, reclen)
+                    if buf_generation != generation:
+                        buf_base = None
+                        buf_base = ffi.from_buffer(buf)
+                        buf_generation = generation
+
+                    record_ptr = buf_base + buf_offset
+
+                    reclen = clibmseed.ms3_detect(
+                        record_ptr,
+                        remaining,
+                        format_version,
+                    )
+
+                    if reclen < 0:
+                        # If not at EOF, we may simply not have enough
+                        # bytes for detection. Break to read more data.
+                        if eof:
+                            yield (None, file_offset, reclen)
+                            return
+                        break
+
+                    if reclen == 0 or reclen > remaining:
+                        if eof:
+                            return
+                        break
+
+                    yield (record_ptr, file_offset, reclen)
+                    buf_offset += reclen
+                    file_offset += reclen
+
+                if eof:
                     return
-
-                if reclen == 0 or reclen > remaining:
-                    if eof:
-                        return
-                    continue
-
-                record_bytes = bytes(buf[buf_offset : buf_offset + reclen])
-                yield (ffi.from_buffer(record_bytes), file_offset, reclen)
-                buf_offset += reclen
-                file_offset += reclen
 
 
 class MS3RecordValidator:
@@ -222,7 +244,7 @@ class MS3RecordValidator:
         cls,
         filename: str,
         *,
-        chunk_size: int = 1_048_576,
+        chunk_size: int = 10_485_760,
         **kwargs: Any,
     ) -> "MS3RecordValidator":
         """Create a validator for a miniSEED file.
@@ -232,7 +254,7 @@ class MS3RecordValidator:
 
         Args:
             filename: Path to miniSEED file.
-            chunk_size: Read chunk size in bytes. Default is 1 MiB.
+            chunk_size: Read chunk size in bytes. Default is 10 MiB.
             **kwargs: Passed to ``MS3RecordValidator.__init__``.
 
         Returns:
@@ -278,14 +300,18 @@ class MS3RecordValidator:
             if self._extra_headers_schema not in _KNOWN_SCHEMAS:
                 raise ValueError(f"Unknown schema_id: {self._extra_headers_schema}")
             try:
-                from ._extra_headers_jsonschema import validator_for_extra_headers_schema
+                from ._extra_headers_jsonschema import (
+                    validator_for_extra_headers_schema,
+                )
 
                 schema_bytes = (
                     files("pymseed.schemas")
                     .joinpath(_KNOWN_SCHEMAS[self._extra_headers_schema])
                     .read_bytes()
                 )
-                _eh_validator = validator_for_extra_headers_schema(json_loads(schema_bytes))
+                _eh_validator = validator_for_extra_headers_schema(
+                    json_loads(schema_bytes)
+                )
             except ImportError:
                 _eh_import_error = True
 
@@ -335,11 +361,7 @@ class MS3RecordValidator:
 
                 # Read metadata directly from C struct
                 msr = msr_ptr[0]
-                rec_fields = {
-                    "sourceid": ffi.string(msr.sid).decode("utf-8"),
-                    "starttime": msr.starttime,
-                    "reclen": record_length,
-                }
+                sourceid = ffi.string(msr.sid).decode("utf-8")
 
                 # Check for parse warnings (CRC validation, etc.)
                 parse_messages = get_error_messages()
@@ -349,7 +371,9 @@ class MS3RecordValidator:
                             ValidationError(
                                 offset=offset,
                                 message=msg,
-                                **rec_fields,
+                                sourceid=sourceid,
+                                starttime=msr.starttime,
+                                reclen=record_length,
                             )
                         )
 
@@ -360,7 +384,9 @@ class MS3RecordValidator:
                             ValidationError(
                                 offset=offset,
                                 message="Extra headers validation skipped: jsonschema-rs not installed",
-                                **rec_fields,
+                                sourceid=sourceid,
+                                starttime=msr.starttime,
+                                reclen=record_length,
                             )
                         )
                     else:
@@ -371,12 +397,16 @@ class MS3RecordValidator:
                                 else ""
                             )
                             if extra_str:
-                                for ve in _eh_validator.iter_errors(json_loads(extra_str)):
+                                for ve in _eh_validator.iter_errors(
+                                    json_loads(extra_str)
+                                ):
                                     errors.append(
                                         ValidationError(
                                             offset=offset,
                                             message=f"Extra headers validation error: {ve.message} at {ve.instance_path}",
-                                            **rec_fields,
+                                            sourceid=sourceid,
+                                            starttime=msr.starttime,
+                                            reclen=record_length,
                                         )
                                     )
                         except Exception as e:
@@ -384,7 +414,9 @@ class MS3RecordValidator:
                                 ValidationError(
                                     offset=offset,
                                     message=f"Extra headers validation error: {e}",
-                                    **rec_fields,
+                                    sourceid=sourceid,
+                                    starttime=msr.starttime,
+                                    reclen=record_length,
                                 )
                             )
 
@@ -405,7 +437,9 @@ class MS3RecordValidator:
                             ValidationError(
                                 offset=offset,
                                 message="Failed to add record to trace list",
-                                **rec_fields,
+                                sourceid=sourceid,
+                                starttime=msr.starttime,
+                                reclen=record_length,
                             )
                         )
                         continue
@@ -428,7 +462,9 @@ class MS3RecordValidator:
                                 ValidationError(
                                     offset=offset,
                                     message=msg,
-                                    **rec_fields,
+                                    sourceid=sourceid,
+                                    starttime=msr.starttime,
+                                    reclen=record_length,
                                 )
                             )
                     # Check for unpack warning messages, e.g. decoding integrity checks
@@ -439,7 +475,9 @@ class MS3RecordValidator:
                                 ValidationError(
                                     offset=offset,
                                     message=msg,
-                                    **rec_fields,
+                                    sourceid=sourceid,
+                                    starttime=msr.starttime,
+                                    reclen=record_length,
                                 )
                             )
 
