@@ -20,6 +20,12 @@ _atexit_registered_clear_error_messages = False
 # Thread-local storage for keeping prefix strings alive
 _thread_local_prefixes = threading.local()
 
+# Reused pop buffer per thread (ms_rlog_pop requires a stable char[] each call)
+_thread_local_rlog_pop_buf = threading.local()
+
+# MAX_LOG_MSG_LENGTH in libmseed (logging.c)
+_MAX_RLOG_MSG_LEN = 200
+
 
 def configure_logging(
     log_prefix: Optional[str] = None,
@@ -91,16 +97,16 @@ def get_error_messages() -> list[str]:
     Returns:
         A list of error/warning message strings. Empty list if no messages.
     """
-    messages = []
-    # MAX_LOG_MSG_LENGTH is 200 in libmseed
-    max_len = 200
-    message_buf = ffi.new("char[]", max_len)
+    buf = getattr(_thread_local_rlog_pop_buf, "buf", None)
+    if buf is None:
+        buf = ffi.new("char[]", _MAX_RLOG_MSG_LEN)
+        _thread_local_rlog_pop_buf.buf = buf
 
+    messages: list[str] = []
     while True:
-        length = clibmseed.ms_rlog_pop(ffi.NULL, message_buf, max_len, 0)
+        length = clibmseed.ms_rlog_pop(ffi.NULL, buf, _MAX_RLOG_MSG_LEN, 0)
         if length <= 0:
             break
-        message = ffi.string(message_buf).decode("utf-8").rstrip("\n")
-        messages.append(message)
+        messages.append(ffi.unpack(buf, length).decode("utf-8").rstrip("\n"))
 
     return messages
