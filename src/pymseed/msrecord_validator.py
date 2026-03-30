@@ -8,13 +8,13 @@ parse when possible.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Iterator
 from dataclasses import dataclass
 from importlib.resources import files
 from typing import Any
 
 from .clib import clibmseed, ffi
+from ._json import json_loads
 from .logging import clear_error_messages, get_error_messages
 from .mstracelist import MS3TraceList
 
@@ -285,7 +285,7 @@ class MS3RecordValidator:
                     .joinpath(_KNOWN_SCHEMAS[self._extra_headers_schema])
                     .read_bytes()
                 )
-                _eh_validator = validator_for_extra_headers_schema(json.loads(schema_bytes))
+                _eh_validator = validator_for_extra_headers_schema(json_loads(schema_bytes))
             except ImportError:
                 _eh_import_error = True
 
@@ -371,7 +371,7 @@ class MS3RecordValidator:
                                 else ""
                             )
                             if extra_str:
-                                for ve in _eh_validator.iter_errors(json.loads(extra_str)):
+                                for ve in _eh_validator.iter_errors(json_loads(extra_str)):
                                     errors.append(
                                         ValidationError(
                                             offset=offset,

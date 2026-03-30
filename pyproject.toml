@@ -34,6 +34,7 @@ dynamic = ["version"]
 # Core runtime dependencies
 dependencies = [
     "cffi>=2.0.0",
+    "orjson>=3.11.7; implementation_name != 'pypy'",
 ]
 
 [project.optional-dependencies]

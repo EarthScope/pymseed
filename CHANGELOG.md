@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `jsonschema` (the `pymseed[jsonschema]` extra name is unchanged).
   `MS3Record.validate_extra_headers()` now returns `jsonschema_rs.ValidationError`
   instances instead of `jsonschema.exceptions.ValidationError`.
+- Use `orjson` module on all implementations except PyPy for optimization.
 
 ## [0.6.1]
 

@@ -5,7 +5,6 @@ Core MS3Record implementation for pymseed
 
 from __future__ import annotations
 
-import json
 import warnings
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
@@ -16,6 +15,7 @@ if TYPE_CHECKING:
     from jsonschema_rs import ValidationError as JsonSchemaValidationError
 
 from .clib import cdata_to_string, clibmseed, ffi
+from pymseed._json import json_loads, json_dumps, json_dumps_minified
 from .definitions import SubSecond, TimeFormat
 from .exceptions import MiniSEEDError
 from .util import encoding_string, nstime2timestr, timestr2nstime
@@ -614,9 +614,8 @@ class MS3Record:
         """
         if value:
             # Minify the JSON string to ensure valid JSON and minimize size
-            minified = json.dumps(json.loads(value), separators=(",", ":"))
-
-            c_value = ffi.new("char[]", minified.encode("utf-8"))
+            minified = json_dumps_minified(json_loads(value))
+            c_value = ffi.new("char[]", minified)
 
             status = clibmseed.mseh_replace(self._msr, c_value)
 
@@ -832,12 +831,11 @@ class MS3Record:
             '{"FDSN":{"Time":{"Correction":1.234}}}'
         """
         # Minify the JSON string to ensure valid JSON and minimize size
-        minified = json.dumps(json.loads(value), separators=(",", ":"))
+        minified = json_dumps_minified(json_loads(value))
+        c_value = ffi.new("char[]", minified)
 
         # Merge at the root: pass an explicit empty C string for the pointer
         c_ptr = ffi.new("char[]", b"")
-
-        c_value = ffi.new("char[]", minified.encode("utf-8"))
 
         status = clibmseed.mseh_set_ptr_r(self._msr, c_ptr, c_value, b"M", ffi.NULL)
 
@@ -919,8 +917,8 @@ class MS3Record:
             with open(schema_file, "rb") as fh:
                 schema_bytes = fh.read()
 
-        schema = json.loads(schema_bytes)
-        instance = json.loads(self.extra)
+        schema = json_loads(schema_bytes)
+        instance = json_loads(self.extra)
 
         validator = validator_for_extra_headers_schema(schema)
 
