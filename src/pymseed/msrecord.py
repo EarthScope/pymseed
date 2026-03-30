@@ -13,7 +13,7 @@ from importlib.resources import files
 from typing import TYPE_CHECKING, Any, Callable, Optional, Union
 
 if TYPE_CHECKING:
-    from jsonschema.exceptions import ValidationError as JsonSchemaValidationError
+    from jsonschema_rs import ValidationError as JsonSchemaValidationError
 
 from .clib import cdata_to_string, clibmseed, ffi
 from .definitions import SubSecond, TimeFormat
@@ -861,7 +861,7 @@ class MS3Record:
             schema_file: Path to specific schema file to use, defaults to None
 
         Returns:
-            A list of ``jsonschema.exceptions.ValidationError`` instances, empty if no errors.
+            A list of ``jsonschema_rs.ValidationError`` instances, empty if no errors.
 
         Examples:
             >>> from pymseed import MS3Record
@@ -905,12 +905,7 @@ class MS3Record:
         if not self.extra:
             return []
 
-        try:
-            from jsonschema import Draft202012Validator
-        except ImportError:
-            raise ImportError(
-                "jsonschema is not installed. Install jsonschema or this package with [jsonschema] optional dependency"
-            ) from None
+        from ._extra_headers_jsonschema import validator_for_extra_headers_schema
 
         # Resolve schema bytes
         if schema_file is None:
@@ -927,7 +922,7 @@ class MS3Record:
         schema = json.loads(schema_bytes)
         instance = json.loads(self.extra)
 
-        validator = Draft202012Validator(schema)
+        validator = validator_for_extra_headers_schema(schema)
 
         return list(validator.iter_errors(instance))
 

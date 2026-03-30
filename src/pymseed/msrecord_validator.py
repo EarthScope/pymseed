@@ -278,14 +278,14 @@ class MS3RecordValidator:
             if self._extra_headers_schema not in _KNOWN_SCHEMAS:
                 raise ValueError(f"Unknown schema_id: {self._extra_headers_schema}")
             try:
-                from jsonschema import Draft202012Validator
+                from ._extra_headers_jsonschema import validator_for_extra_headers_schema
 
                 schema_bytes = (
                     files("pymseed.schemas")
                     .joinpath(_KNOWN_SCHEMAS[self._extra_headers_schema])
                     .read_bytes()
                 )
-                _eh_validator = Draft202012Validator(json.loads(schema_bytes))
+                _eh_validator = validator_for_extra_headers_schema(json.loads(schema_bytes))
             except ImportError:
                 _eh_import_error = True
 
@@ -359,7 +359,7 @@ class MS3RecordValidator:
                         errors.append(
                             ValidationError(
                                 offset=offset,
-                                message="Extra headers validation skipped: jsonschema not installed",
+                                message="Extra headers validation skipped: jsonschema-rs not installed",
                                 **rec_fields,
                             )
                         )
@@ -375,7 +375,7 @@ class MS3RecordValidator:
                                     errors.append(
                                         ValidationError(
                                             offset=offset,
-                                            message=f"Extra headers validation error: {ve.message} at {ve.json_path}",
+                                            message=f"Extra headers validation error: {ve.message} at {ve.instance_path}",
                                             **rec_fields,
                                         )
                                     )

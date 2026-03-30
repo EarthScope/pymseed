@@ -9,7 +9,7 @@ authors = [
     { name = "EarthScope Data Services", email = "software@earthscope.org" },
 ]
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 keywords = ["seismology", "miniseed", "mseed", "data", "waveform", "seismic"]
 license = "Apache-2.0"
 classifiers = [
@@ -21,7 +21,6 @@ classifiers = [
     "Operating System :: POSIX :: Other",
     "Operating System :: Microsoft :: Windows",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -40,8 +39,8 @@ dependencies = [
 [project.optional-dependencies]
 numpy = ["numpy>=1.24.0"]
 
-# jsonschema is used for validation of miniSEED3 extra headers against FDSN schemas
-jsonschema = ["jsonschema>=4.0.0"]
+# jsonschema-rs validates miniSEED3 extra headers against FDSN schemas
+jsonschema = ["jsonschema-rs>=0.35.0"]
 
 # Testing with numpy
 test = [
@@ -123,7 +122,7 @@ include = ["*.md"]
 
 # Linting and code formatting with Ruff
 [tool.ruff]
-target-version = "py39"
+target-version = "py310"
 line-length = 100
 extend-exclude = [
     "cffi_module/libmseed/**",
@@ -163,7 +162,7 @@ ignore = [
 
 # Type checking with mypy
 [tool.mypy]
-python_version = "3.9"
+python_version = "3.10"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
@@ -211,11 +210,11 @@ enable = ["pypy"]
 
 # Skip:
 # Windows ARM builds for Python < 3.11 (limited ecosystem support)
-skip = "cp39-win_arm64 cp310-win_arm64"
+skip = "cp310-win_arm64"
 
 # Testing configuration
 # Run unit tests from the source tree and doctests from the installed package
-test-requires = "pytest pytest-markdown-docs numpy jsonschema"
+test-requires = "pytest pytest-markdown-docs numpy jsonschema-rs"
 test-command = "cd {project} && pytest tests --doctest-modules --pyargs pymseed"
 
 [tool.cibuildwheel.windows]
