@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0]
+
 ### Changed
 - **Breaking:** Minimum supported Python is now 3.10.
 - Optional extra-header JSON Schema validation uses `jsonschema-rs` instead of
@@ -14,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `MS3Record.validate_extra_headers()` now returns `jsonschema_rs.ValidationError`
   instances instead of `jsonschema.exceptions.ValidationError`.
 - Use `orjson` module on all implementations except PyPy for optimization.
+- Significant optimization of `MS3RecordValidator.validate()`.
 
 ## [0.6.1]
 
