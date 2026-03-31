@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Use `orjson` module on all implementations except PyPy for optimization.
 - Significant optimization of `MS3RecordValidator.validate()`.
 
+### Removed
+- CPython 3.14 free threading wheels.  ABI not stable and dependencies missing.
+
 ## [0.6.1]
 
 ### Added
