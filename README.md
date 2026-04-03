@@ -93,6 +93,48 @@ traces.to_file(output_file,
                max_reclen = record_length)
 ```
 
+### Converting between Source IDs and NSLC codes
+
+miniSEED 3 and FDSN [Source Identifiers](https://docs.fdsn.org/projects/source-identifiers)
+use a single string (for example `FDSN:IU_COLA_00_B_H_Z`). Classic SEED-style
+names split the same information into network, station, location, and channel
+(NSLC) codes.  SourceIDs are a superset of SEED v2 codes, all SEED codes can
+be represented as SourceIDs, but not all SourceIDs will fit into SEED codes.
+
+The utility methods `nslc2sourceid()` and `sourceid2nslc()` allow mapping
+between these identifier systems:
+
+```python
+from pymseed import nslc2sourceid, sourceid2nslc
+
+# NSLC (four strings) → FDSN source ID
+sid = nslc2sourceid("IU", "COLA", "00", "BHZ")
+# 'FDSN:IU_COLA_00_B_H_Z'
+
+# Blank location codes are represented as an empty strings
+sid2 = nslc2sourceid("XX", "TEST", "", "BHZ")
+# 'FDSN:XX_TEST__B_H_Z'
+
+# Source ID → (network, station, location, channel)
+net, sta, loc, chan = sourceid2nslc("FDSN:IU_COLA_00_B_H_Z")
+assert (net, sta, loc, chan) == ("IU", "COLA", "00", "BHZ")
+
+# To accommodate practical identifier conversion `sourceid2nslc()` does not
+# strictly require field lengths for SEED v2 conformance, instead converting
+# fields to their most SEED-like form.  For example single character
+# Source ID fields of band, source and subsource are collapsed to a SEED
+# channel (B_H_Z -> BHZ); but if the codes cannot form a SEED channel
+# they are left in the "extended channel" form of Source IDs.  Furthermore,
+# larger-than-SEED network, station, and location codes are not truncated
+# to fit SEED v2 fields.  For example:
+
+nslc = sourceid2nslc("FDSN:NETWORK_STATION_LOCATION_G_SR_1")
+assert nslc == ('NETWORK', 'STATION', 'LOCATION', 'G_SR_1')
+```
+
+Invalid source IDs raise `ValueError` from `sourceid2nslc()`; invalid NSLC combinations
+raise `ValueError` from `nslc2sourceid()`.
+
 ## Threaded usage
 
 The pymseed package is safe to use with threads as long as the threads
@@ -151,4 +193,4 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 
-Copyright (C) 2025 EarthScope Data Services
+Copyright (C) 2026 EarthScope Data Services
