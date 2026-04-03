@@ -96,12 +96,13 @@ traces.to_file(output_file,
 ### Converting between Source IDs and NSLC codes
 
 miniSEED 3 and FDSN [Source Identifiers](https://docs.fdsn.org/projects/source-identifiers)
-use a single string (for example `FDSN:IU_COLA_00_B_H_Z`). Classic SEED-style
-names split the same information into network, station, location, and channel
-(NSLC) codes.  SourceIDs are a superset of SEED v2 codes, all SEED codes can
-be represented as SourceIDs, but not all SourceIDs will fit into SEED codes.
+use a single string (for example `FDSN:IU_COLA_00_B_H_Z`) to identify a unique
+time series channel. Classic SEED-style identifiers split the same information
+into network, station, location, and channel (NSLC) codes.  SourceIDs are a
+superset of SEED v2 codes, all SEED codes can be represented as SourceIDs,
+but not all SourceIDs will fit into SEED codes.
 
-The utility methods `nslc2sourceid()` and `sourceid2nslc()` allow mapping
+The utility methods `nslc2sourceid()` and `sourceid2nslc()` support mapping
 between these identifier systems:
 
 ```python
