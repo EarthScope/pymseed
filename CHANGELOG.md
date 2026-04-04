@@ -7,15 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.8.0]
+## [0.8.0] - 2026-04-04
 
 ### Added
 - Support and tests for writing header-only records, i.e. no data payload.
+- `MS3Record.from_filelike()` to read miniSEED from python file-like streams.
+- `MS3Record.iter_records()` convenience method to read any supported source.
 
 ### Changed
 - libmseed updated to v3.4.0
 
-## [0.7.0]
+## [0.7.0] - 2026-03-30
 
 ### Changed
 - **Breaking:** Minimum supported Python is now 3.10.
