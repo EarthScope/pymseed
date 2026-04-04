@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- libmseed updated to v3.4.0
+
 ## [0.7.0]
 
 ### Changed
