@@ -67,6 +67,7 @@ def test_msrecord_setters():
     assert msr.starttime == 1672621323987654000
     assert msr.starttime_seconds == 1672621323.987654
 
+
 def test_msrecord_extra_header():
     """Test the extra header functions for an MS3Record object."""
 
@@ -143,6 +144,7 @@ def test_msrecord_extra_header():
 
 class TestMS3RecordSorting:
     """Test sorting of MS3Record objects."""
+
     def test_same_time_different_subsource(self):
         msr1 = MS3Record()
         msr1.set_starttime_str("2023-01-02T01:02:03.123456789Z")
@@ -278,6 +280,7 @@ def test_msrecord_generate():
     with open(test_pack2, "rb") as f:
         record_v2 = f.read()
         assert record_buffer == record_v2
+
 
 def test_msrecord_regenerate():
     """Repack miniSEED v2 to v3 and compare to reference file."""
@@ -447,3 +450,63 @@ class TestMS3RecordParse:
         """Raise MiniSEEDError on empty buffer."""
         with pytest.raises(MiniSEEDError):
             MS3Record.parse(b"")
+
+
+class TestHeaderOnlyMS3Record:
+    """Tests for reading and writing header-only miniSEED records (numsamples == 0)."""
+
+    # Headers to use for header-only records
+    headers = {"FDSN": {"Time": {"Quality": 99}}}
+
+    def _make_header_only_msr(self, formatversion: int = 3) -> MS3Record:
+        """Create an MS3Record with no samples for use as a header-only record."""
+        msr = MS3Record()
+        msr.sourceid = "FDSN:XX_TEST__B_S_X"
+        msr.formatversion = formatversion
+        msr.set_starttime_str("2024-01-01T00:00:00Z")
+        msr.samprate = 0
+        msr.pubversion = 1
+        # numsamples is 0 by default — this is the header-only condition
+
+        msr.extra = json.dumps(self.headers)
+
+        return msr
+
+    def test_generate_v3_roundtrip(self):
+        """generate() on a header-only v3 record yields exactly one record with the correct headers."""
+        msr = self._make_header_only_msr(formatversion=3)
+        records = list(msr.generate())
+
+        assert len(records) == 1
+        assert isinstance(records[0], bytes)
+        assert len(records[0]) > 0
+
+        # Parse the record and verify the extra headers
+        parsed = MS3Record.parse(records[0])
+        assert parsed.formatversion == 3
+        assert parsed.sourceid == "FDSN:XX_TEST__B_S_X"
+        assert parsed.samprate == 0
+        assert parsed.samplecnt == 0
+        assert parsed.numsamples == 0
+        assert parsed.pubversion == 1
+        assert json.loads(parsed.extra) == self.headers
+
+    def test_generate_v2_roundtrip(self):
+        """generate() on a header-only v2 record yields exactly one record with the correct headers."""
+        msr = self._make_header_only_msr(formatversion=2)
+        msr.reclen = 256
+        records = list(msr.generate())
+
+        assert len(records) == 1
+        assert isinstance(records[0], bytes)
+        assert len(records[0]) > 0
+
+        # Parse the record and verify the extra headers
+        parsed = MS3Record.parse(records[0])
+        assert parsed.formatversion == 2
+        assert parsed.sourceid == "FDSN:XX_TEST__B_S_X"
+        assert parsed.samprate == 0
+        assert parsed.samplecnt == 0
+        assert parsed.numsamples == 0
+        assert parsed.pubversion == 1
+        assert json.loads(parsed.extra) == self.headers
