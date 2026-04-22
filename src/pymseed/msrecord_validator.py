@@ -73,11 +73,16 @@ class _BufferSource:
             offset += reclen
 
 
-class _FileSource:
-    """Iterate over detected records in a file using a sliding buffer."""
+class _FileLikeSource:
+    """Iterate over detected records in a forward-only file-like stream.
 
-    def __init__(self, filename: str, chunk_size: int = 10_485_760) -> None:
-        self._filename = filename
+    Reads from any object with a ``.read(n)`` method that returns ``bytes``.
+    The stream does not need to be seekable. The caller retains ownership
+    of the file-like object and is responsible for closing it.
+    """
+
+    def __init__(self, fh: Any, chunk_size: int = 10_485_760) -> None:
+        self._fh = fh
         self._chunk_size = chunk_size
 
     def __iter__(self) -> Iterator[_RecordTuple]:
@@ -90,65 +95,76 @@ class _FileSource:
         buf_generation = -1
         generation = 0
 
-        with open(self._filename, "rb") as f:
+        while True:
+            # --- Fill buffer ---
+            if not eof:
+                chunk = self._fh.read(self._chunk_size)
+                if chunk:
+                    buf_base = None
+
+                    if buf_offset > self._chunk_size:
+                        del buf[:buf_offset]
+                        buf_offset = 0
+
+                    buf.extend(chunk)
+                    generation += 1
+                else:
+                    eof = True
+
+            remaining = len(buf) - buf_offset
+            if remaining <= 0:
+                return
+
+            # --- Drain records from current buffer ---
             while True:
-                # --- Fill buffer ---
-                if not eof:
-                    chunk = f.read(self._chunk_size)
-                    if chunk:
-                        buf_base = None
-
-                        if buf_offset > self._chunk_size:
-                            del buf[:buf_offset]
-                            buf_offset = 0
-
-                        buf.extend(chunk)
-                        generation += 1
-                    else:
-                        eof = True
-
                 remaining = len(buf) - buf_offset
                 if remaining <= 0:
-                    return
+                    break
 
-                # --- Drain records from current buffer ---
-                while True:
-                    remaining = len(buf) - buf_offset
-                    if remaining <= 0:
-                        break
+                if buf_generation != generation:
+                    buf_base = None
+                    buf_base = ffi.from_buffer(buf)
+                    buf_generation = generation
 
-                    if buf_generation != generation:
-                        buf_base = None
-                        buf_base = ffi.from_buffer(buf)
-                        buf_generation = generation
+                record_ptr = buf_base + buf_offset
 
-                    record_ptr = buf_base + buf_offset
+                reclen = clibmseed.ms3_detect(
+                    record_ptr,
+                    remaining,
+                    format_version,
+                )
 
-                    reclen = clibmseed.ms3_detect(
-                        record_ptr,
-                        remaining,
-                        format_version,
-                    )
+                if reclen < 0:
+                    # If not at EOF, we may simply not have enough
+                    # bytes for detection. Break to read more data.
+                    if eof:
+                        yield (None, file_offset, reclen)
+                        return
+                    break
 
-                    if reclen < 0:
-                        # If not at EOF, we may simply not have enough
-                        # bytes for detection. Break to read more data.
-                        if eof:
-                            yield (None, file_offset, reclen)
-                            return
-                        break
+                if reclen == 0 or reclen > remaining:
+                    if eof:
+                        return
+                    break
 
-                    if reclen == 0 or reclen > remaining:
-                        if eof:
-                            return
-                        break
+                yield (record_ptr, file_offset, reclen)
+                buf_offset += reclen
+                file_offset += reclen
 
-                    yield (record_ptr, file_offset, reclen)
-                    buf_offset += reclen
-                    file_offset += reclen
+            if eof:
+                return
 
-                if eof:
-                    return
+
+class _FileSource:
+    """Iterate over detected records in a file using a sliding buffer."""
+
+    def __init__(self, filename: str, chunk_size: int = 10_485_760) -> None:
+        self._filename = filename
+        self._chunk_size = chunk_size
+
+    def __iter__(self) -> Iterator[_RecordTuple]:
+        with open(self._filename, "rb") as f:
+            yield from _FileLikeSource(f, self._chunk_size)
 
 
 class MS3RecordValidator:
@@ -200,7 +216,7 @@ class MS3RecordValidator:
 
     def __init__(
         self,
-        source: _BufferSource | _FileSource,
+        source: _BufferSource | _FileSource | _FileLikeSource,
         *,
         return_trace_list: bool = True,
         unpack_data: bool = True,
@@ -270,6 +286,42 @@ class MS3RecordValidator:
             raise ValueError("chunk_size must be less than 1 GiB")
 
         return cls(_FileSource(filename, chunk_size), **kwargs)
+
+    @classmethod
+    def from_filelike(
+        cls,
+        fh: Any,
+        *,
+        chunk_size: int = 10_485_760,
+        **kwargs: Any,
+    ) -> "MS3RecordValidator":
+        """Create a validator for a miniSEED file-like stream.
+
+        Reads from any object exposing ``.read(n) -> bytes`` (e.g.
+        ``io.BytesIO``, ``sys.stdin.buffer``, an HTTP response body, a
+        socket file) using a sliding buffer, so the full stream does not
+        need to fit in memory.  The stream is **not** required to be
+        seekable.  The caller retains ownership of ``fh`` and is
+        responsible for closing it.
+
+        Args:
+            fh: A file-like object with a ``.read(n)`` method returning bytes.
+            chunk_size: Read chunk size in bytes. Default is 10 MiB.
+            **kwargs: Passed to ``MS3RecordValidator.__init__``.
+
+        Returns:
+            A new ``MS3RecordValidator`` instance.
+
+        Example::
+
+            errors, traces = MS3RecordValidator.from_filelike(fh).validate()
+        """
+        if chunk_size <= 0:
+            raise ValueError("chunk_size must be greater than 0")
+        elif chunk_size > 1_073_741_824:
+            raise ValueError("chunk_size must be less than 1 GiB")
+
+        return cls(_FileLikeSource(fh, chunk_size), **kwargs)
 
     def validate(self) -> tuple[list[ValidationError], MS3TraceList | None]:
         """Validate records and return accumulated errors and a trace list.

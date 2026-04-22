@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-04-22
+
+### Added
+- `MS3RecordValidator.from_filelike()` to read miniSEED from python file-like streams.
+  The streams do not need to be seekable and are always read forward-only.
+
 ## [0.8.0] - 2026-04-04
 
 ### Added

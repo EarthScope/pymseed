@@ -501,5 +501,77 @@ class TestMS3RecordValidatorIntegration:
         assert len(errors1) == len(errors2)
 
 
+class TestMS3RecordValidatorFromFilelike:
+    """Tests for MS3RecordValidator.from_filelike."""
+
+    def test_validate_clean_mseed3(self) -> None:
+        """from_filelike on a BytesIO wrapping v3 data produces zero errors."""
+        import io
+
+        buffer = get_test_buffer(TEST_MSEED3_FILE)
+        errors, traces = MS3RecordValidator.from_filelike(
+            io.BytesIO(buffer), unpack_data=False
+        ).validate()
+
+        assert isinstance(traces, MS3TraceList)
+        assert len(traces) > 0
+        assert len(errors) == 0
+
+    def test_matches_from_file(self) -> None:
+        """from_filelike produces identical error/trace counts as from_file."""
+        import io
+
+        buffer = get_test_buffer(TEST_MSEED3_FILE)
+
+        fl_errors, fl_traces = MS3RecordValidator.from_filelike(
+            io.BytesIO(buffer), unpack_data=True
+        ).validate()
+        f_errors, f_traces = MS3RecordValidator.from_file(
+            TEST_MSEED3_FILE, unpack_data=True
+        ).validate()
+
+        assert len(fl_errors) == len(f_errors)
+        assert len(fl_traces) == len(f_traces)
+
+    def test_chunk_size_validation(self) -> None:
+        """chunk_size <= 0 and > 1 GiB raise ValueError."""
+        import io
+
+        fh = io.BytesIO(b"")
+        with pytest.raises(ValueError):
+            MS3RecordValidator.from_filelike(fh, chunk_size=0)
+        with pytest.raises(ValueError):
+            MS3RecordValidator.from_filelike(fh, chunk_size=-1)
+        with pytest.raises(ValueError):
+            MS3RecordValidator.from_filelike(fh, chunk_size=1_073_741_825)
+
+    def test_non_seekable_stream(self) -> None:
+        """from_filelike works with a forward-only stream that has no seek/tell."""
+
+        class _ReadOnly:
+            """Wraps bytes, exposing only .read(n) — no seek or tell."""
+
+            def __init__(self, data: bytes) -> None:
+                self._data = memoryview(data)
+                self._pos = 0
+
+            def read(self, n: int = -1) -> bytes:
+                if n < 0:
+                    chunk = bytes(self._data[self._pos :])
+                    self._pos = len(self._data)
+                else:
+                    chunk = bytes(self._data[self._pos : self._pos + n])
+                    self._pos += len(chunk)
+                return chunk
+
+        buffer = get_test_buffer(TEST_MSEED3_FILE)
+        errors, traces = MS3RecordValidator.from_filelike(
+            _ReadOnly(buffer), unpack_data=False
+        ).validate()
+
+        assert len(errors) == 0
+        assert len(traces) > 0
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
