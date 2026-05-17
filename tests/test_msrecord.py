@@ -436,6 +436,22 @@ class TestMS3RecordParse:
         assert msr.samplecnt == 500
         assert msr.reclen == 475
 
+    def test_parse_record_mv_is_memoryview(self):
+        """record_mv returns a real memoryview that mirrors record without copying."""
+        with open(test_pack3, "rb") as f:
+            buf = f.read()
+
+        msr = MS3Record.parse(buf)
+        mv = msr.record_mv
+
+        assert isinstance(mv, memoryview)
+        assert len(mv) == msr.reclen
+        assert mv.tobytes() == msr.record
+        # memoryview-only API surface (not present on _cffi_backend.buffer)
+        assert mv.format == "B"
+        assert mv.itemsize == 1
+        assert mv.shape == (msr.reclen,)
+
     def test_parse_v2_metadata(self):
         """Parse a v2 record and verify all header fields."""
         with open(test_pack2, "rb") as f:

@@ -219,11 +219,20 @@ class MS3Record:
 
     @property
     def record_mv(self) -> memoryview:
-        """Return raw, parsed miniSEED record as memoryview (no copy)"""
+        """Return raw, parsed miniSEED record as a memoryview (no copy).
+
+        The memoryview references C memory owned by this MS3Record and
+        does not keep it alive on its own. The caller must keep this
+        MS3Record reachable for as long as the memoryview is used, and
+        must not perform any operation on the record (re-parsing,
+        repacking, freeing) that could invalidate the buffer. Copy with
+        ``bytes(...)`` or ``.tobytes()`` to detach from the underlying
+        record.
+        """
         if self._msr.record == ffi.NULL:
             raise ValueError("No raw record available")
 
-        return ffi.buffer(self._msr.record, self._msr.reclen)
+        return memoryview(ffi.buffer(self._msr.record, self._msr.reclen))
 
     @property
     def reclen(self) -> int:
