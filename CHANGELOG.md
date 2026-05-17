@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `sourceid`, `starttime`, and `endtime` filtering kwargs on `MS3TraceList.__init__()`,
+  `add_file()`, and `add_buffer()` (and therefore `from_file()` / `from_buffer()`).
+  When provided, only records matching the source ID glob pattern and/or overlapping
+  the time window are included in the trace list.
+
 ## [0.8.1] - 2026-04-22
 
 ### Added

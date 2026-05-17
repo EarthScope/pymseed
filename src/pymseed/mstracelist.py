@@ -2,6 +2,7 @@
 Core trace list implementation for pymseed
 
 """
+
 from __future__ import annotations
 
 import warnings
@@ -13,7 +14,7 @@ from .clib import cdata_to_string, clibmseed, ffi
 from .definitions import DataEncoding, SubSecond, TimeFormat
 from .exceptions import MiniSEEDError
 from .msrecord import MS3Record
-from .util import encoding_sizetype, nstime2timestr
+from .util import encoding_sizetype, nstime2timestr, timestr2nstime
 
 
 class MS3RecordPtr:
@@ -103,7 +104,9 @@ class MS3RecordList:
             ]
 
         newline = "\n"
-        return f"MS3RecordList(recordcnt: {len(self)}\n{newline.join(formatted_lines)}\n)"
+        return (
+            f"MS3RecordList(recordcnt: {len(self)}\n{newline.join(formatted_lines)}\n)"
+        )
 
     def __str__(self) -> str:
         def indent_str(thing):
@@ -194,7 +197,9 @@ class MS3TraceSeg:
         if self.numsamples > 0:
             if len(self.datasamples) > 5:
                 # Create array representation with ellipsis inside: [1,2,3,4,5,...]
-                first_samples = ", ".join(str(sample) for sample in list(self.datasamples[:5]))
+                first_samples = ", ".join(
+                    str(sample) for sample in list(self.datasamples[:5])
+                )
                 sample_preview = f"[{first_samples}, ...]"
             else:
                 sample_preview = str(list(self.datasamples))
@@ -345,7 +350,9 @@ class MS3TraceSeg:
         It is not guaranteed to be correct for any other records in the list.
         """
         if self._seg.recordlist is None:
-            raise ValueError("No record list available to determine sample size and type")
+            raise ValueError(
+                "No record list available to determine sample size and type"
+            )
 
         # Get the first record
         first_record_ptr = self._seg.recordlist.first
@@ -573,7 +580,9 @@ class MS3TraceSeg:
                         else len(buffer)
                     )
                 except (TypeError, AttributeError):
-                    raise ValueError("Buffer must support the buffer protocol") from None
+                    raise ValueError(
+                        "Buffer must support the buffer protocol"
+                    ) from None
 
         status = clibmseed.mstl3_unpack_recordlist(
             self._parent_id,
@@ -760,12 +769,67 @@ class MS3TraceID:
         return result
 
 
+def _build_selections(sourceid, starttime, endtime):
+    """Build a libmseed MS3Selections from optional filter arguments.
+
+    Returns (selections_ptr, free_fn).  When all arguments are None, returns
+    (ffi.NULL, None) so callers can pass the pointer directly without branching.
+
+    The caller is responsible for invoking free_fn() after the selections are
+    no longer needed (i.e. after the C read call).
+
+    Args:
+        sourceid: Source ID glob pattern, or None to match all (uses ``*``).
+        starttime: Start time as a formatted string, or None for open start.
+        endtime: End time as a formatted string, or None for open end.
+
+    Raises:
+        ValueError: If a time string cannot be parsed.
+        MiniSEEDError: If ms3_addselect() returns an error.
+    """
+    if sourceid is None and starttime is None and endtime is None:
+        return ffi.NULL, None
+
+    sidpattern = sourceid if sourceid is not None else "*"
+    c_sidpattern = ffi.new("char[]", sidpattern.encode("utf-8"))
+
+    def _time_value(time_string, name):
+        if time_string is None:
+            return clibmseed.NSTUNSET
+        ns = timestr2nstime(time_string)
+        if ns == clibmseed.NSTERROR:
+            raise ValueError(f"Invalid {name} time string: {time_string!r}")
+        return ns
+
+    start_ns = _time_value(starttime, "starttime")
+    end_ns = _time_value(endtime, "endtime")
+
+    ppselections = ffi.new("MS3Selections **")
+    status = clibmseed.ms3_addselect(ppselections, c_sidpattern, start_ns, end_ns, 0)
+    if status < 0:
+        raise MiniSEEDError(status, "Error building selections")
+
+    def _free():
+        if ppselections[0] != ffi.NULL:
+            clibmseed.ms3_freeselections(ppselections[0])
+
+    return ppselections[0], _free
+
+
 class MS3TraceList:
     """A container for a list of traces read from miniSEED
 
     If `file_name` is specified miniSEED will be read from the file.
 
     If `unpack_data` is True, the data samples will be decoded.
+
+    If `sourceid`, `starttime`, or `endtime` are specified, only records
+    matching those criteria will be included in the trace list.  `sourceid`
+    is a glob pattern matched against the record source ID (e.g.
+    ``"FDSN:IU_COLA_*"``); set to ``None`` to match all source IDs.
+    `starttime` and `endtime` are formatted date-time strings
+    (e.g. ``"2024-01-01T00:00:00Z"``); set either to ``None`` for an
+    open-ended time window, set both to ``None`` to match all time.
 
     If `skip_not_data` is True, bytes from the input stream will be skipped
     until a record is found.
@@ -816,6 +880,21 @@ class MS3TraceList:
     FDSN:IU_COLA_00_L_H_Z, 4
       2010-02-27T06:50:00.069539Z - 2010-02-27T07:59:59.069538Z, 1.0 sps, 4200 samples
 
+    Example using source ID and time-window selection:
+    ```
+    >>> traces = MS3TraceList.from_file(
+    ...     "examples/example_data.mseed",
+    ...     sourceid="FDSN:IU_COLA_00_L_H_Z",
+    ...     starttime="2010-02-27T07:00:00Z",
+    ...     endtime="2010-02-27T07:30:00Z",
+    ... )
+    >>> len(traces)
+    1
+    >>> traces[0].sourceid
+    'FDSN:IU_COLA_00_L_H_Z'
+    >>> traces[0][0].samplecnt
+    1963
+
     ```
     """
 
@@ -824,6 +903,9 @@ class MS3TraceList:
         file_name=None,
         buffer=None,
         unpack_data=False,
+        sourceid=None,
+        starttime=None,
+        endtime=None,
         record_list=False,
         skip_not_data=False,
         validate_crc=True,
@@ -843,23 +925,29 @@ class MS3TraceList:
         if file_name is not None:
             self.add_file(
                 file_name,
-                unpack_data,
-                record_list,
-                skip_not_data,
-                validate_crc,
-                split_version,
-                verbose,
+                unpack_data=unpack_data,
+                sourceid=sourceid,
+                starttime=starttime,
+                endtime=endtime,
+                record_list=record_list,
+                skip_not_data=skip_not_data,
+                validate_crc=validate_crc,
+                split_version=split_version,
+                verbose=verbose,
             )
 
         if buffer is not None:
             self.add_buffer(
                 buffer,
-                unpack_data,
-                record_list,
-                skip_not_data,
-                validate_crc,
-                split_version,
-                verbose,
+                unpack_data=unpack_data,
+                sourceid=sourceid,
+                starttime=starttime,
+                endtime=endtime,
+                record_list=record_list,
+                skip_not_data=skip_not_data,
+                validate_crc=validate_crc,
+                split_version=split_version,
+                verbose=verbose,
             )
 
     def __del__(self):
@@ -987,6 +1075,9 @@ class MS3TraceList:
         self,
         file_name: str,
         unpack_data: bool = False,
+        sourceid: Optional[str] = None,
+        starttime: Optional[str] = None,
+        endtime: Optional[str] = None,
         record_list: bool = False,
         skip_not_data: bool = False,
         validate_crc: bool = True,
@@ -1006,6 +1097,19 @@ class MS3TraceList:
                 samples remain packed and must be unpacked later with
                 `unpack_recordlist()`. Default: False
 
+            sourceid: Source ID glob pattern to select matching records
+                (e.g. ``"FDSN:IU_COLA_*"``). None matches all source IDs.
+                Default: None
+
+            starttime: Start of time window as a formatted date-time string
+                (e.g. ``"2024-01-01T00:00:00Z"``). Only records containing data
+                after this time are included. None means open start.
+                Default: None
+
+            endtime: End of time window as a formatted date-time string.
+                Only records containing data before this time are included.
+                None means open end. Default: None
+
             record_list: If True, maintain a list of original records for each
                 trace segment. Required for `unpack_recordlist()` and allows
                 access to individual record metadata. Default: False
@@ -1024,6 +1128,7 @@ class MS3TraceList:
                 detail). Default: 0
 
         Raises:
+            ValueError: If starttime or endtime is not a valid date-time string
             MiniSEEDError: If file cannot be read or contains invalid data
 
         Note:
@@ -1112,23 +1217,40 @@ class MS3TraceList:
         mstl_ptr = ffi.new("MS3TraceList **")
         mstl_ptr[0] = self._mstl
 
-        status = clibmseed.ms3_readtracelist_selection(
-            mstl_ptr,
-            c_file_name,
-            ffi.NULL,  # tolerance
-            ffi.NULL,  # selections
-            int(split_version),
-            flags,
-            verbose,
+        # Build selections, if sourceid, starttime, or endtime are specified
+        selections_ptr, free_selections = _build_selections(
+            sourceid, starttime, endtime
         )
 
+        try:
+            status = clibmseed.ms3_readtracelist_selection(
+                mstl_ptr,
+                c_file_name,
+                ffi.NULL,  # tolerance
+                selections_ptr,
+                int(split_version),
+                flags,
+                verbose,
+            )
+        finally:
+            if free_selections is not None:
+                free_selections()
+
+        # MS_NOTSEED is returned when no records match an active selection;
+        # treat that as a valid empty result rather than an error.
         if status != clibmseed.MS_NOERROR:
-            raise MiniSEEDError(status, f"Error reading file: {file_name}")
+            if free_selections is not None and status == clibmseed.MS_NOTSEED:
+                pass
+            else:
+                raise MiniSEEDError(status, f"Error reading file: {file_name}")
 
     def add_buffer(
         self,
         buffer: bytes,
         unpack_data: bool = False,
+        sourceid: Optional[str] = None,
+        starttime: Optional[str] = None,
+        endtime: Optional[str] = None,
         record_list: bool = False,
         skip_not_data: bool = False,
         validate_crc: bool = True,
@@ -1149,6 +1271,19 @@ class MS3TraceList:
                 samples remain packed and must be unpacked later with
                 `unpack_recordlist()`. Default: False
 
+            sourceid: Source ID glob pattern to select matching records
+                (e.g. ``"FDSN:IU_COLA_*"``). None matches all source IDs.
+                Default: None
+
+            starttime: Start of time window as a formatted date-time string
+                (e.g. ``"2024-01-01T00:00:00Z"``). Only records containing data
+                after this time are included. None means open start.
+                Default: None
+
+            endtime: End of time window as a formatted date-time string.
+                Only records containing data before this time are included.
+                None means open end. Default: None
+
             record_list: If True, maintain a list of original records for each
                 trace segment. Required for `unpack_recordlist()` and allows
                 access to individual record metadata. Default: False
@@ -1168,6 +1303,7 @@ class MS3TraceList:
                 detail). Default: 0
 
         Raises:
+            ValueError: If starttime or endtime is not a valid date-time string
             MiniSEEDError: If buffer cannot be read or contains invalid data
 
         Note:
@@ -1262,19 +1398,33 @@ class MS3TraceList:
         except (TypeError, AttributeError):
             raise ValueError("Buffer must support the buffer protocol") from None
 
-        status = clibmseed.mstl3_readbuffer_selection(
-            mstl_ptr,
-            buffer_ptr,
-            buffer_length,
-            int(split_version),
-            flags,
-            ffi.NULL,  # tolerance
-            ffi.NULL,  # selections
-            verbose,
+        # Build selections, if sourceid, starttime, or endtime are specified
+        selections_ptr, free_selections = _build_selections(
+            sourceid, starttime, endtime
         )
 
+        try:
+            status = clibmseed.mstl3_readbuffer_selection(
+                mstl_ptr,
+                buffer_ptr,
+                buffer_length,
+                int(split_version),
+                flags,
+                ffi.NULL,  # tolerance
+                selections_ptr,
+                verbose,
+            )
+        finally:
+            if free_selections is not None:
+                free_selections()
+
+        # MS_NOTSEED is returned when no records match an active selection;
+        # treat that as a valid empty result rather than an error.
         if status < 0:
-            raise MiniSEEDError(status, f"Error reading buffer (status: {status})")
+            if free_selections is not None and status == clibmseed.MS_NOTSEED:
+                pass
+            else:
+                raise MiniSEEDError(status, f"Error reading buffer (status: {status})")
 
     def add_data(
         self,

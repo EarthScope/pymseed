@@ -641,3 +641,120 @@ def test_mstracelist_to_file(tmp_path):
 def test_mstracelist_nosuchfile():
     with pytest.raises(MiniSEEDError):
         traces = MS3TraceList("NOSUCHFILE")
+
+
+# ---------------------------------------------------------------------------
+# Selection filter tests (sourceid / starttime / endtime)
+# ---------------------------------------------------------------------------
+
+def test_tracelist_file_sourceid_exact():
+    """Exact source ID filter returns only that channel."""
+    traces = MS3TraceList.from_file(test_path3, sourceid="FDSN:IU_COLA_00_B_H_Z")
+    assert len(traces) == 1
+    assert traces[0].sourceid == "FDSN:IU_COLA_00_B_H_Z"
+
+
+def test_tracelist_file_sourceid_glob():
+    """Glob source ID filter (trailing wildcard) returns matching channels."""
+    traces = MS3TraceList.from_file(test_path3, sourceid="FDSN:IU_COLA_00_B_H_*")
+    assert len(traces) == 3
+
+
+def test_tracelist_file_sourceid_no_match():
+    """Non-matching source ID filter returns empty trace list."""
+    traces = MS3TraceList.from_file(test_path3, sourceid="FDSN:XX_NONE_*")
+    assert len(traces) == 0
+
+
+def test_tracelist_file_time_window():
+    """Time-window filter returns fewer samples than unfiltered read."""
+    traces_full = MS3TraceList.from_file(test_path3)
+    traces_windowed = MS3TraceList.from_file(
+        test_path3,
+        starttime="2010-02-27T07:00:00Z",
+        endtime="2010-02-27T07:30:00Z",
+    )
+    assert len(traces_windowed) == 3
+    # Each windowed segment must have fewer samples than the full segment
+    for tid_full, tid_windowed in zip(traces_full, traces_windowed):
+        assert tid_windowed[0].samplecnt < tid_full[0].samplecnt
+
+
+def test_tracelist_file_sourceid_and_time_window():
+    """Combined source ID and time-window filter."""
+    traces = MS3TraceList.from_file(
+        test_path3,
+        sourceid="FDSN:IU_COLA_00_B_H_Z",
+        starttime="2010-02-27T07:00:00Z",
+        endtime="2010-02-27T07:30:00Z",
+    )
+    assert len(traces) == 1
+    assert traces[0].sourceid == "FDSN:IU_COLA_00_B_H_Z"
+    assert traces[0][0].samplecnt == 36080
+
+
+def test_tracelist_file_invalid_starttime():
+    """Invalid starttime string raises ValueError."""
+    with pytest.raises(ValueError):
+        MS3TraceList.from_file(test_path3, starttime="not-a-time")
+
+
+def test_tracelist_file_invalid_endtime():
+    """Invalid endtime string raises ValueError."""
+    with pytest.raises(ValueError):
+        MS3TraceList.from_file(test_path3, endtime="not-a-time")
+
+
+def test_tracelist_buffer_sourceid_exact():
+    """Buffer path: exact source ID filter returns only that channel."""
+    with open(test_path3, "rb") as fp:
+        buf = fp.read()
+    traces = MS3TraceList.from_buffer(buf, sourceid="FDSN:IU_COLA_00_B_H_Z")
+    assert len(traces) == 1
+    assert traces[0].sourceid == "FDSN:IU_COLA_00_B_H_Z"
+
+
+def test_tracelist_buffer_time_window():
+    """Buffer path: time-window filter returns fewer samples than unfiltered."""
+    with open(test_path3, "rb") as fp:
+        buf = fp.read()
+    traces_full = MS3TraceList.from_buffer(buf)
+    traces_windowed = MS3TraceList.from_buffer(
+        buf,
+        starttime="2010-02-27T07:00:00Z",
+        endtime="2010-02-27T07:30:00Z",
+    )
+    assert len(traces_windowed) == 3
+    for tid_full, tid_windowed in zip(traces_full, traces_windowed):
+        assert tid_windowed[0].samplecnt < tid_full[0].samplecnt
+
+
+def test_tracelist_buffer_sourceid_and_time_window():
+    """Buffer path: combined source ID and time-window filter."""
+    with open(test_path3, "rb") as fp:
+        buf = fp.read()
+    traces = MS3TraceList.from_buffer(
+        buf,
+        sourceid="FDSN:IU_COLA_00_B_H_Z",
+        starttime="2010-02-27T07:00:00Z",
+        endtime="2010-02-27T07:30:00Z",
+    )
+    assert len(traces) == 1
+    assert traces[0].sourceid == "FDSN:IU_COLA_00_B_H_Z"
+    assert traces[0][0].samplecnt == 36080
+
+
+def test_tracelist_buffer_invalid_starttime():
+    """Buffer path: invalid starttime string raises ValueError."""
+    with open(test_path3, "rb") as fp:
+        buf = fp.read()
+    with pytest.raises(ValueError):
+        MS3TraceList.from_buffer(buf, starttime="not-a-time")
+
+
+def test_tracelist_buffer_invalid_endtime():
+    """Buffer path: invalid endtime string raises ValueError."""
+    with open(test_path3, "rb") as fp:
+        buf = fp.read()
+    with pytest.raises(ValueError):
+        MS3TraceList.from_buffer(buf, endtime="not-a-time")
