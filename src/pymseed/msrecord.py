@@ -248,11 +248,11 @@ class MS3Record:
         return swapflag
 
     @property
-    def sourceid(self) -> str | None:
+    def sourceid(self) -> str:
         """Source identifier string identifying the data source.
 
         Returns:
-            Source identifier string, or None if not set
+            Source identifier string
         """
         return ffi.string(self._msr.sid).decode("utf-8")
 
@@ -782,7 +782,7 @@ class MS3Record:
         elif isinstance(value, str):
             type_code = b"s"
             c_value = ffi.new("char[]", value.encode("utf-8"))
-        else:  # type: ignore[unreachable]
+        else:
             raise ValueError(f"Unsupported value type: {type(value)}")
 
         c_ptr = ffi.new("char[]", ptr.encode("utf-8"))
