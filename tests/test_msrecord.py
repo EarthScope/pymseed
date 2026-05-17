@@ -143,6 +143,22 @@ def test_msrecord_extra_header():
         msr.merge_extra_headers("Invalid/JSON/Merge/Patch")
 
 
+def test_msrecord_extra_header_long_string():
+    """Long string extra header values are returned intact, not flagged as truncated."""
+
+    msr = MS3Record()
+
+    # Test a long string value
+    long_value = "x" * 4095
+    msr.extra = json.dumps({"Long": {"String": long_value}})
+    assert msr.get_extra_header("/Long/String") == long_value
+
+    # Test a longer string value
+    longer_value = "y" * 10_000
+    msr.extra = json.dumps({"Long": {"String": longer_value}})
+    assert msr.get_extra_header("/Long/String") == longer_value
+
+
 def test_msrecord_extra_clear():
     """Test clearing extra headers by assigning a falsy value."""
 

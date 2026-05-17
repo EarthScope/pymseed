@@ -643,12 +643,6 @@ class MS3Record:
             Value of the header, can be a boolean, integer, float, string,
             or None if the header does not exist.
 
-        Notes:
-            The maximum length of a string extra header is 4095 bytes, longer
-            strings will result in an exception.  This should be sufficient for
-            most use cases.  If you need to store longer strings, you can extract
-            the header JSON and process it in Python.
-
         Examples:
             >>> from pymseed import MS3Record
             >>> msr = MS3Record()
@@ -709,8 +703,10 @@ class MS3Record:
             value = ffi.new("double *", None)
         elif detected_type == ord("s"):
             type = b"s"
-            # Allocate a fixed buffer for string values
-            max_string_length = 4096
+            # A decoded string is strictly shorter than the surrounding JSON
+            # (it loses at least the enclosing quotes and the property name),
+            # so the full extras length + 1 is always a sufficient buffer.
+            max_string_length = self._msr.extralength + 1
             value = ffi.new("char[]", max_string_length)
         elif detected_type == ord("b"):
             type = b"b"
@@ -738,13 +734,6 @@ class MS3Record:
             return float(value[0])
         elif type == b"s":
             string = ffi.string(value).decode("utf-8")
-
-            # Assume that if all possible bytes are used, the string was truncated
-            if len(string) >= max_string_length - 1:
-                raise ValueError(
-                    f"Extra header string at {ptr} is too long, max length: {max_string_length - 1}"
-                )
-
             return string if string else None
         elif type == b"b":
             return bool(value[0])

@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Raise on errors in `timestr2nstime()` instead of returning internal error values.
 
 ### Changed
+- Remove length limit for string values returned from `MS3Record.get_extra_header()`.
 - Improve `MS3Record.extra` setter to allow removal of all headers.
 - Fix `sample_size()` to take sample type codes instead of encoding codes.
 - Fix return typing and improve behavior of `nstime2timestr()`.
