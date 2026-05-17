@@ -141,6 +141,9 @@ class MS3Record:
             if encoding is not None:
                 self._msr.encoding = encoding
 
+        self._record_handler = None
+        self._record_handler_data = None
+
     def __del__(self) -> None:
         if self._msr and self._msr_allocated:
             try:
