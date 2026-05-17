@@ -43,20 +43,32 @@ def timestr2nstime(timestr: str) -> int:
     return nstime
 
 
+# Per-SEED code buffer size for sourceid2nslc().  Plenty of headroom for
+# larger-than-SEED codes and extended channels.
+_NSLC_CODE_BUFSIZE = 16
+
+
 def sourceid2nslc(
     sourceid: str,
 ) -> tuple[str | None, str | None, str | None, str | None]:
     """Convert an FDSN source ID to a tuple of (net, sta, loc, chan)"""
-    max_size = 11
-    net = ffi.new("char[]", max_size)
-    sta = ffi.new("char[]", max_size)
-    loc = ffi.new("char[]", max_size)
-    chan = ffi.new("char[]", max_size)
+    net = ffi.new("char[]", _NSLC_CODE_BUFSIZE)
+    sta = ffi.new("char[]", _NSLC_CODE_BUFSIZE)
+    loc = ffi.new("char[]", _NSLC_CODE_BUFSIZE)
+    chan = ffi.new("char[]", _NSLC_CODE_BUFSIZE)
 
     c_sourceid = ffi.new("char[]", sourceid.encode("utf-8"))
 
     status = clibmseed.ms_sid2nslc_n(
-        c_sourceid, net, max_size, sta, max_size, loc, max_size, chan, max_size
+        c_sourceid,
+        net,
+        _NSLC_CODE_BUFSIZE,
+        sta,
+        _NSLC_CODE_BUFSIZE,
+        loc,
+        _NSLC_CODE_BUFSIZE,
+        chan,
+        _NSLC_CODE_BUFSIZE,
     )
 
     if status == 0:
@@ -72,8 +84,7 @@ def sourceid2nslc(
 
 def nslc2sourceid(net: str, sta: str, loc: str, chan: str) -> str:
     """Convert network, station, location, channel to FDSN source ID"""
-    max_sid_len = 64
-    sid = ffi.new("char[]", max_sid_len)
+    sid = ffi.new("char[]", clibmseed.LM_SIDLEN)
 
     c_net = ffi.new("char[]", net.encode("utf-8"))
     c_sta = ffi.new("char[]", sta.encode("utf-8"))
@@ -81,7 +92,7 @@ def nslc2sourceid(net: str, sta: str, loc: str, chan: str) -> str:
     c_chan = ffi.new("char[]", chan.encode("utf-8"))
 
     flags = 0
-    status = clibmseed.ms_nslc2sid(sid, max_sid_len, flags, c_net, c_sta, c_loc, c_chan)
+    status = clibmseed.ms_nslc2sid(sid, clibmseed.LM_SIDLEN, flags, c_net, c_sta, c_loc, c_chan)
 
     if status > 0:
         result = cdata_to_string(sid)
