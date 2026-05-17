@@ -1781,7 +1781,7 @@ class MS3Record:
     @classmethod
     def from_filelike(
         cls,
-        fh,
+        fh: Any,
         chunk_size: int = 65536,
         unpack_data: bool = False,
         validate_crc: bool = True,

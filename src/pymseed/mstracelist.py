@@ -1413,6 +1413,181 @@ class MS3TraceList:
             else:
                 raise MiniSEEDError(status, f"Error reading buffer (status: {status})")
 
+    def add_filelike(
+        self,
+        fh: Any,
+        chunk_size: int = 65536,
+        unpack_data: bool = False,
+        sourceid: str | None = None,
+        starttime: str | None = None,
+        endtime: str | None = None,
+        record_list: bool = False,
+        skip_not_data: bool = False,
+        validate_crc: bool = True,
+        split_version: bool = False,
+        verbose: int = 0,
+    ) -> None:
+        """Read miniSEED data from a file-like stream and add to the trace list.
+
+        This method reads miniSEED records from any object exposing
+        ``.read(n) -> bytes`` (e.g. ``io.BytesIO``, ``sys.stdin.buffer``, an
+        HTTP response body, a network socket file) using a chunked sliding
+        buffer.  The stream is **not** required to be seekable and the full
+        contents do not need to fit in memory.  The caller retains ownership
+        of ``fh`` and is responsible for closing it.
+
+        Performance note:
+            This method is intended for streaming sources that cannot be
+            represented as a file path or in-memory buffer.  For files on
+            disk, prefer :meth:`add_file` (or :meth:`from_file`).  For data
+            already resident in memory, prefer :meth:`add_buffer` (or
+            :meth:`from_buffer`).  Those routines run a tight loop inside
+            libmseed and apply selections at parse time; this method
+            round-trips each record through Python, which is typically much
+            slower.  Use it as a last resort when the other methods cannot be used.
+
+        Record list limitation:
+            ``record_list=True`` is supported and produces the same
+            per-record metadata as :meth:`add_file` / :meth:`add_buffer`
+            (source ID, start/end times, record length, encoding, etc.),
+            **but** :meth:`MS3TraceSeg.unpack_recordlist` cannot be used on
+            the resulting record list as the original source bytes do not persist.
+            The per-record references that :meth:`unpack_recordlist` relies
+            on are deliberately cauterized to avoid dangling references.
+            If you need :meth:`unpack_recordlist`, read the data with :meth:`add_file`
+            or :meth:`add_buffer` instead.
+
+        Args:
+            fh: A file-like object with a ``.read(n)`` method returning bytes.
+
+            chunk_size: Number of bytes to read per ``.read()`` call.
+                Default: 65536.
+
+            unpack_data: If True, decode data samples immediately.
+                Default: False.
+
+            sourceid: Source ID glob pattern to select matching records
+                (e.g. ``"FDSN:IU_COLA_*"``). None matches all source IDs.
+                Default: None.
+
+            starttime: Start of time window as a formatted date-time string
+                (e.g. ``"2024-01-01T00:00:00Z"``). Only records overlapping
+                this window are included. None means open start. Default: None.
+
+            endtime: End of time window as a formatted date-time string.
+                None means open end. Default: None.
+
+            record_list: If True, maintain a per-segment list of original
+                records (source ID, times, reclen, encoding, etc.).
+                See the "Record list limitation" note above:
+                :meth:`unpack_recordlist` cannot be used on the resulting
+                list because the source bytes do not persist.  Default: False.
+
+            skip_not_data: If True, skip non-data records instead of raising
+                an error. Default: False.
+
+            validate_crc: If True, validate CRC checksums when present
+                (miniSEED v3 only). Default: True.
+
+            split_version: If True, treat different publication versions as
+                separate trace IDs. Default: False.
+
+            verbose: Verbosity level for libmseed diagnostics. Default: 0.
+
+        Raises:
+            ValueError: If ``starttime`` or ``endtime`` is not a valid
+                date-time string.
+            MiniSEEDError: If a record cannot be parsed or cannot be added
+                to the trace list.
+
+        Examples:
+            Read miniSEED from a BytesIO stream:
+
+            >>> import io
+            >>> from pymseed import MS3TraceList
+            >>> with open("examples/example_data.mseed", "rb") as f:
+            ...     stream = io.BytesIO(f.read())
+            >>> traces = MS3TraceList()
+            >>> traces.add_filelike(stream)
+            >>> len(traces)
+            3
+
+            With source ID and time-window filtering:
+
+            >>> with open("examples/example_data.mseed", "rb") as f:
+            ...     stream = io.BytesIO(f.read())
+            >>> traces = MS3TraceList()
+            >>> traces.add_filelike(
+            ...     stream,
+            ...     sourceid="FDSN:IU_COLA_00_L_H_Z",
+            ...     starttime="2010-02-27T07:00:00Z",
+            ...     endtime="2010-02-27T07:30:00Z",
+            ... )
+            >>> len(traces)
+            1
+            >>> traces[0].sourceid
+            'FDSN:IU_COLA_00_L_H_Z'
+        """
+        flags = clibmseed.MSF_PPUPDATETIME
+        if skip_not_data:
+            flags |= clibmseed.MSF_SKIPNOTDATA
+        if validate_crc:
+            flags |= clibmseed.MSF_VALIDATECRC
+        if record_list:
+            flags |= clibmseed.MSF_RECORDLIST
+
+        # A handle for the record entries in a record list, reused for each record
+        pprecptr = ffi.new("MS3RecordPtr **") if record_list else ffi.NULL
+
+        # Build selections, if sourceid, starttime, or endtime are specified
+        selections_ptr, free_selections = _build_selections(sourceid, starttime, endtime)
+        has_selections = selections_ptr != ffi.NULL
+
+        # Defer per-record data unpacking past the selection match when filtering
+        # is active, so cycles are not spent decoding records that are rejected.
+        parse_unpack = unpack_data and not has_selections
+
+        try:
+            for msr in MS3Record.from_filelike(
+                fh,
+                chunk_size=chunk_size,
+                unpack_data=parse_unpack,
+                validate_crc=validate_crc,
+                verbose=verbose,
+            ):
+                if has_selections:
+                    if clibmseed.msr3_matchselect(selections_ptr, msr._msr, ffi.NULL) == ffi.NULL:
+                        continue
+                    if unpack_data:
+                        msr.unpack_data(verbose=verbose)
+
+                seg = clibmseed.mstl3_addmsr_recordptr(
+                    self._mstl,
+                    msr._msr,
+                    pprecptr,
+                    int(split_version),
+                    1,  # autoheal
+                    flags,
+                    ffi.NULL,  # tolerance
+                )
+
+                if seg == ffi.NULL:
+                    raise MiniSEEDError(
+                        clibmseed.MS_GENERROR,
+                        "Error adding record from file-like stream",
+                    )
+
+                # Avoid dangling references to the source bytes
+                if record_list and pprecptr[0] != ffi.NULL:
+                    recptr = pprecptr[0]
+                    recptr.bufferptr = ffi.NULL
+                    recptr.fileptr = ffi.NULL
+                    recptr.filename = ffi.NULL
+                    recptr.fileoffset = 0
+        finally:
+            if free_selections is not None:
+                free_selections()
+
     def add_data(
         self,
         sourceid: str,
@@ -1951,3 +2126,17 @@ class MS3TraceList:
     def from_buffer(cls, buffer: Any, **kwargs):
         """Create an MS3TraceList from miniSEED data in a memory buffer"""
         return cls(buffer=buffer, **kwargs)
+
+    @classmethod
+    def from_filelike(cls, fh: Any, **kwargs):
+        """Create an MS3TraceList from a miniSEED file-like stream.
+
+        See :meth:`add_filelike` for the full parameter list, supported
+        filters, the record-list limitation (``unpack_recordlist()`` is
+        not available on the resulting record list), and performance
+        guidance (prefer :meth:`from_file` / :meth:`from_buffer` when
+        applicable).
+        """
+        traces = cls()
+        traces.add_filelike(fh, **kwargs)
+        return traces

@@ -1,3 +1,4 @@
+import io
 import math
 import os
 
@@ -672,7 +673,7 @@ def test_tracelist_file_time_window():
     )
     assert len(traces_windowed) == 3
     # Each windowed segment must have fewer samples than the full segment
-    for tid_full, tid_windowed in zip(traces_full, traces_windowed):
+    for tid_full, tid_windowed in zip(traces_full, traces_windowed, strict=True):
         assert tid_windowed[0].samplecnt < tid_full[0].samplecnt
 
 
@@ -721,7 +722,7 @@ def test_tracelist_buffer_time_window():
         endtime="2010-02-27T07:30:00Z",
     )
     assert len(traces_windowed) == 3
-    for tid_full, tid_windowed in zip(traces_full, traces_windowed):
+    for tid_full, tid_windowed in zip(traces_full, traces_windowed, strict=True):
         assert tid_windowed[0].samplecnt < tid_full[0].samplecnt
 
 
@@ -754,3 +755,176 @@ def test_tracelist_buffer_invalid_endtime():
         buf = fp.read()
     with pytest.raises(ValueError):
         MS3TraceList.from_buffer(buf, endtime="not-a-time")
+
+
+# ---------------------------------------------------------------------------
+# Filelike (streaming) tests
+# ---------------------------------------------------------------------------
+
+
+def test_tracelist_filelike_basic():
+    """Filelike read produces the same trace list as the buffer/file paths."""
+    with open(test_path3, "rb") as fp:
+        buf = fp.read()
+    traces = MS3TraceList.from_filelike(io.BytesIO(buf), unpack_data=True)
+    assert len(traces) == 3
+    assert list(traces.sourceids()) == [
+        "FDSN:IU_COLA_00_B_H_1",
+        "FDSN:IU_COLA_00_B_H_2",
+        "FDSN:IU_COLA_00_B_H_Z",
+    ]
+    # Per-segment sanity check
+    for tid in traces:
+        seg = tid[0]
+        assert seg.samplecnt == 84000
+        assert seg.numsamples == 84000
+        assert seg.samprate == 20.0
+
+
+def test_tracelist_filelike_matches_buffer_path():
+    """Streaming filelike yields the same sample counts as add_buffer."""
+    with open(test_path3, "rb") as fp:
+        buf = fp.read()
+    traces_buffer = MS3TraceList.from_buffer(buf)
+    traces_filelike = MS3TraceList.from_filelike(io.BytesIO(buf))
+    assert len(traces_buffer) == len(traces_filelike)
+    for tid_b, tid_f in zip(traces_buffer, traces_filelike, strict=True):
+        assert tid_b.sourceid == tid_f.sourceid
+        assert tid_b[0].samplecnt == tid_f[0].samplecnt
+        assert tid_b[0].starttime == tid_f[0].starttime
+        assert tid_b[0].endtime == tid_f[0].endtime
+
+
+def test_tracelist_filelike_sourceid_filter():
+    """Filelike path: exact source ID filter returns only that channel."""
+    with open(test_path3, "rb") as fp:
+        buf = fp.read()
+    traces = MS3TraceList.from_filelike(io.BytesIO(buf), sourceid="FDSN:IU_COLA_00_B_H_Z")
+    assert len(traces) == 1
+    assert traces[0].sourceid == "FDSN:IU_COLA_00_B_H_Z"
+
+
+def test_tracelist_filelike_glob_filter():
+    """Filelike path: glob source ID filter."""
+    with open(test_path3, "rb") as fp:
+        buf = fp.read()
+    traces = MS3TraceList.from_filelike(io.BytesIO(buf), sourceid="FDSN:IU_COLA_00_B_H_*")
+    assert len(traces) == 3
+
+
+def test_tracelist_filelike_time_window():
+    """Filelike path: time-window filter narrows results."""
+    with open(test_path3, "rb") as fp:
+        buf = fp.read()
+    traces_full = MS3TraceList.from_filelike(io.BytesIO(buf))
+    traces_windowed = MS3TraceList.from_filelike(
+        io.BytesIO(buf),
+        starttime="2010-02-27T07:00:00Z",
+        endtime="2010-02-27T07:30:00Z",
+    )
+    assert len(traces_windowed) == 3
+    for tid_full, tid_windowed in zip(traces_full, traces_windowed, strict=True):
+        assert tid_windowed[0].samplecnt < tid_full[0].samplecnt
+
+
+def test_tracelist_filelike_sourceid_and_time_window():
+    """Filelike path: combined source ID and time-window filter matches buffer path."""
+    with open(test_path3, "rb") as fp:
+        buf = fp.read()
+    traces = MS3TraceList.from_filelike(
+        io.BytesIO(buf),
+        sourceid="FDSN:IU_COLA_00_B_H_Z",
+        starttime="2010-02-27T07:00:00Z",
+        endtime="2010-02-27T07:30:00Z",
+    )
+    assert len(traces) == 1
+    assert traces[0].sourceid == "FDSN:IU_COLA_00_B_H_Z"
+    assert traces[0][0].samplecnt == 36080
+
+
+def test_tracelist_filelike_no_match():
+    """Filelike path: non-matching source ID filter returns empty trace list."""
+    with open(test_path3, "rb") as fp:
+        buf = fp.read()
+    traces = MS3TraceList.from_filelike(io.BytesIO(buf), sourceid="FDSN:XX_NONE_*")
+    assert len(traces) == 0
+
+
+def test_tracelist_filelike_invalid_starttime():
+    """Filelike path: invalid starttime raises ValueError."""
+    with open(test_path3, "rb") as fp:
+        buf = fp.read()
+    with pytest.raises(ValueError):
+        MS3TraceList.from_filelike(io.BytesIO(buf), starttime="not-a-time")
+
+
+def test_tracelist_filelike_invalid_endtime():
+    """Filelike path: invalid endtime raises ValueError."""
+    with open(test_path3, "rb") as fp:
+        buf = fp.read()
+    with pytest.raises(ValueError):
+        MS3TraceList.from_filelike(io.BytesIO(buf), endtime="not-a-time")
+
+
+def test_tracelist_filelike_record_list_metadata():
+    """Filelike + record_list=True populates per-record metadata."""
+    with open(test_path3, "rb") as fp:
+        buf = fp.read()
+    traces = MS3TraceList.from_filelike(io.BytesIO(buf), record_list=True)
+    assert len(traces) == 3
+    for tid in traces:
+        seg = tid[0]
+        rl = seg.recordlist
+        assert rl is not None
+        # Each record's metadata should be queryable
+        assert len(rl) > 0
+        first = rl[0]
+        assert first.record.sourceid == tid.sourceid
+        assert first.record.reclen > 0
+
+
+def test_tracelist_filelike_record_list_unpack_fails_cleanly():
+    """Filelike + record_list=True: unpack_recordlist() raises rather than crashing."""
+    with open(test_path3, "rb") as fp:
+        buf = fp.read()
+    traces = MS3TraceList.from_filelike(io.BytesIO(buf), record_list=True)
+    seg = traces[0][0]
+    with pytest.raises(MiniSEEDError):
+        seg.unpack_recordlist()
+
+
+def test_tracelist_filelike_unpack_data_and_record_list():
+    """Filelike + unpack_data=True + record_list=True yields samples and metadata."""
+    with open(test_path3, "rb") as fp:
+        buf = fp.read()
+    traces = MS3TraceList.from_filelike(io.BytesIO(buf), unpack_data=True, record_list=True)
+    assert len(traces) == 3
+    for tid in traces:
+        seg = tid[0]
+        assert seg.numsamples == 84000
+        assert seg.samplecnt == 84000
+        assert seg.recordlist is not None
+        assert len(seg.recordlist) > 0
+
+
+def test_tracelist_add_filelike_appends():
+    """add_filelike() appends to an existing trace list."""
+    with open(test_path3, "rb") as fp:
+        buf = fp.read()
+    traces = MS3TraceList()
+    traces.add_filelike(io.BytesIO(buf))
+    traces.add_filelike(io.BytesIO(buf))
+    # Same three sourceids, each with two duplicate segments
+    assert len(traces) == 3
+    for tid in traces:
+        assert len(tid) == 2
+
+
+def test_tracelist_filelike_small_chunk_size():
+    """Tiny chunk_size still produces correct results (exercises sliding-buffer path)."""
+    with open(test_path3, "rb") as fp:
+        buf = fp.read()
+    traces = MS3TraceList.from_filelike(io.BytesIO(buf), chunk_size=128)
+    assert len(traces) == 3
+    for tid in traces:
+        assert tid[0].samplecnt == 84000

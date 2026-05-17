@@ -12,6 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `add_file()`, and `add_buffer()` (and therefore `from_file()` / `from_buffer()`).
   When provided, only records matching the source ID glob pattern and/or overlapping
   the time window are included in the trace list.
+- `MS3TraceList.add_filelike()` and `MS3TraceList.from_filelike()` to read miniSEED
+  from any object with a `.read(n)` method (e.g. `io.BytesIO`, network streams).
+  When `record_list=True`, calling `unpack_recordlist()` is not supported because
+  the source bytes do not persist. Slower than `add_file()` / `add_buffer()`;
+  use as a last resort when those methods are not possible.
 
 ### Changed
 - Type annotations converted to PEP 604 / PEP 585 form.
