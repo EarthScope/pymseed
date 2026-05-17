@@ -838,7 +838,7 @@ class MS3Record:
             raise ValueError(f"Error merging extra header: {status}")
 
     def validate_extra_headers(
-        self, schema_id: str = "FDSN-v1.0", schema_file: str = None
+        self, schema_id: str = "FDSN-v1.0", schema_file: str | None = None
     ) -> list[JsonSchemaValidationError]:
         """Validate the extra headers against a JSON Schema
 
@@ -923,7 +923,9 @@ class MS3Record:
 
         return list(validator.iter_errors(instance))
 
-    def valid_extra_headers(self, schema_id: str = "FDSN-v1.0", schema_file: str = None) -> bool:
+    def valid_extra_headers(
+        self, schema_id: str = "FDSN-v1.0", schema_file: str | None = None
+    ) -> bool:
         """Check if the extra headers are valid
 
         The selected schema should conform to the JSON Schema 2020-12 specification:
