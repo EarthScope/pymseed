@@ -3,7 +3,7 @@ Core miniSEED file reader implementation for pymseed.
 
 """
 
-from typing import Any, Optional, Union
+from typing import Any
 
 from .clib import clibmseed, ffi
 from .exceptions import MiniSEEDError
@@ -26,7 +26,7 @@ class MS3RecordReader:
     are no longer valid and should not be used.
 
     Args:
-        input (Union[str, int]): File path (string) or open file descriptor (integer).
+        input (str | int): File path (string) or open file descriptor (integer).
             If an integer, it must be a valid open file descriptor. The file or
             descriptor will be automatically closed when close() is called or when
             the object is used as a context manager.
@@ -91,7 +91,7 @@ class MS3RecordReader:
 
     def __init__(
         self,
-        input: Union[str, int],
+        input: str | int,
         start_byte_offset: int = 0,
         end_byte_offset: int = 0,
         unpack_data: bool = False,
@@ -166,7 +166,7 @@ class MS3RecordReader:
         else:
             raise MiniSEEDError(status, "Error reading miniSEED record")
 
-    def read(self) -> Optional[MS3Record]:
+    def read(self) -> MS3Record | None:
         """Read the next miniSEED record from the file or file descriptor"""
 
         status = clibmseed.ms3_readmsr_selection(

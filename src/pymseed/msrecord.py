@@ -10,7 +10,7 @@ import warnings
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from importlib.resources import files
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from jsonschema_rs import ValidationError as JsonSchemaValidationError
@@ -91,8 +91,8 @@ class MS3Record:
 
     def __init__(
         self,
-        reclen: Optional[int] = None,
-        encoding: Optional[int] = None,
+        reclen: int | None = None,
+        encoding: int | None = None,
         recordptr: Any = None,
     ) -> None:
         """
@@ -245,7 +245,7 @@ class MS3Record:
         return swapflag
 
     @property
-    def sourceid(self) -> Optional[str]:
+    def sourceid(self) -> str | None:
         """Source identifier string identifying the data source.
 
         Returns:
@@ -379,7 +379,7 @@ class MS3Record:
         self,
         timeformat: TimeFormat = TimeFormat.ISOMONTHDAY_Z,
         subsecond: SubSecond = SubSecond.NANO_MICRO_NONE,
-    ) -> Optional[str]:
+    ) -> str | None:
         """Return start time as formatted string"""
         if self._msr.starttime == clibmseed.NSTERROR:
             return "ERROR"
@@ -624,7 +624,7 @@ class MS3Record:
             if status < 0:
                 raise ValueError(f"Error setting extra headers: {status}")
 
-    def get_extra_header(self, ptr: str) -> Union[bool, int, float, str, None]:
+    def get_extra_header(self, ptr: str) -> bool | int | float | str | None:
         """Get an extra header value specified by JSON Pointer
 
         Args:
@@ -743,7 +743,7 @@ class MS3Record:
             # We should never get here because types are filtered above
             raise ValueError(f"Unknown extra header type at {ptr}: {type}")
 
-    def set_extra_header(self, ptr: str, value: Union[str, int, float, bool]) -> None:
+    def set_extra_header(self, ptr: str, value: str | int | float | bool) -> None:
         """Set an extra header value specified by JSON Pointer
 
         The header value at the specified JSON Pointer will be set
@@ -1134,13 +1134,13 @@ class MS3Record:
         return self._msr.numsamples
 
     @property
-    def sampletype(self) -> Optional[str]:
+    def sampletype(self) -> str | None:
         """Return sample type code if available, otherwise None"""
         if self._msr.sampletype == b"\x00":
             return None
         return self._msr.sampletype.decode("ascii")
 
-    def sampletype_str(self) -> Optional[str]:
+    def sampletype_str(self) -> str | None:
         """Return sample type as descriptive string"""
         sampletype = self.sampletype
         if sampletype == "i":
@@ -1180,7 +1180,7 @@ class MS3Record:
         self,
         timeformat: TimeFormat = TimeFormat.ISOMONTHDAY_Z,
         subsecond: SubSecond = SubSecond.NANO_MICRO_NONE,
-    ) -> Optional[str]:
+    ) -> str | None:
         """Return end time as formatted string"""
         if self.endtime == clibmseed.NSTERROR:
             return "ERROR"
@@ -1189,7 +1189,7 @@ class MS3Record:
 
         return nstime2timestr(self.endtime, timeformat, subsecond)
 
-    def encoding_str(self) -> Optional[str]:
+    def encoding_str(self) -> str | None:
         """Human-readable description of the data encoding format.
 
         Returns:
@@ -1406,8 +1406,8 @@ class MS3Record:
         self,
         handler: Callable[[bytes, Any], None],
         handler_data: Any = None,
-        data_samples: Optional[Union[list[int], list[float], list[str]]] = None,
-        sample_type: Optional[str] = None,
+        data_samples: list[int] | list[float] | list[str] | None = None,
+        sample_type: str | None = None,
         verbose: int = 0,
     ) -> tuple[int, int]:
         """Pack data samples into miniSEED record(s) using a custom handler.
@@ -1526,8 +1526,8 @@ class MS3Record:
 
     def generate(
         self,
-        data_samples: Optional[Union[list[int], list[float], list[str]]] = None,
-        sample_type: Optional[str] = None,
+        data_samples: list[int] | list[float] | list[str] | None = None,
+        sample_type: str | None = None,
         verbose: int = 0,
     ) -> Iterator[bytes]:
         """Create miniSEED record(s) using parameters from the record.

@@ -3,8 +3,6 @@ Core utility functions for pymseed
 
 """
 
-from typing import Optional
-
 from .clib import cdata_to_string, clibmseed, ffi
 from .definitions import SubSecond, TimeFormat
 
@@ -13,7 +11,7 @@ def nstime2timestr(
     nstime: int,
     timeformat: TimeFormat = TimeFormat.ISOMONTHDAY_Z,
     subsecond: SubSecond = SubSecond.NANO_MICRO_NONE,
-) -> Optional[str]:
+) -> str | None:
     """Convert a nanosecond timestamp to a date-time string"""
     # Create a buffer for the time string (40 chars should be enough)
     c_timestr = ffi.new("char[]", 50)
@@ -34,7 +32,7 @@ def timestr2nstime(timestr: str) -> int:
 
 def sourceid2nslc(
     sourceid: str,
-) -> tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
+) -> tuple[str | None, str | None, str | None, str | None]:
     """Convert an FDSN source ID to a tuple of (net, sta, loc, chan)"""
     max_size = 11
     net = ffi.new("char[]", max_size)
@@ -81,14 +79,14 @@ def nslc2sourceid(net: str, sta: str, loc: str, chan: str) -> str:
         raise ValueError(f"Error creating source ID from {net}.{sta}.{loc}.{chan}")
 
 
-def encoding_string(encoding: int) -> Optional[str]:
+def encoding_string(encoding: int) -> str | None:
     """Get descriptive string for encoding format"""
     if encoding < 0:
         return None
     return cdata_to_string(clibmseed.ms_encodingstr(encoding))
 
 
-def error_string(error_code: int) -> Optional[str]:
+def error_string(error_code: int) -> str | None:
     """Get descriptive string for error code"""
     return cdata_to_string(clibmseed.ms_errorstr(error_code))
 

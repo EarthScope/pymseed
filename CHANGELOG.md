@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   When provided, only records matching the source ID glob pattern and/or overlapping
   the time window are included in the trace list.
 
+### Changed
+- Type annotations converted to PEP 604 / PEP 585 form.
+- Apply consistent python formatting with ruff.
+
 ## [0.8.1] - 2026-04-22
 
 ### Added

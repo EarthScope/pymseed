@@ -3,7 +3,7 @@ Core library interface for pymseed using CFFI
 
 """
 
-from typing import Any, Optional
+from typing import Any
 
 try:
     # This is the correct pattern: import the ffi and lib objects
@@ -24,7 +24,7 @@ except ImportError as exc:
     ) from exc
 
 
-def cdata_to_string(cdata: Any, encoding: str = "utf-8") -> Optional[str]:
+def cdata_to_string(cdata: Any, encoding: str = "utf-8") -> str | None:
     """
     Convert C string to Python string.  If the C string is NULL, return None.
 

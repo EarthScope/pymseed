@@ -7,7 +7,6 @@ using the logging registry, instead of having them printed to stderr/stdout.
 
 import atexit
 import threading
-from typing import Optional
 
 from .clib import clibmseed, ffi
 
@@ -28,8 +27,8 @@ _MAX_RLOG_MSG_LEN = 200
 
 
 def configure_logging(
-    log_prefix: Optional[str] = None,
-    error_prefix: Optional[str] = None,
+    log_prefix: str | None = None,
+    error_prefix: str | None = None,
     max_messages: int = DEFAULT_MAX_MESSAGES,
 ) -> None:
     """

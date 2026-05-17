@@ -1,5 +1,3 @@
-from typing import Optional
-
 from .clib import clibmseed
 from .logging import get_error_messages
 from .util import error_string
@@ -8,7 +6,7 @@ from .util import error_string
 class MiniSEEDError(ValueError):
     """Exception for libmseed return values"""
 
-    def __init__(self, status_code: int, message: Optional[str] = None) -> None:
+    def __init__(self, status_code: int, message: str | None = None) -> None:
         self.status_code = status_code
         self.message = message
 

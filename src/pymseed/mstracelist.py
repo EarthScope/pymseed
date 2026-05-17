@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import Callable, Iterator, Sequence
-from typing import Any, Optional
+from typing import Any
 
 from .clib import cdata_to_string, clibmseed, ffi
 from .definitions import DataEncoding, SubSecond, TimeFormat
@@ -49,7 +49,7 @@ class MS3RecordPtr:
         return self._msrecord
 
     @property
-    def filename(self) -> Optional[str]:
+    def filename(self) -> str | None:
         """Return filename as string"""
         result = cdata_to_string(self._ptr.filename)
         if result is None:
@@ -234,7 +234,7 @@ class MS3TraceSeg:
         self,
         timeformat: TimeFormat = TimeFormat.ISOMONTHDAY_Z,
         subsecond: SubSecond = SubSecond.NANO_MICRO_NONE,
-    ) -> Optional[str]:
+    ) -> str | None:
         """Return start time as formatted string"""
         result = nstime2timestr(self._seg.starttime, timeformat, subsecond)
         if result is None:
@@ -255,7 +255,7 @@ class MS3TraceSeg:
         self,
         timeformat: TimeFormat = TimeFormat.ISOMONTHDAY_Z,
         subsecond: SubSecond = SubSecond.NANO_MICRO_NONE,
-    ) -> Optional[str]:
+    ) -> str | None:
         """Return end time as formatted string"""
         result = nstime2timestr(self._seg.endtime, timeformat, subsecond)
         if result is None:
@@ -273,7 +273,7 @@ class MS3TraceSeg:
         return self._seg.samplecnt
 
     @property
-    def recordlist(self) -> Optional[MS3RecordList]:
+    def recordlist(self) -> MS3RecordList | None:
         """Return the record list structure"""
         if self._seg.recordlist:
             return MS3RecordList(self._seg.recordlist)
@@ -320,7 +320,7 @@ class MS3TraceSeg:
             raise ValueError(f"Unknown sample type: {sampletype}")
 
     @property
-    def sampletype(self) -> Optional[str]:
+    def sampletype(self) -> str | None:
         """Return sample type code if available, otherwise None"""
         if self._seg.sampletype:
             return str(self._seg.sampletype.decode("ascii"))
@@ -705,7 +705,7 @@ class MS3TraceID:
             raise TypeError("indices must be integers or slices")
 
     @property
-    def sourceid(self) -> Optional[str]:
+    def sourceid(self) -> str | None:
         """Return source ID as string"""
         result = cdata_to_string(self._id.sid)
         if result is None:
@@ -731,7 +731,7 @@ class MS3TraceID:
         self,
         timeformat: TimeFormat = TimeFormat.ISOMONTHDAY_Z,
         subsecond: SubSecond = SubSecond.NANO_MICRO_NONE,
-    ) -> Optional[str]:
+    ) -> str | None:
         """Return earliest time as formatted string"""
         result = nstime2timestr(self._id.earliest, timeformat, subsecond)
         if result is None:
@@ -752,7 +752,7 @@ class MS3TraceID:
         self,
         timeformat: TimeFormat = TimeFormat.ISOMONTHDAY_Z,
         subsecond: SubSecond = SubSecond.NANO_MICRO_NONE,
-    ) -> Optional[str]:
+    ) -> str | None:
         """Return latest time as formatted string"""
         result = nstime2timestr(self._id.latest, timeformat, subsecond)
         if result is None:
@@ -1036,7 +1036,7 @@ class MS3TraceList:
         """Return number of trace IDs in the list"""
         return len(self)
 
-    def get_traceid(self, sourceid: str, version: int = 0) -> Optional[MS3TraceID]:
+    def get_traceid(self, sourceid: str, version: int = 0) -> MS3TraceID | None:
         """Get a specific trace ID from the list"""
         c_sourceid = ffi.new("char[]", sourceid.encode("utf-8"))
 
@@ -1066,9 +1066,9 @@ class MS3TraceList:
         self,
         file_name: str,
         unpack_data: bool = False,
-        sourceid: Optional[str] = None,
-        starttime: Optional[str] = None,
-        endtime: Optional[str] = None,
+        sourceid: str | None = None,
+        starttime: str | None = None,
+        endtime: str | None = None,
         record_list: bool = False,
         skip_not_data: bool = False,
         validate_crc: bool = True,
@@ -1237,9 +1237,9 @@ class MS3TraceList:
         self,
         buffer: bytes,
         unpack_data: bool = False,
-        sourceid: Optional[str] = None,
-        starttime: Optional[str] = None,
-        endtime: Optional[str] = None,
+        sourceid: str | None = None,
+        starttime: str | None = None,
+        endtime: str | None = None,
         record_list: bool = False,
         skip_not_data: bool = False,
         validate_crc: bool = True,
@@ -1419,9 +1419,9 @@ class MS3TraceList:
         data_samples: Sequence[Any],
         sample_type: str,
         sample_rate: float,
-        start_time_str: Optional[str] = None,
-        start_time: Optional[int] = None,
-        start_time_seconds: Optional[float] = None,
+        start_time_str: str | None = None,
+        start_time: int | None = None,
+        start_time_seconds: float | None = None,
         publication_version: int = 0,
     ) -> None:
         """Add data samples to the trace list
@@ -1549,8 +1549,8 @@ class MS3TraceList:
         flush_idle_seconds: int = 0,
         record_length: int = 4096,
         encoding: DataEncoding = DataEncoding.STEIM1,
-        format_version: Optional[int] = None,
-        extra_headers: Optional[str] = None,
+        format_version: int | None = None,
+        extra_headers: str | None = None,
         verbose: int = 0,
     ) -> tuple[int, int]:
         """Pack trace list data into miniSEED records and call handler function for each record.
@@ -1686,8 +1686,8 @@ class MS3TraceList:
         self,
         record_length: int = 4096,
         encoding: DataEncoding = DataEncoding.STEIM1,
-        format_version: Optional[int] = None,
-        extra_headers: Optional[str] = None,
+        format_version: int | None = None,
+        extra_headers: str | None = None,
         flush_data: bool = True,
         flush_idle_seconds: int = 0,
         removed_packed: bool = False,
@@ -1832,7 +1832,7 @@ class MS3TraceList:
         overwrite: bool = False,
         max_reclen: int = 4096,
         encoding: DataEncoding = DataEncoding.STEIM1,
-        format_version: Optional[int] = None,
+        format_version: int | None = None,
         verbose: int = 0,
     ) -> int:
         """Write trace list data to a miniSEED file.
