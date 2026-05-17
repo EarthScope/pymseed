@@ -94,9 +94,9 @@ def test_msrecord_extra_header():
     assert msr.get_extra_header("/FDSN/Time/Quality") == 100
     assert msr.get_extra_header("/FDSN/Time/Correction") == 1.234
     assert msr.get_extra_header("/Operator/Battery/Status") == "CHARGING"
-    assert msr.get_extra_header("/FDSN/Flags/MassPositionOffscale") == True
+    assert msr.get_extra_header("/FDSN/Flags/MassPositionOffscale") is True
 
-    assert msr.get_extra_header("/Nonexistent/Header") == None
+    assert msr.get_extra_header("/Nonexistent/Header") is None
 
     # Malformed JSON Pointer
     with pytest.raises(ValueError):
@@ -106,7 +106,7 @@ def test_msrecord_extra_header():
     msr.set_extra_header("/FDSN/Time/Quality", 90)
     assert msr.get_extra_header("/FDSN/Time/Quality") == 90
     msr.set_extra_header("/FDSN/Flags/MassPositionOffscale", False)
-    assert msr.get_extra_header("/FDSN/Flags/MassPositionOffscale") == False
+    assert msr.get_extra_header("/FDSN/Flags/MassPositionOffscale") is False
     msr.set_extra_header("/FDSN/Time/Correction", 4.321)
     assert msr.get_extra_header("/FDSN/Time/Correction") == 4.321
     msr.set_extra_header("/Operator/Battery/Status", "DISCHARGING")
@@ -120,7 +120,7 @@ def test_msrecord_extra_header():
     msr.set_extra_header("/New/Header/Float", 1.234)
     assert msr.get_extra_header("/New/Header/Float") == 1.234
     msr.set_extra_header("/New/Header/Boolean", True)
-    assert msr.get_extra_header("/New/Header/Boolean") == True
+    assert msr.get_extra_header("/New/Header/Boolean") is True
 
     # Malformed JSON Pointer
     with pytest.raises(ValueError):
@@ -132,7 +132,7 @@ def test_msrecord_extra_header():
 
     # Test merging, remove the existing value
     msr.merge_extra_headers('{"FDSN": {"Time": {"Quality": null}}}')
-    assert msr.get_extra_header("/FDSN/Time/Quality") == None
+    assert msr.get_extra_header("/FDSN/Time/Quality") is None
 
     # Test merging, add a new value
     msr.merge_extra_headers('{"New": {"Header2": "Value2"}}')

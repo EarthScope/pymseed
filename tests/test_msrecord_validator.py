@@ -353,7 +353,7 @@ class TestMS3RecordValidatorFromFile:
         assert len(buf_errors) == len(file_errors)
         assert len(buf_traces) == len(file_traces)
 
-        for traceid_b, traceid_f in zip(buf_traces, file_traces):
+        for traceid_b, traceid_f in zip(buf_traces, file_traces, strict=True):
             assert traceid_b.sourceid == traceid_f.sourceid
 
     def test_from_file_small_chunk_size_mseed3(self) -> None:
