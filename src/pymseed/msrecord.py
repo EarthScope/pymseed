@@ -589,14 +589,15 @@ class MS3Record:
         return cdata_to_string(self._msr.extra)
 
     @extra.setter
-    def extra(self, value: str) -> None:
+    def extra(self, value: str | None) -> None:
         """Set extra headers as JSON string, will be minified to reduce size
 
         Args:
-            value (str): JSON, serialized to a string, to set as extra headers
+            value (str | None): JSON, serialized to a string, to set as extra headers.
+            If ``None`` or an empty string, extra headers will be removed.
 
         Raises:
-            ValueError: If the JSON string is not valid or cannot be set
+            ValueError: If the JSON string is not valid or cannot be set or removed.
 
         Examples:
             >>> from pymseed import MS3Record
@@ -626,6 +627,11 @@ class MS3Record:
 
             if status < 0:
                 raise ValueError(f"Error setting extra headers: {status}")
+        else:
+            status = clibmseed.mseh_replace(self._msr, ffi.NULL)
+
+            if status < 0:
+                raise ValueError(f"Error removing extra headers: {status}")
 
     def get_extra_header(self, ptr: str) -> bool | int | float | str | None:
         """Get an extra header value specified by JSON Pointer

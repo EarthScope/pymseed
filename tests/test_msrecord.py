@@ -143,6 +143,38 @@ def test_msrecord_extra_header():
         msr.merge_extra_headers("Invalid/JSON/Merge/Patch")
 
 
+def test_msrecord_extra_clear():
+    """Test clearing extra headers by assigning a falsy value."""
+
+    msr = MS3Record()
+
+    # No extras initially
+    assert msr.extra == ""
+    assert msr.extralength == 0
+
+    payload = '{"FDSN":{"Time":{"Quality":80}}}'
+    msr.extra = payload
+    assert msr.extra == payload
+    assert msr.extralength == len(payload)
+
+    # Clearing via empty string should remove all extras
+    msr.extra = ""
+    assert msr.extra == ""
+    assert msr.extralength == 0
+    assert msr.get_extra_header("/FDSN/Time/Quality") is None
+
+    # Setting again after clearing should work
+    msr.extra = payload
+    assert msr.extra == payload
+    assert msr.extralength == len(payload)
+
+    # Invalid JSON should raise and not corrupt existing state
+    with pytest.raises(ValueError):
+        msr.extra = "{not valid json"
+    assert msr.extra == payload
+    assert msr.extralength == len(payload)
+
+
 class TestMS3RecordSorting:
     """Test sorting of MS3Record objects."""
 
