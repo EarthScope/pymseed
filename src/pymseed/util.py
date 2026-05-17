@@ -140,16 +140,24 @@ def sample_size(sample_type: bytes | str) -> int:
 
 
 def encoding_sizetype(encoding: int) -> tuple[int, str]:
-    """Get sample size and type for given encoding"""
-    sample_size = ffi.new("uint8_t *")
-    sample_type = ffi.new("char [1]")
+    """Get sample size and type for given encoding.
 
-    status = clibmseed.ms_encoding_sizetype(encoding, sample_size, sample_type)
+    Raises:
+        ValueError: If ``encoding`` is outside the ``uint8_t`` range (0-255)
+            or is not a recognized encoding code.
+    """
+    if not 0 <= encoding <= 255:
+        raise ValueError(f"Encoding must be in 0..255, got {encoding}")
 
-    if status >= 0:
-        return (sample_size[0], sample_type[0].decode("utf-8"))
-    else:
+    samplesize_out = ffi.new("uint8_t *")
+    sampletype_out = ffi.new("char [1]")
+
+    status = clibmseed.ms_encoding_sizetype(encoding, samplesize_out, sampletype_out)
+
+    if status < 0:
         raise ValueError(f"Error getting size/type for encoding {encoding}")
+
+    return (samplesize_out[0], sampletype_out[0].decode("utf-8"))
 
 
 def sample_time(time: int, offset: int, samprate: float) -> int:
