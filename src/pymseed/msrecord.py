@@ -1189,12 +1189,13 @@ class MS3Record:
 
         return nstime2timestr(self.endtime, timeformat, subsecond)
 
-    def encoding_str(self) -> str | None:
+    def encoding_str(self) -> str:
         """Human-readable description of the data encoding format.
 
         Returns:
-            str or None: Descriptive string like "Steim2", "Float32", "Integer32",
-                        or None if encoding is unknown
+            str: Descriptive string like "STEIM-2 integer compression",
+                "32-bit float (IEEE single)", or ``"Unknown"`` if libmseed
+                does not recognize the encoding code.
 
         See Also:
             encoding: Numeric encoding code

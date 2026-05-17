@@ -106,11 +106,19 @@ def nslc2sourceid(net: str, sta: str, loc: str, chan: str) -> str:
     return ffi.string(sid).decode("utf-8")
 
 
-def encoding_string(encoding: int) -> str | None:
-    """Get descriptive string for encoding format"""
-    if encoding < 0:
-        return None
-    return cdata_to_string(clibmseed.ms_encodingstr(encoding))
+def encoding_string(encoding: int) -> str:
+    """Get descriptive string for encoding format.
+
+    Returns libmseed's default unknown value, e.g. ``"Unknown"``, for
+    unrecognized encoding values.
+
+    Raises:
+        ValueError: If ``encoding`` is outside the ``uint8_t`` range (0-255).
+    """
+    if not 0 <= encoding <= 255:
+        raise ValueError(f"Encoding must be in 0..255, got {encoding}")
+
+    return ffi.string(clibmseed.ms_encodingstr(encoding)).decode("utf-8")
 
 
 def error_string(error_code: int) -> str | None:
