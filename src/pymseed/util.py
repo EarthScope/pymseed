@@ -48,10 +48,12 @@ def timestr2nstime(timestr: str) -> int:
 _NSLC_CODE_BUFSIZE = 16
 
 
-def sourceid2nslc(
-    sourceid: str,
-) -> tuple[str | None, str | None, str | None, str | None]:
-    """Convert an FDSN source ID to a tuple of (net, sta, loc, chan)"""
+def sourceid2nslc(sourceid: str) -> tuple[str, str, str, str]:
+    """Convert an FDSN source ID to a tuple of (net, sta, loc, chan)
+
+    Components that are empty in the source ID are returned as empty
+    strings.  Raises ``ValueError`` if the source ID is malformed.
+    """
     net = ffi.new("char[]", _NSLC_CODE_BUFSIZE)
     sta = ffi.new("char[]", _NSLC_CODE_BUFSIZE)
     loc = ffi.new("char[]", _NSLC_CODE_BUFSIZE)
@@ -71,15 +73,15 @@ def sourceid2nslc(
         _NSLC_CODE_BUFSIZE,
     )
 
-    if status == 0:
-        return (
-            cdata_to_string(net),
-            cdata_to_string(sta),
-            cdata_to_string(loc),
-            cdata_to_string(chan),
-        )
-    else:
+    if status != 0:
         raise ValueError(f"Invalid source ID: {sourceid}")
+
+    return (
+        ffi.string(net).decode("utf-8"),
+        ffi.string(sta).decode("utf-8"),
+        ffi.string(loc).decode("utf-8"),
+        ffi.string(chan).decode("utf-8"),
+    )
 
 
 def nslc2sourceid(net: str, sta: str, loc: str, chan: str) -> str:

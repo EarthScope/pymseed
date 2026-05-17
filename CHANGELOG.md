@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Fix `sample_size()` to take sample type codes instead of encoding codes.
 - Fix return typing and improve behavior of `nstime2timestr()`.
+- Fix `sourceid2nslc()` to be honest about return type and accurate docs.
 - Type annotations converted to PEP 604 / PEP 585 form.
 - Apply consistent python formatting with ruff.
 
