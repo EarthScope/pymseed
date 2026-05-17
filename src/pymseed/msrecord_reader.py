@@ -115,9 +115,7 @@ class MS3RecordReader:
 
         # If the stream is an integer, assume an open file descriptor
         if isinstance(input, int):
-            self._msfp_ptr[0] = clibmseed.ms3_msfp_init(
-                start_byte_offset, end_byte_offset, input
-            )
+            self._msfp_ptr[0] = clibmseed.ms3_msfp_init(start_byte_offset, end_byte_offset, input)
 
             if self._msfp_ptr[0] == ffi.NULL:
                 raise MiniSEEDError(
@@ -128,9 +126,7 @@ class MS3RecordReader:
             self.stream_name = ffi.new("char[]", f"File Descriptor {input}".encode())
         # Otherwise, assume a path name, which will be opened by the library
         else:
-            self._msfp_ptr[0] = clibmseed.ms3_msfp_init(
-                start_byte_offset, end_byte_offset, -1
-            )
+            self._msfp_ptr[0] = clibmseed.ms3_msfp_init(start_byte_offset, end_byte_offset, -1)
 
             if self._msfp_ptr[0] == ffi.NULL:
                 raise MiniSEEDError(

@@ -161,10 +161,7 @@ class TestThreadedLogging:
 
         # Use ThreadPoolExecutor
         with ThreadPoolExecutor(max_workers=4) as executor:
-            futures = [
-                executor.submit(read_file_with_logging, (i, f))
-                for i, f in enumerate(files)
-            ]
+            futures = [executor.submit(read_file_with_logging, (i, f)) for i, f in enumerate(files)]
 
             for future in as_completed(futures):
                 result = future.result()
@@ -286,18 +283,22 @@ class TestThreadedLogging:
                     success = False
 
                 messages = get_error_messages()
-                thread_results.append({
-                    "read_index": i,
-                    "segment_count": segment_count,
-                    "success": success,
-                    "message_count": len(messages),
-                })
+                thread_results.append(
+                    {
+                        "read_index": i,
+                        "segment_count": segment_count,
+                        "success": success,
+                        "message_count": len(messages),
+                    }
+                )
 
             with results_lock:
-                results.append({
-                    "thread_id": thread_id,
-                    "reads": thread_results,
-                })
+                results.append(
+                    {
+                        "thread_id": thread_id,
+                        "reads": thread_results,
+                    }
+                )
 
         files = get_test_files(count=20)
         if not files:
@@ -324,10 +325,7 @@ class TestThreadedLogging:
 
         # Count total successful reads
         total_reads = sum(len(r["reads"]) for r in results)
-        successful_reads = sum(
-            sum(1 for read in r["reads"] if read["success"])
-            for r in results
-        )
+        successful_reads = sum(sum(1 for read in r["reads"] if read["success"]) for r in results)
         print(f"\nTotal reads: {total_reads}, Successful: {successful_reads}")
 
 
@@ -365,6 +363,7 @@ class TestLoggingIsolation:
 
             # Small delay to let other thread potentially pollute
             import time
+
             time.sleep(0.01)
 
             messages = get_error_messages()
@@ -413,6 +412,7 @@ class TestLoggingIsolation:
                 clear_error_messages()
                 # Small delay
                 import time
+
                 time.sleep(0.01)
 
             messages = get_error_messages()

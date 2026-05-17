@@ -24,7 +24,7 @@ from .util import (
     timestr2nstime,
 )
 
-libmseed_version = ffi.string(clibmseed.LIBMSEED_VERSION).decode('utf-8')
+libmseed_version = ffi.string(clibmseed.LIBMSEED_VERSION).decode("utf-8")
 
 # Initialize libmseed logging registry at import time
 # This ensures all entry points share the same registry and errors/warnings

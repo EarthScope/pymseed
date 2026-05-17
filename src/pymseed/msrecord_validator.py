@@ -13,8 +13,8 @@ from dataclasses import dataclass
 from importlib.resources import files
 from typing import Any
 
-from .clib import clibmseed, ffi
 from ._json import json_loads
+from .clib import clibmseed, ffi
 from .logging import clear_error_messages, get_error_messages
 from .mstracelist import MS3TraceList
 
@@ -238,7 +238,7 @@ class MS3RecordValidator:
             self._parse_flags |= clibmseed.MSF_VALIDATECRC
 
     @classmethod
-    def from_buffer(cls, buffer: Any, **kwargs: Any) -> "MS3RecordValidator":
+    def from_buffer(cls, buffer: Any, **kwargs: Any) -> MS3RecordValidator:
         """Create a validator from a miniSEED buffer.
 
         Args:
@@ -262,7 +262,7 @@ class MS3RecordValidator:
         *,
         chunk_size: int = 10_485_760,
         **kwargs: Any,
-    ) -> "MS3RecordValidator":
+    ) -> MS3RecordValidator:
         """Create a validator for a miniSEED file.
 
         Reads the file in chunks using a sliding buffer, so the entire
@@ -294,7 +294,7 @@ class MS3RecordValidator:
         *,
         chunk_size: int = 10_485_760,
         **kwargs: Any,
-    ) -> "MS3RecordValidator":
+    ) -> MS3RecordValidator:
         """Create a validator for a miniSEED file-like stream.
 
         Reads from any object exposing ``.read(n) -> bytes`` (e.g.
@@ -361,9 +361,7 @@ class MS3RecordValidator:
                     .joinpath(_KNOWN_SCHEMAS[self._extra_headers_schema])
                     .read_bytes()
                 )
-                _eh_validator = validator_for_extra_headers_schema(
-                    json_loads(schema_bytes)
-                )
+                _eh_validator = validator_for_extra_headers_schema(json_loads(schema_bytes))
             except ImportError:
                 _eh_import_error = True
 
@@ -449,9 +447,7 @@ class MS3RecordValidator:
                                 else ""
                             )
                             if extra_str:
-                                for ve in _eh_validator.iter_errors(
-                                    json_loads(extra_str)
-                                ):
+                                for ve in _eh_validator.iter_errors(json_loads(extra_str)):
                                     errors.append(
                                         ValidationError(
                                             offset=offset,

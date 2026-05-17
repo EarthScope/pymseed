@@ -6,9 +6,8 @@ Core trace list implementation for pymseed
 from __future__ import annotations
 
 import warnings
-
-from collections.abc import Iterator, Sequence
-from typing import Any, Callable, Optional
+from collections.abc import Callable, Iterator, Sequence
+from typing import Any, Optional
 
 from .clib import cdata_to_string, clibmseed, ffi
 from .definitions import DataEncoding, SubSecond, TimeFormat
@@ -104,9 +103,7 @@ class MS3RecordList:
             ]
 
         newline = "\n"
-        return (
-            f"MS3RecordList(recordcnt: {len(self)}\n{newline.join(formatted_lines)}\n)"
-        )
+        return f"MS3RecordList(recordcnt: {len(self)}\n{newline.join(formatted_lines)}\n)"
 
     def __str__(self) -> str:
         def indent_str(thing):
@@ -197,9 +194,7 @@ class MS3TraceSeg:
         if self.numsamples > 0:
             if len(self.datasamples) > 5:
                 # Create array representation with ellipsis inside: [1,2,3,4,5,...]
-                first_samples = ", ".join(
-                    str(sample) for sample in list(self.datasamples[:5])
-                )
+                first_samples = ", ".join(str(sample) for sample in list(self.datasamples[:5]))
                 sample_preview = f"[{first_samples}, ...]"
             else:
                 sample_preview = str(list(self.datasamples))
@@ -350,9 +345,7 @@ class MS3TraceSeg:
         It is not guaranteed to be correct for any other records in the list.
         """
         if self._seg.recordlist is None:
-            raise ValueError(
-                "No record list available to determine sample size and type"
-            )
+            raise ValueError("No record list available to determine sample size and type")
 
         # Get the first record
         first_record_ptr = self._seg.recordlist.first
@@ -580,9 +573,7 @@ class MS3TraceSeg:
                         else len(buffer)
                     )
                 except (TypeError, AttributeError):
-                    raise ValueError(
-                        "Buffer must support the buffer protocol"
-                    ) from None
+                    raise ValueError("Buffer must support the buffer protocol") from None
 
         status = clibmseed.mstl3_unpack_recordlist(
             self._parent_id,
@@ -1218,9 +1209,7 @@ class MS3TraceList:
         mstl_ptr[0] = self._mstl
 
         # Build selections, if sourceid, starttime, or endtime are specified
-        selections_ptr, free_selections = _build_selections(
-            sourceid, starttime, endtime
-        )
+        selections_ptr, free_selections = _build_selections(sourceid, starttime, endtime)
 
         try:
             status = clibmseed.ms3_readtracelist_selection(
@@ -1399,9 +1388,7 @@ class MS3TraceList:
             raise ValueError("Buffer must support the buffer protocol") from None
 
         # Build selections, if sourceid, starttime, or endtime are specified
-        selections_ptr, free_selections = _build_selections(
-            sourceid, starttime, endtime
-        )
+        selections_ptr, free_selections = _build_selections(sourceid, starttime, endtime)
 
         try:
             status = clibmseed.mstl3_readbuffer_selection(
@@ -1653,7 +1640,7 @@ class MS3TraceList:
             "pack() is deprecated and will be removed in a future version. "
             "Use generate() instead for a more Pythonic generator-based interface.",
             DeprecationWarning,
-            stacklevel=2
+            stacklevel=2,
         )
 
         # Set handler function as CFFI callback function
@@ -1812,11 +1799,7 @@ class MS3TraceList:
             if format_version == 2:
                 flags |= clibmseed.MSF_PACKVER2
 
-        c_extra = (
-            ffi.new("char[]", extra_headers.encode("utf-8"))
-            if extra_headers
-            else ffi.NULL
-        )
+        c_extra = ffi.new("char[]", extra_headers.encode("utf-8")) if extra_headers else ffi.NULL
 
         packer = clibmseed.mstl3_pack_init(
             self._mstl,

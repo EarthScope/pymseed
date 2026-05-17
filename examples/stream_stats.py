@@ -20,6 +20,7 @@ from pymseed import MS3Record, nstime2timestr
 
 class StreamStats:
     """Accumulate statistics from a stream of miniSEED records."""
+
     def __init__(self):
         self.record_count = 0
         self.sample_count = 0

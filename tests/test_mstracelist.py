@@ -5,7 +5,6 @@ import pytest
 
 from pymseed import MiniSEEDError, MS3TraceList, sample_time, timestr2nstime
 
-
 test_dir = os.path.abspath(os.path.dirname(__file__))
 test_path3 = os.path.join(test_dir, "data", "testdata-COLA-signal.mseed3")
 
@@ -274,14 +273,10 @@ def test_tracelist_numpy():
     assert np_data.shape == (84000,)
 
     # Check first 6 samples
-    assert np.all(
-        np_data[0:6] == [-502916, -502808, -502691, -502567, -502433, -502331]
-    )
+    assert np.all(np_data[0:6] == [-502916, -502808, -502691, -502567, -502433, -502331])
 
     # Check last 6 samples
-    assert np.all(
-        np_data[-6:] == [-929184, -928936, -928632, -928248, -927779, -927206]
-    )
+    assert np.all(np_data[-6:] == [-929184, -928936, -928632, -928248, -927779, -927206])
 
     # Search for a specific TraceID
     foundid = traces.get_traceid("FDSN:IU_COLA_00_B_H_Z")
@@ -317,6 +312,7 @@ def test_tracelist_numpy():
             -149774,
         ]
     )
+
 
 def test_tracelist_numpy_arrayfrom_recordlist():
     np = pytest.importorskip("numpy")
@@ -400,6 +396,7 @@ def record_handler(record, handler_data):
 
 test_pack3 = os.path.join(test_dir, "data", "packtest_sine2000.mseed3")
 
+
 @pytest.mark.filterwarnings("ignore::DeprecationWarning")
 def test_mstracelist_pack():
     # Create a new MSTraceList object
@@ -446,6 +443,7 @@ def test_mstracelist_pack():
     with open(test_pack3, "rb") as f:
         data_v3 = f.read()
         assert record_buffer == data_v3
+
 
 def test_mstracelist_generate_rollingbuffer():
     """Test creation of miniSEED v3 records from a trace list using a rolling buffer.
@@ -507,10 +505,12 @@ def test_mstracelist_generate_rollingbuffer():
         data_v3 = f.read()
         assert record_buffer == data_v3
 
-    assert len(traces) == 0 # Trace list should be empty after final pack
+    assert len(traces) == 0  # Trace list should be empty after final pack
+
 
 test_pack3_x3 = os.path.join(test_dir, "data", "packtest_sine500x3.mseed3")
 test_pack2_x3 = os.path.join(test_dir, "data", "packtest_sine500x3.mseed2")
+
 
 def test_mstracelist_generate():
     """Test creation of miniSEED v3 and v2 records from a trace list.
@@ -556,10 +556,7 @@ def test_mstracelist_generate():
     record_buffer = b""
     record_count = 0
 
-    for record in traces.generate(
-        record_length=record_length,
-        format_version=3
-    ):
+    for record in traces.generate(record_length=record_length, format_version=3):
         record_buffer += record
         record_count += 1
 
@@ -574,10 +571,7 @@ def test_mstracelist_generate():
     record_buffer = b""
     record_count = 0
 
-    for record in traces.generate(
-        record_length=record_length,
-        format_version=2
-    ):
+    for record in traces.generate(record_length=record_length, format_version=2):
         record_buffer += record
         record_count += 1
 
@@ -588,13 +582,14 @@ def test_mstracelist_generate():
         data_v2 = f.read()
         assert record_buffer == data_v2
 
-    assert len(traces) == 3 # Traces should remain in the list
+    assert len(traces) == 3  # Traces should remain in the list
     assert traces[0][0].numsamples == 500
     assert traces[1][0].numsamples == 500
     assert traces[2][0].numsamples == 500
 
 
 test_pack2 = os.path.join(test_dir, "data", "packtest_sine2000.mseed2")
+
 
 def test_mstracelist_to_file(tmp_path):
     """Test MS3TraceList.to_file() method using pytest's tmp_path fixture."""
@@ -646,6 +641,7 @@ def test_mstracelist_nosuchfile():
 # ---------------------------------------------------------------------------
 # Selection filter tests (sourceid / starttime / endtime)
 # ---------------------------------------------------------------------------
+
 
 def test_tracelist_file_sourceid_exact():
     """Exact source ID filter returns only that channel."""

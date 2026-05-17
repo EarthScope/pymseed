@@ -58,8 +58,7 @@ class TestLoggingCapture:
 
     def test_capture_error_from_corrupted_record(self) -> None:
         """Test that parsing corrupted miniSEED data generates captured errors."""
-        from pymseed import MS3Record
-        from pymseed import MiniSEEDError
+        from pymseed import MiniSEEDError, MS3Record
 
         # Clear any existing messages
         clear_error_messages()
@@ -84,8 +83,7 @@ class TestLoggingCapture:
 
     def test_capture_multiple_errors(self) -> None:
         """Test that multiple errors are captured."""
-        from pymseed import MS3Record
-        from pymseed import MiniSEEDError
+        from pymseed import MiniSEEDError, MS3Record
 
         clear_error_messages()
 
@@ -107,8 +105,7 @@ class TestLoggingCapture:
 
     def test_clear_removes_all_messages(self) -> None:
         """Test that clear_error_messages removes all messages."""
-        from pymseed import MS3Record
-        from pymseed import MiniSEEDError
+        from pymseed import MiniSEEDError, MS3Record
 
         # Get corrupted data
         corrupted_data = get_corrupted_record()
@@ -130,8 +127,7 @@ class TestLoggingCapture:
 
     def test_get_error_messages_removes_messages(self) -> None:
         """Test that getting messages removes them from the registry."""
-        from pymseed import MS3Record
-        from pymseed import MiniSEEDError
+        from pymseed import MiniSEEDError, MS3Record
 
         clear_error_messages()
 

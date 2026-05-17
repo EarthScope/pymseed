@@ -38,7 +38,8 @@ Copyright (c) 2025, EarthScope Data Services
 """
 
 import math
-from pymseed import MS3TraceList, timestr2nstime, sample_time
+
+from pymseed import MS3TraceList, sample_time, timestr2nstime
 
 output_file = "output.mseed"
 

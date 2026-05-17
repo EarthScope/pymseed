@@ -3,18 +3,18 @@ import time
 import pytest
 
 from pymseed import clibmseed
-from pymseed.definitions import TimeFormat, SubSecond, DataEncoding
+from pymseed.definitions import DataEncoding, SubSecond, TimeFormat
 from pymseed.util import (
-    nstime2timestr,
-    timestr2nstime,
-    sourceid2nslc,
-    nslc2sourceid,
+    encoding_sizetype,
     encoding_string,
     error_string,
+    nslc2sourceid,
+    nstime2timestr,
     sample_size,
-    encoding_sizetype,
     sample_time,
+    sourceid2nslc,
     system_time,
+    timestr2nstime,
 )
 
 

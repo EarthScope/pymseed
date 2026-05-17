@@ -68,9 +68,7 @@ class TestMS3RecordValidatorBasic:
         """Test parsing a clean miniSEED v3 buffer with no errors."""
         buffer = get_test_buffer(TEST_MSEED3_FILE)
 
-        errors, traces = MS3RecordValidator.from_buffer(
-            buffer, unpack_data=False
-        ).validate()
+        errors, traces = MS3RecordValidator.from_buffer(buffer, unpack_data=False).validate()
 
         assert isinstance(traces, MS3TraceList)
         assert len(traces) > 0
@@ -80,9 +78,7 @@ class TestMS3RecordValidatorBasic:
         """Test parsing a clean miniSEED v2 buffer with no errors."""
         buffer = get_test_buffer(TEST_MSEED2_FILE)
 
-        errors, traces = MS3RecordValidator.from_buffer(
-            buffer, unpack_data=False
-        ).validate()
+        errors, traces = MS3RecordValidator.from_buffer(buffer, unpack_data=False).validate()
 
         assert isinstance(traces, MS3TraceList)
         assert len(traces) > 0
@@ -92,9 +88,7 @@ class TestMS3RecordValidatorBasic:
         """Test parsing with data unpacking enabled produces no errors on clean data."""
         buffer = get_test_buffer(TEST_MSEED3_FILE)
 
-        errors, traces = MS3RecordValidator.from_buffer(
-            buffer, unpack_data=True
-        ).validate()
+        errors, traces = MS3RecordValidator.from_buffer(buffer, unpack_data=True).validate()
 
         assert len(traces) > 0
         assert len(errors) == 0
@@ -110,9 +104,7 @@ class TestMS3RecordValidatorBasic:
         """Test that return_trace_list=False returns None for traces."""
         buffer = get_test_buffer(TEST_MSEED3_FILE)
 
-        errors, traces = MS3RecordValidator.from_buffer(
-            buffer, return_trace_list=False
-        ).validate()
+        errors, traces = MS3RecordValidator.from_buffer(buffer, return_trace_list=False).validate()
 
         assert traces is None
         assert len(errors) == 0
@@ -145,9 +137,7 @@ class TestMS3RecordValidatorCRCValidation:
         """Test that CRC errors produce a validation error mentioning CRC."""
         corrupted = get_corrupted_record()
 
-        errors, _ = MS3RecordValidator.from_buffer(
-            corrupted, validate_crc=True
-        ).validate()
+        errors, _ = MS3RecordValidator.from_buffer(corrupted, validate_crc=True).validate()
 
         assert len(errors) >= 1
         crc_errors = [e for e in errors if "CRC" in e.message]
@@ -157,12 +147,8 @@ class TestMS3RecordValidatorCRCValidation:
         """Test that disabling CRC validation suppresses CRC errors."""
         corrupted = get_corrupted_record()
 
-        errors_with, _ = MS3RecordValidator.from_buffer(
-            corrupted, validate_crc=True
-        ).validate()
-        errors_without, _ = MS3RecordValidator.from_buffer(
-            corrupted, validate_crc=False
-        ).validate()
+        errors_with, _ = MS3RecordValidator.from_buffer(corrupted, validate_crc=True).validate()
+        errors_without, _ = MS3RecordValidator.from_buffer(corrupted, validate_crc=False).validate()
 
         crc_with = [e for e in errors_with if "CRC" in e.message]
         crc_without = [e for e in errors_without if "CRC" in e.message]
@@ -178,7 +164,9 @@ class TestMS3RecordValidatorDataUnpacking:
         buffer = _get_record_with_bad_encoding()
 
         errors, _ = MS3RecordValidator.from_buffer(
-            buffer, unpack_data=True, validate_crc=False,
+            buffer,
+            unpack_data=True,
+            validate_crc=False,
         ).validate()
 
         assert len(errors) >= 1
@@ -188,10 +176,14 @@ class TestMS3RecordValidatorDataUnpacking:
         buffer = _get_record_with_bad_encoding()
 
         errors_on, _ = MS3RecordValidator.from_buffer(
-            buffer, unpack_data=True, validate_crc=False,
+            buffer,
+            unpack_data=True,
+            validate_crc=False,
         ).validate()
         errors_off, _ = MS3RecordValidator.from_buffer(
-            buffer, unpack_data=False, validate_crc=False,
+            buffer,
+            unpack_data=False,
+            validate_crc=False,
         ).validate()
 
         assert len(errors_on) >= 1
@@ -220,10 +212,14 @@ class TestMS3RecordValidatorExtraHeaders:
         buffer = _get_record_with_bad_extra_headers()
 
         errors_on, _ = MS3RecordValidator.from_buffer(
-            buffer, validate_crc=False, validate_extra_headers=True,
+            buffer,
+            validate_crc=False,
+            validate_extra_headers=True,
         ).validate()
         errors_off, _ = MS3RecordValidator.from_buffer(
-            buffer, validate_crc=False, validate_extra_headers=False,
+            buffer,
+            validate_crc=False,
+            validate_extra_headers=False,
         ).validate()
 
         eh_errors_on = [e for e in errors_on if "Extra headers" in e.message]
@@ -262,9 +258,7 @@ class TestMS3RecordValidatorErrorAccumulation:
         """Test that errors are ValidationError instances with correct types."""
         corrupted = get_corrupted_record()
 
-        errors, _ = MS3RecordValidator.from_buffer(
-            corrupted, validate_crc=True
-        ).validate()
+        errors, _ = MS3RecordValidator.from_buffer(corrupted, validate_crc=True).validate()
 
         assert len(errors) >= 1
         for error in errors:
@@ -276,9 +270,7 @@ class TestMS3RecordValidatorErrorAccumulation:
         """Test that ValidationError has reclen when record length is determinable."""
         corrupted = get_corrupted_record()
 
-        errors, _ = MS3RecordValidator.from_buffer(
-            corrupted, validate_crc=True
-        ).validate()
+        errors, _ = MS3RecordValidator.from_buffer(corrupted, validate_crc=True).validate()
 
         assert len(errors) >= 1
         for error in errors:
@@ -290,9 +282,7 @@ class TestMS3RecordValidatorErrorAccumulation:
         corrupted = get_corrupted_record()
         reclen = len(corrupted)
 
-        errors, _ = MS3RecordValidator.from_buffer(
-            corrupted * 3, validate_crc=True
-        ).validate()
+        errors, _ = MS3RecordValidator.from_buffer(corrupted * 3, validate_crc=True).validate()
 
         assert len(errors) >= 3
         offsets = {e.offset for e in errors}
@@ -302,9 +292,7 @@ class TestMS3RecordValidatorErrorAccumulation:
         """Test that ValidationError instances are immutable."""
         corrupted = get_corrupted_record()
 
-        errors, _ = MS3RecordValidator.from_buffer(
-            corrupted, validate_crc=True
-        ).validate()
+        errors, _ = MS3RecordValidator.from_buffer(corrupted, validate_crc=True).validate()
 
         assert len(errors) >= 1
         with pytest.raises(AttributeError):
@@ -326,9 +314,7 @@ class TestMS3RecordValidatorMixedData:
 
         mixed_buffer = records[0] + bytes(corrupted) + records[2]
 
-        errors, traces = MS3RecordValidator.from_buffer(
-            mixed_buffer, validate_crc=True
-        ).validate()
+        errors, traces = MS3RecordValidator.from_buffer(mixed_buffer, validate_crc=True).validate()
 
         assert len(traces) > 0
         assert len(errors) >= 1
@@ -341,9 +327,7 @@ class TestMS3RecordValidatorFromFile:
 
     def test_from_file_clean_mseed3(self) -> None:
         """Test validating a clean miniSEED v3 file."""
-        errors, traces = MS3RecordValidator.from_file(
-            TEST_MSEED3_FILE, unpack_data=True
-        ).validate()
+        errors, traces = MS3RecordValidator.from_file(TEST_MSEED3_FILE, unpack_data=True).validate()
 
         assert isinstance(traces, MS3TraceList)
         assert len(traces) > 0
@@ -351,9 +335,7 @@ class TestMS3RecordValidatorFromFile:
 
     def test_from_file_clean_mseed2(self) -> None:
         """Test validating a clean miniSEED v2 file."""
-        errors, traces = MS3RecordValidator.from_file(
-            TEST_MSEED2_FILE, unpack_data=True
-        ).validate()
+        errors, traces = MS3RecordValidator.from_file(TEST_MSEED2_FILE, unpack_data=True).validate()
 
         assert isinstance(traces, MS3TraceList)
         assert len(traces) > 0
@@ -363,9 +345,7 @@ class TestMS3RecordValidatorFromFile:
         """Test that from_file and from_buffer produce identical results."""
         buffer = get_test_buffer(TEST_MSEED3_FILE)
 
-        buf_errors, buf_traces = MS3RecordValidator.from_buffer(
-            buffer, unpack_data=True
-        ).validate()
+        buf_errors, buf_traces = MS3RecordValidator.from_buffer(buffer, unpack_data=True).validate()
         file_errors, file_traces = MS3RecordValidator.from_file(
             TEST_MSEED3_FILE, unpack_data=True
         ).validate()
@@ -415,17 +395,13 @@ class TestMS3RecordValidatorFromFile:
         corrupted[100] = 0xFF
         mixed = bytes(corrupted) + b"".join(records[1:])
 
-        buf_errors, _ = MS3RecordValidator.from_buffer(
-            mixed, validate_crc=True
-        ).validate()
+        buf_errors, _ = MS3RecordValidator.from_buffer(mixed, validate_crc=True).validate()
         buf_offsets = [e.offset for e in buf_errors]
 
         tmp_file = tmp_path / "mixed.mseed"
         tmp_file.write_bytes(mixed)
 
-        file_errors, _ = MS3RecordValidator.from_file(
-            str(tmp_file), validate_crc=True
-        ).validate()
+        file_errors, _ = MS3RecordValidator.from_file(str(tmp_file), validate_crc=True).validate()
         file_offsets = [e.offset for e in file_errors]
         assert buf_offsets == file_offsets
 
@@ -433,12 +409,8 @@ class TestMS3RecordValidatorFromFile:
         """Test that from_file reports same sample counts as from_buffer for mseed2."""
         buffer = get_test_buffer(TEST_MSEED2_FILE)
 
-        _, buf_traces = MS3RecordValidator.from_buffer(
-            buffer, unpack_data=True
-        ).validate()
-        _, file_traces = MS3RecordValidator.from_file(
-            TEST_MSEED2_FILE, unpack_data=True
-        ).validate()
+        _, buf_traces = MS3RecordValidator.from_buffer(buffer, unpack_data=True).validate()
+        _, file_traces = MS3RecordValidator.from_file(TEST_MSEED2_FILE, unpack_data=True).validate()
 
         buf_samples = sum(seg.samplecnt for tid in buf_traces for seg in tid)
         file_samples = sum(seg.samplecnt for tid in file_traces for seg in tid)
@@ -469,9 +441,7 @@ class TestMS3RecordValidatorIntegration:
         """Test parsing entire miniSEED v3 file and verify sample counts."""
         buffer = get_test_buffer(TEST_MSEED3_FILE)
 
-        errors, traces = MS3RecordValidator.from_buffer(
-            buffer, unpack_data=True
-        ).validate()
+        errors, traces = MS3RecordValidator.from_buffer(buffer, unpack_data=True).validate()
 
         total_samples = sum(seg.samplecnt for tid in traces for seg in tid)
         assert total_samples > 0
@@ -481,9 +451,7 @@ class TestMS3RecordValidatorIntegration:
         """Test parsing entire miniSEED v2 file and verify sample counts."""
         buffer = get_test_buffer(TEST_MSEED2_FILE)
 
-        errors, traces = MS3RecordValidator.from_buffer(
-            buffer, unpack_data=True
-        ).validate()
+        errors, traces = MS3RecordValidator.from_buffer(buffer, unpack_data=True).validate()
 
         total_samples = sum(seg.samplecnt for tid in traces for seg in tid)
         assert total_samples == 252000

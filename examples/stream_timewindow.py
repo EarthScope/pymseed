@@ -15,7 +15,7 @@ Copyright (c) 2025, EarthScope Data Services
 import argparse
 import sys
 
-from pymseed import MS3Record, timestr2nstime, NSTMODULUS
+from pymseed import NSTMODULUS, MS3Record, timestr2nstime
 
 
 def process_stream(args):
@@ -73,11 +73,7 @@ def trim_record(msr, earliest, latest):
     if latest and start_time <= latest < end_time:
         # Use ceiling division to ensure we remove enough samples
         samples_to_remove = -((latest - end_time) // sample_period_ns)
-        data_samples = (
-            data_samples[:-samples_to_remove]
-            if samples_to_remove > 0
-            else data_samples
-        )
+        data_samples = data_samples[:-samples_to_remove] if samples_to_remove > 0 else data_samples
 
     if not data_samples:
         return None

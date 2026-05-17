@@ -3,7 +3,8 @@ import math
 import os
 
 import pytest
-from pymseed import MS3Record, DataEncoding, MiniSEEDError
+
+from pymseed import DataEncoding, MiniSEEDError, MS3Record
 
 test_dir = os.path.abspath(os.path.dirname(__file__))
 test_pack3 = os.path.join(test_dir, "data", "packtest_sine500.mseed3")
@@ -186,18 +187,12 @@ class TestMS3RecordSorting:
         msr3.set_starttime_str("2023-01-02T01:02:03.123456789Z")
         msr3.sourceid = "FDSN:XX_TEST__B_S_Y"
 
-        assert (
-            msr1 < msr2 < msr3
-        ), "Less than: Same time but different sourceid (location)"
-        assert (
-            msr1 <= msr2 <= msr3
-        ), "Less than equal: Same time but different sourceid (location)"
-        assert (
-            msr3 > msr2 > msr1
-        ), "Greater than: Same time but different sourceid (location)"
-        assert (
-            msr3 >= msr2 >= msr1
-        ), "Greater than equal: Same time but different sourceid (location)"
+        assert msr1 < msr2 < msr3, "Less than: Same time but different sourceid (location)"
+        assert msr1 <= msr2 <= msr3, "Less than equal: Same time but different sourceid (location)"
+        assert msr3 > msr2 > msr1, "Greater than: Same time but different sourceid (location)"
+        assert msr3 >= msr2 >= msr1, (
+            "Greater than equal: Same time but different sourceid (location)"
+        )
 
 
 @pytest.mark.filterwarnings("ignore::DeprecationWarning")
@@ -289,7 +284,6 @@ def test_msrecord_regenerate():
 
     with MS3Record.from_file(test_repack2_input, unpack_data=True) as msreader:
         for msr in msreader:
-
             # Set to format version 3
             msr.formatversion = 3
 

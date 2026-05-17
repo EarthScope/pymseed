@@ -2,7 +2,7 @@ import os
 
 import pytest
 
-from pymseed import MS3Record, DataEncoding, TimeFormat, SubSecond
+from pymseed import DataEncoding, MS3Record, SubSecond, TimeFormat
 
 test_dir = os.path.abspath(os.path.dirname(__file__))
 test_path3 = os.path.join(test_dir, "data", "testdata-COLA-signal.mseed3")
@@ -28,14 +28,9 @@ def test_msrecord_read_buffer_details():
     assert msr.flags_dict() == {"clock_locked": True}
     assert msr.starttime == 1267253400019539000
     assert msr.starttime_seconds == 1267253400.019539
+    assert msr.starttime_str(timeformat=TimeFormat.ISOMONTHDAY_Z) == "2010-02-27T06:50:00.019539Z"
     assert (
-        msr.starttime_str(timeformat=TimeFormat.ISOMONTHDAY_Z)
-        == "2010-02-27T06:50:00.019539Z"
-    )
-    assert (
-        msr.starttime_str(
-            timeformat=TimeFormat.SEEDORDINAL, subsecond=SubSecond.NONE
-        )
+        msr.starttime_str(timeformat=TimeFormat.SEEDORDINAL, subsecond=SubSecond.NONE)
         == "2010,058,06:50:00"
     )
     assert msr.samprate == 20.0
@@ -75,14 +70,10 @@ def test_msrecord_numpy():
     data = msr.np_datasamples
 
     # Check first 6 samples
-    assert np.all(
-        data[0:6].tolist() == [-502916, -502808, -502691, -502567, -502433, -502331]
-    )
+    assert np.all(data[0:6].tolist() == [-502916, -502808, -502691, -502567, -502433, -502331])
 
     # Check last 6 samples
-    assert np.all(
-        data[-6:].tolist() == [-508722, -508764, -508809, -508866, -508927, -508986]
-    )
+    assert np.all(data[-6:].tolist() == [-508722, -508764, -508809, -508866, -508927, -508986])
 
 
 def test_msrecord_read_buffer_summary():

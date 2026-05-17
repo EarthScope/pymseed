@@ -7,16 +7,17 @@ from __future__ import annotations
 
 import os
 import warnings
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from importlib.resources import files
-from typing import TYPE_CHECKING, Any, Callable, Optional, Union
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 if TYPE_CHECKING:
     from jsonschema_rs import ValidationError as JsonSchemaValidationError
 
+from pymseed._json import json_dumps_minified, json_loads
+
 from .clib import cdata_to_string, clibmseed, ffi
-from pymseed._json import json_loads, json_dumps, json_dumps_minified
 from .definitions import SubSecond, TimeFormat
 from .exceptions import MiniSEEDError
 from .util import encoding_string, nstime2timestr, timestr2nstime
@@ -157,9 +158,7 @@ class MS3Record:
         if self._msr.numsamples > 0:
             if len(self.datasamples) > 5:
                 # Create array representation with ellipsis inside: [1,2,3,4,5,...]
-                first_samples = ", ".join(
-                    str(sample) for sample in list(self.datasamples[:5])
-                )
+                first_samples = ", ".join(str(sample) for sample in list(self.datasamples[:5]))
                 sample_preview = f"[{first_samples}, ...]"
             else:
                 sample_preview = str(list(self.datasamples))
@@ -242,9 +241,7 @@ class MS3Record:
         """Return swap flags as dictionary"""
         swapflag = {}
         swapflag["header_swapped"] = bool(self._msr.swapflag & clibmseed.MSSWAP_HEADER)
-        swapflag["payload_swapped"] = bool(
-            self._msr.swapflag & clibmseed.MSSWAP_PAYLOAD
-        )
+        swapflag["payload_swapped"] = bool(self._msr.swapflag & clibmseed.MSSWAP_PAYLOAD)
         return swapflag
 
     @property
@@ -277,9 +274,7 @@ class MS3Record:
             https://docs.fdsn.org/projects/source-identifiers
         """
         if len(value) >= clibmseed.LM_SIDLEN:
-            raise ValueError(
-                f"Source ID too long (max {clibmseed.LM_SIDLEN - 1} characters)"
-            )
+            raise ValueError(f"Source ID too long (max {clibmseed.LM_SIDLEN - 1} characters)")
 
         self._msr.sid = ffi.new(f"char[{clibmseed.LM_SIDLEN}]", value.encode("utf-8"))
 
@@ -686,9 +681,7 @@ class MS3Record:
 
         if detected_type < 0:
             clibmseed.mseh_free_parsestate(parsestate)
-            raise ValueError(
-                f"Error getting extra header type at {ptr}: {detected_type}"
-            )
+            raise ValueError(f"Error getting extra header type at {ptr}: {detected_type}")
 
         if detected_type == 0:
             clibmseed.mseh_free_parsestate(parsestate)
@@ -726,9 +719,7 @@ class MS3Record:
         if status < 0:
             raise ValueError(f"Error getting extra header at {ptr}: {status}")
         elif status > 0:
-            raise ValueError(
-                f"Extra header at {ptr} is missing or of a different type: {status}"
-            )
+            raise ValueError(f"Extra header at {ptr} is missing or of a different type: {status}")
 
         if type == b"u":
             return int(value[0])
@@ -798,9 +789,7 @@ class MS3Record:
 
         c_ptr = ffi.new("char[]", ptr.encode("utf-8"))
 
-        status = clibmseed.mseh_set_ptr_r(
-            self._msr, c_ptr, c_value, type_code, ffi.NULL
-        )
+        status = clibmseed.mseh_set_ptr_r(self._msr, c_ptr, c_value, type_code, ffi.NULL)
 
         if status < 0:
             raise ValueError(f"Error setting extra header at {ptr}: {status}")
@@ -935,9 +924,7 @@ class MS3Record:
 
         return list(validator.iter_errors(instance))
 
-    def valid_extra_headers(
-        self, schema_id: str = "FDSN-v1.0", schema_file: str = None
-    ) -> bool:
+    def valid_extra_headers(self, schema_id: str = "FDSN-v1.0", schema_file: str = None) -> bool:
         """Check if the extra headers are valid
 
         The selected schema should conform to the JSON Schema 2020-12 specification:
@@ -1334,16 +1321,12 @@ class MS3Record:
                     mv = memoryview(data_samples)
                     if mv.format == "i" and mv.itemsize == 4:
                         # Compatible format - safe to zero-copy
-                        sample_array = ffi.cast(
-                            "int32_t *", ffi.from_buffer(data_samples)
-                        )
+                        sample_array = ffi.cast("int32_t *", ffi.from_buffer(data_samples))
                     else:
                         raise ValueError("Incompatible buffer format")
                 except (TypeError, ValueError):
                     # Not compatible or not a buffer - need conversion
-                    sample_array = ffi.new(
-                        "int32_t[]", [int(sample) for sample in data_samples]
-                    )
+                    sample_array = ffi.new("int32_t[]", [int(sample) for sample in data_samples])
 
                 self._msr.datasamples = sample_array
                 self._msr.numsamples = len(data_samples)
@@ -1353,16 +1336,12 @@ class MS3Record:
                     mv = memoryview(data_samples)
                     if mv.format == "f" and mv.itemsize == 4:
                         # Compatible format - safe to zero-copy
-                        sample_array = ffi.cast(
-                            "float *", ffi.from_buffer(data_samples)
-                        )
+                        sample_array = ffi.cast("float *", ffi.from_buffer(data_samples))
                     else:
                         raise ValueError("Incompatible buffer format")
                 except (TypeError, ValueError):
                     # Not compatible or not a buffer - need conversion
-                    sample_array = ffi.new(
-                        "float[]", [float(sample) for sample in data_samples]
-                    )
+                    sample_array = ffi.new("float[]", [float(sample) for sample in data_samples])
 
                 self._msr.datasamples = sample_array
                 self._msr.numsamples = len(data_samples)
@@ -1372,16 +1351,12 @@ class MS3Record:
                     mv = memoryview(data_samples)
                     if mv.format == "d" and mv.itemsize == 8:
                         # Compatible format - safe to zero-copy
-                        sample_array = ffi.cast(
-                            "double *", ffi.from_buffer(data_samples)
-                        )
+                        sample_array = ffi.cast("double *", ffi.from_buffer(data_samples))
                     else:
                         raise ValueError("Incompatible buffer format")
                 except (TypeError, ValueError):
                     # Not compatible or not a buffer - need conversion
-                    sample_array = ffi.new(
-                        "double[]", [float(sample) for sample in data_samples]
-                    )
+                    sample_array = ffi.new("double[]", [float(sample) for sample in data_samples])
 
                 self._msr.datasamples = sample_array
                 self._msr.numsamples = len(data_samples)
@@ -1421,9 +1396,7 @@ class MS3Record:
             self._msr.numsamples = orig_numsamples
             self._msr.sampletype = orig_sampletype
 
-    def _record_handler_wrapper(
-        self, record: Any, record_length: int, handlerdata: Any
-    ) -> None:
+    def _record_handler_wrapper(self, record: Any, record_length: int, handlerdata: Any) -> None:
         """Callback function for msr3_pack()"""
         # Convert CFFI buffer to bytes for the handler
         record_bytes = ffi.buffer(record, record_length)[:]
@@ -1521,9 +1494,7 @@ class MS3Record:
         self._record_handler_data = handler_data
 
         # Create callback function type and instance
-        RECORD_HANDLER = ffi.callback(
-            "void(char *, int, void *)", self._record_handler_wrapper
-        )
+        RECORD_HANDLER = ffi.callback("void(char *, int, void *)", self._record_handler_wrapper)
 
         packed_samples = ffi.new("int64_t *")
         flags = clibmseed.MSF_FLUSHDATA  # Always flush data when packing
@@ -1624,7 +1595,6 @@ class MS3Record:
         # Pack miniSEED records using data samples and type if provided
         if data_samples is not None and sample_type is not None:
             with self.with_datasamples(data_samples, sample_type):
-
                 packer = clibmseed.msr3_pack_init(self._msr, flags, verbose)
 
                 if not packer:
@@ -1910,7 +1880,7 @@ class MS3Record:
                 msr_ptr[0] = ffi.NULL
 
     @classmethod
-    def iter_records(cls, source, **kwargs) -> Iterator["MS3Record"]:
+    def iter_records(cls, source, **kwargs) -> Iterator[MS3Record]:
         """Iterate over miniSEED records from any source.
 
         This convenience method is a wrapper around the main record

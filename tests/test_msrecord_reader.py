@@ -1,7 +1,9 @@
-import pytest
-import sys
 import os
-from pymseed import MS3Record, DataEncoding, TimeFormat, SubSecond, NSTMODULUS
+import sys
+
+import pytest
+
+from pymseed import NSTMODULUS, DataEncoding, MS3Record, SubSecond, TimeFormat
 from pymseed.exceptions import MiniSEEDError
 
 test_dir = os.path.abspath(os.path.dirname(__file__))
@@ -12,7 +14,6 @@ test_60sec = os.path.join(test_dir, "data", "testdata-60sec-period.mseed3")
 
 def test_msrecord_read_record_details():
     with MS3Record.from_file(test_path3, unpack_data=True) as msreader:
-
         # Read first record
         msr = msreader.read()
 
@@ -26,13 +27,10 @@ def test_msrecord_read_record_details():
         assert msr.starttime == 1267253400019539000
         assert msr.starttime_seconds == pytest.approx(1267253400.019539)
         assert (
-            msr.starttime_str(timeformat=TimeFormat.ISOMONTHDAY_Z)
-            == "2010-02-27T06:50:00.019539Z"
+            msr.starttime_str(timeformat=TimeFormat.ISOMONTHDAY_Z) == "2010-02-27T06:50:00.019539Z"
         )
         assert (
-            msr.starttime_str(
-                timeformat=TimeFormat.SEEDORDINAL, subsecond=SubSecond.NONE
-            )
+            msr.starttime_str(timeformat=TimeFormat.SEEDORDINAL, subsecond=SubSecond.NONE)
             == "2010,058,06:50:00"
         )
         assert msr.samprate == 20.0
@@ -53,14 +51,28 @@ def test_msrecord_read_record_details():
         assert msr.endtime_seconds == pytest.approx(1267253414.769539)
 
         # Check first 6 samples
-        assert msr.datasamples[0:6].tolist() == [-502916, -502808, -502691, -502567, -502433, -502331]
+        assert msr.datasamples[0:6].tolist() == [
+            -502916,
+            -502808,
+            -502691,
+            -502567,
+            -502433,
+            -502331,
+        ]
 
         # Check last 6 samples
-        assert msr.datasamples[-6:].tolist() == [-508722, -508764, -508809, -508866, -508927, -508986]
+        assert msr.datasamples[-6:].tolist() == [
+            -508722,
+            -508764,
+            -508809,
+            -508866,
+            -508927,
+            -508986,
+        ]
+
 
 def test_msrecord_read_unpack_data():
     with MS3Record.from_file(test_path3, unpack_data=False) as msreader:
-
         # Read first record
         msr = msreader.read()
 
@@ -78,14 +90,28 @@ def test_msrecord_read_unpack_data():
         assert msr.sampletype == "i"
 
         # Check first 6 samples
-        assert msr.datasamples[0:6].tolist() == [-502916, -502808, -502691, -502567, -502433, -502331]
+        assert msr.datasamples[0:6].tolist() == [
+            -502916,
+            -502808,
+            -502691,
+            -502567,
+            -502433,
+            -502331,
+        ]
 
         # Check last 6 samples
-        assert msr.datasamples[-6:].tolist() == [-508722, -508764, -508809, -508866, -508927, -508986]
+        assert msr.datasamples[-6:].tolist() == [
+            -508722,
+            -508764,
+            -508809,
+            -508866,
+            -508927,
+            -508986,
+        ]
+
 
 def test_msrecord_read_record_60sec():
     with MS3Record.from_file(test_60sec, unpack_data=True) as msreader:
-
         # Read first record
         msr = msreader.read()
 
@@ -102,7 +128,6 @@ def test_msrecord_read_record_offsets():
     with MS3Record.from_file(
         test_path3, start_byte_offset=408442, end_byte_offset=408600, unpack_data=True
     ) as msreader:
-
         # Read first record
         msr = msreader.read()
 
@@ -111,7 +136,14 @@ def test_msrecord_read_record_offsets():
         assert msr.samprate == 20.0
 
         # Check first 6 samples
-        assert msr.datasamples[0:6].tolist() == [-231394, -231367, -231376, -231404, -231437, -231474]
+        assert msr.datasamples[0:6].tolist() == [
+            -231394,
+            -231367,
+            -231376,
+            -231404,
+            -231437,
+            -231474,
+        ]
 
     # miniSEED v2 file
     with MS3Record.from_file(
@@ -125,7 +157,14 @@ def test_msrecord_read_record_offsets():
         assert msr.samprate == 20.0
 
         # Check first 6 samples
-        assert msr.datasamples[0:6].tolist() == [-231394, -231367, -231376, -231404, -231437, -231474]
+        assert msr.datasamples[0:6].tolist() == [
+            -231394,
+            -231367,
+            -231376,
+            -231404,
+            -231437,
+            -231474,
+        ]
 
 
 def test_msrecord_read_record_details_fd():
@@ -150,10 +189,24 @@ def test_msrecord_read_record_details_fd():
         assert msr is not None
 
         # Check first 6 samples
-        assert msr.datasamples[0:6].tolist() == [-502916, -502808, -502691, -502567, -502433, -502331]
+        assert msr.datasamples[0:6].tolist() == [
+            -502916,
+            -502808,
+            -502691,
+            -502567,
+            -502433,
+            -502331,
+        ]
 
         # Check last 6 samples
-        assert msr.datasamples[-6:].tolist() == [-508722, -508764, -508809, -508866, -508927, -508986]
+        assert msr.datasamples[-6:].tolist() == [
+            -508722,
+            -508764,
+            -508809,
+            -508866,
+            -508927,
+            -508986,
+        ]
 
 
 def test_msrecord_read_records_summary():

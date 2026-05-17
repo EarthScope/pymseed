@@ -44,11 +44,7 @@ def main():
     parser = argparse.ArgumentParser(
         description="Read miniSEED files and display trace information"
     )
-    parser.add_argument(
-        "input_files",
-        nargs="+",
-        help="One or more miniSEED files to read"
-    )
+    parser.add_argument("input_files", nargs="+", help="One or more miniSEED files to read")
 
     args = parser.parse_args()
 

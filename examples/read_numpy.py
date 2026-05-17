@@ -24,6 +24,7 @@ import argparse
 import sys
 
 import numpy as np
+
 from pymseed import MS3TraceList, sourceid2nslc
 
 
@@ -71,7 +72,7 @@ def read_traces_to_numpy(input_files):
 if __name__ == "__main__":
     # Simple argparse setup
     parser = argparse.ArgumentParser(description="Read miniSEED files and convert to NumPy arrays")
-    parser.add_argument('files', nargs='*', help='miniSEED files to read')
+    parser.add_argument("files", nargs="*", help="miniSEED files to read")
     args = parser.parse_args()
 
     # Check if files were provided
