@@ -276,10 +276,11 @@ class MS3Record:
         See Also:
             https://docs.fdsn.org/projects/source-identifiers
         """
-        if len(value) >= clibmseed.LM_SIDLEN:
-            raise ValueError(f"Source ID too long (max {clibmseed.LM_SIDLEN - 1} characters)")
+        encoded = value.encode("utf-8")
+        if len(encoded) >= clibmseed.LM_SIDLEN:
+            raise ValueError(f"Source ID too long (max {clibmseed.LM_SIDLEN - 1} bytes)")
 
-        self._msr.sid = ffi.new(f"char[{clibmseed.LM_SIDLEN}]", value.encode("utf-8"))
+        self._msr.sid = encoded + b"\x00"
 
     @property
     def formatversion(self) -> int:

@@ -5,6 +5,7 @@ import os
 import pytest
 
 from pymseed import DataEncoding, MiniSEEDError, MS3Record
+from pymseed.clib import clibmseed
 
 test_dir = os.path.abspath(os.path.dirname(__file__))
 test_pack3 = os.path.join(test_dir, "data", "packtest_sine500.mseed3")
@@ -141,6 +142,36 @@ def test_msrecord_extra_header():
     # Malformed JSON Merge Patch
     with pytest.raises(ValueError):
         msr.merge_extra_headers("Invalid/JSON/Merge/Patch")
+
+
+def test_msrecord_sourceid_setter():
+    """Setter accepts boundary lengths, overwrites cleanly, and rejects oversize."""
+
+    msr = MS3Record()
+    max_bytes = clibmseed.LM_SIDLEN - 1  # NUL terminator reserved
+
+    # Exact-fit length (LM_SIDLEN - 1 bytes) round-trips intact.
+    exact = "A" * max_bytes
+    msr.sourceid = exact
+    assert msr.sourceid == exact
+
+    # Overwriting with a shorter value must not leak bytes from the longer one.
+    msr.sourceid = "FDSN:XX_TEST__B_S_X"
+    assert msr.sourceid == "FDSN:XX_TEST__B_S_X"
+
+    # One byte over the limit must raise, and the field stays unchanged.
+    too_long = "B" * (max_bytes + 1)
+    with pytest.raises(ValueError):
+        msr.sourceid = too_long
+    assert msr.sourceid == "FDSN:XX_TEST__B_S_X"
+
+    # The bound is on encoded bytes, not characters: a single 2-byte UTF-8
+    # character at the byte boundary must still be rejected.
+    just_over_in_bytes = "x" * (max_bytes - 1) + "\u00e9"  # 'é' encodes to 2 bytes
+    assert len(just_over_in_bytes) == max_bytes
+    assert len(just_over_in_bytes.encode("utf-8")) == max_bytes + 1
+    with pytest.raises(ValueError):
+        msr.sourceid = just_over_in_bytes
 
 
 def test_msrecord_extra_header_long_string():
