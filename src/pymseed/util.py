@@ -6,22 +6,26 @@ Core utility functions for pymseed
 from .clib import cdata_to_string, clibmseed, ffi
 from .definitions import SubSecond, TimeFormat
 
+# Maximum length of any time string libmseed produces with some margin
+_TIMESTRING_BUFSIZE = 50
+
 
 def nstime2timestr(
     nstime: int,
     timeformat: TimeFormat = TimeFormat.ISOMONTHDAY_Z,
     subsecond: SubSecond = SubSecond.NANO_MICRO_NONE,
-) -> str | None:
+) -> str:
     """Convert a nanosecond timestamp to a date-time string"""
-    # Create a buffer for the time string (40 chars should be enough)
-    c_timestr = ffi.new("char[]", 50)
+    c_timestr = ffi.new("char[]", _TIMESTRING_BUFSIZE)
 
-    status = clibmseed.ms_nstime2timestr_n(nstime, c_timestr, 50, timeformat, subsecond)
+    result = clibmseed.ms_nstime2timestr_n(
+        nstime, c_timestr, _TIMESTRING_BUFSIZE, timeformat, subsecond
+    )
 
-    if status != 0:  # Success check - differs from ctypes version
-        return cdata_to_string(c_timestr)
-    else:
+    if result == ffi.NULL:
         raise ValueError(f"Error converting timestamp: {nstime}")
+
+    return ffi.string(c_timestr).decode("utf-8")
 
 
 def timestr2nstime(timestr: str) -> int:
