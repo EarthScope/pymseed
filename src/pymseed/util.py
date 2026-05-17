@@ -29,9 +29,18 @@ def nstime2timestr(
 
 
 def timestr2nstime(timestr: str) -> int:
-    """Convert a date-time string to nanoseconds since Unix epoch"""
+    """Convert a date-time string to nanoseconds since Unix epoch
+
+    Raises:
+        ValueError: If ``timestr`` cannot be parsed as a date-time string.
+    """
     c_timestr = ffi.new("char[]", timestr.encode("utf-8"))
-    return clibmseed.ms_timestr2nstime(c_timestr)
+    nstime = clibmseed.ms_timestr2nstime(c_timestr)
+
+    if nstime == clibmseed.NSTERROR:
+        raise ValueError(f"Invalid time string: {timestr!r}")
+
+    return nstime
 
 
 def sourceid2nslc(

@@ -17,10 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   When `record_list=True`, calling `unpack_recordlist()` is not supported because
   the source bytes do not persist. Slower than `add_file()` / `add_buffer()`;
   use as a last resort when those methods are not possible.
+- Raise on errors in `timestr2nstime()` instead of returning internal error values.
 
 ### Changed
 - Fix `sample_size()` to take sample type codes instead of encoding codes.
-- Fix call signature and behavior of `nstime2timestr()`.
+- Fix return typing and improve behavior of `nstime2timestr()`.
 - Type annotations converted to PEP 604 / PEP 585 form.
 - Apply consistent python formatting with ruff.
 

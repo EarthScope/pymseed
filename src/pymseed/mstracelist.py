@@ -787,10 +787,10 @@ def _build_selections(sourceid, starttime, endtime):
     def _time_value(time_string, name):
         if time_string is None:
             return clibmseed.NSTUNSET
-        ns = timestr2nstime(time_string)
-        if ns == clibmseed.NSTERROR:
-            raise ValueError(f"Invalid {name} time string: {time_string!r}")
-        return ns
+        try:
+            return timestr2nstime(time_string)
+        except ValueError as exc:
+            raise ValueError(f"Invalid {name} time string: {time_string!r}") from exc
 
     start_ns = _time_value(starttime, "starttime")
     end_ns = _time_value(endtime, "endtime")
