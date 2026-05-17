@@ -85,7 +85,11 @@ def sourceid2nslc(sourceid: str) -> tuple[str, str, str, str]:
 
 
 def nslc2sourceid(net: str, sta: str, loc: str, chan: str) -> str:
-    """Convert network, station, location, channel to FDSN source ID"""
+    """Convert network, station, location, channel to FDSN source ID
+
+    Raises ``ValueError`` if the components cannot be combined into a valid
+    FDSN source ID.
+    """
     sid = ffi.new("char[]", clibmseed.LM_SIDLEN)
 
     c_net = ffi.new("char[]", net.encode("utf-8"))
@@ -96,13 +100,10 @@ def nslc2sourceid(net: str, sta: str, loc: str, chan: str) -> str:
     flags = 0
     status = clibmseed.ms_nslc2sid(sid, clibmseed.LM_SIDLEN, flags, c_net, c_sta, c_loc, c_chan)
 
-    if status > 0:
-        result = cdata_to_string(sid)
-        if result is None:
-            raise ValueError(f"Error creating source ID from {net}.{sta}.{loc}.{chan}")
-        return result
-    else:
+    if status < 0:
         raise ValueError(f"Error creating source ID from {net}.{sta}.{loc}.{chan}")
+
+    return ffi.string(sid).decode("utf-8")
 
 
 def encoding_string(encoding: int) -> str | None:
