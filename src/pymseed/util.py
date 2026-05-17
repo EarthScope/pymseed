@@ -91,9 +91,17 @@ def error_string(error_code: int) -> str | None:
     return cdata_to_string(clibmseed.ms_errorstr(error_code))
 
 
-def sample_size(encoding: int) -> int:
-    """Get sample size in bytes for given encoding"""
-    return clibmseed.ms_samplesize(encoding)
+def sample_size(sample_type: bytes | str) -> int:
+    """Get sample size in bytes for given sample type"""
+
+    if isinstance(sample_type, str):
+        sample_type = sample_type.encode("ascii")
+
+    # ms_samplesize takes a single C char
+    if len(sample_type) != 1:
+        raise ValueError(f"Invalid sample type: {sample_type!r}. Must be a single character.")
+
+    return clibmseed.ms_samplesize(sample_type)
 
 
 def encoding_sizetype(encoding: int) -> tuple[int, str]:

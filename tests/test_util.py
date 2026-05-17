@@ -180,13 +180,35 @@ class TestEncodingFunctions:
         assert "steim" in result.lower() and "2" in result
 
     def test_sample_size_basic(self):
-        """Test getting sample sizes for different encodings"""
+        """Test getting sample sizes for different sample types"""
         # ms_samplesize expects a char sampletype, not encoding number
-        # Test with sample type characters as bytes
         assert sample_size(b"i") == 4  # integer type
         assert sample_size(b"f") == 4  # float type
         assert sample_size(b"d") == 8  # double type
         assert sample_size(b"t") == 1  # text type
+
+    def test_sample_size_str_input(self):
+        """sample_size should accept str as well as bytes"""
+        assert sample_size("i") == 4
+        assert sample_size("f") == 4
+        assert sample_size("d") == 8
+        assert sample_size("t") == 1
+
+    def test_sample_size_invalid_length(self):
+        """sample_size should reject inputs that are not a single character"""
+        with pytest.raises(ValueError):
+            sample_size("")
+        with pytest.raises(ValueError):
+            sample_size("ii")
+        with pytest.raises(ValueError):
+            sample_size(b"")
+        with pytest.raises(ValueError):
+            sample_size(b"ii")
+
+    def test_sample_size_unknown_type(self):
+        """sample_size returns 0 for sample types the C library doesn't know"""
+        assert sample_size(b"x") == 0
+        assert sample_size("x") == 0
 
     def test_encoding_sizetype_basic(self):
         """Test getting encoding size and type information"""

@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   use as a last resort when those methods are not possible.
 
 ### Changed
+- Fix `sample_size()` to take sample type codes instead of encoding codes.
 - Type annotations converted to PEP 604 / PEP 585 form.
 - Apply consistent python formatting with ruff.
 
