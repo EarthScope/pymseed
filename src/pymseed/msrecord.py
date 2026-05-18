@@ -87,7 +87,13 @@ class MS3Record:
 
     # Restrict instance attributes to prevent silent assignment to misspelled
     # or non-existent names (e.g. msr.samperate = 0 silently succeeds without this).
-    __slots__ = ("_msr", "_msr_allocated", "_record_handler", "_record_handler_data")
+    __slots__ = (
+        "_msr",
+        "_msr_allocated",
+        "_record_handler",
+        "_record_handler_data",
+        "_record_handler_callback",
+    )
 
     def __init__(
         self,
@@ -149,6 +155,7 @@ class MS3Record:
 
         self._record_handler = None
         self._record_handler_data = None
+        self._record_handler_callback = None
 
     def __del__(self) -> None:
         if self._msr and self._msr_allocated:
@@ -1528,8 +1535,11 @@ class MS3Record:
         self._record_handler = handler
         self._record_handler_data = handler_data
 
-        # Create callback function type and instance
-        RECORD_HANDLER = ffi.callback("void(char *, int, void *)", self._record_handler_wrapper)
+        # Pin the CFFI callback to self so it stays alive for the lifetime
+        # of the MS3Record as a defensive measure.
+        self._record_handler_callback = ffi.callback(
+            "void(char *, int, void *)", self._record_handler_wrapper
+        )
 
         packed_samples = ffi.new("int64_t *")
         flags = clibmseed.MSF_FLUSHDATA  # Always flush data when packing
@@ -1538,7 +1548,7 @@ class MS3Record:
             with self.with_datasamples(data_samples, sample_type):
                 packed_records = clibmseed.msr3_pack(
                     self._msr,
-                    RECORD_HANDLER,
+                    self._record_handler_callback,
                     ffi.NULL,
                     packed_samples,
                     flags,
@@ -1547,7 +1557,7 @@ class MS3Record:
         else:
             packed_records = clibmseed.msr3_pack(
                 self._msr,
-                RECORD_HANDLER,
+                self._record_handler_callback,
                 ffi.NULL,
                 packed_samples,
                 flags,
