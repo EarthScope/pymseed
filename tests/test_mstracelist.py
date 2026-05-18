@@ -287,6 +287,37 @@ def test_tracelist_unpack_recordlist_rejects_non_buffer():
     assert any(v != 0 for v in arr)  # buffer was actually written into
 
 
+def test_tracelist_add_file_does_not_retain_filename_buffer_without_record_list():
+    """Without record_list=True no MS3RecordPtr entries reference the C
+    filename buffer, so add_file() must not pin it on the trace list. The
+    record_list=True path still needs to retain it because libmseed stores
+    the pointer in MS3RecordPtr entries for later use (e.g. by
+    unpack_recordlist())."""
+    traces = MS3TraceList()
+    assert len(traces._c_file_names) == 0
+
+    # Re-using one MS3TraceList across many add_file() calls must not grow
+    # the retained-buffer list when record_list=False.
+    for _ in range(5):
+        traces.add_file(test_path3)
+    assert len(traces._c_file_names) == 0
+
+    # With record_list=True each call must retain its filename buffer so the
+    # libmseed-stored pointer remains valid for the lifetime of the records.
+    traces_rl = MS3TraceList()
+    traces_rl.add_file(test_path3, record_list=True)
+    traces_rl.add_file(test_path3, record_list=True)
+    assert len(traces_rl._c_file_names) == 2
+
+    # And the retained pointer is still readable through the record list,
+    # confirming the buffer wasn't prematurely freed.
+    traceid = next(iter(traces_rl))
+    seg = traceid[0]
+    first_ptr = next(iter(seg.recordlist))
+    assert first_ptr.filename is not None
+    assert first_ptr.filename.endswith(os.path.basename(test_path3))
+
+
 def test_tracelist_has_same_data_short_circuits_on_sampletype():
     """has_same_data() must consult sampletype before the byte-level
     memoryview comparison. memoryview equality is value-based across formats

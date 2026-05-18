@@ -1222,9 +1222,10 @@ class MS3TraceList:
 
         """
 
-        # Store files names for reference and use in record lists
-        self._c_file_names.append(ffi.new("char[]", file_name.encode("utf-8")))
-        c_file_name = self._c_file_names[-1]
+        # Store file name for reference and use in record lists
+        c_file_name = ffi.new("char[]", file_name.encode("utf-8"))
+        if record_list:
+            self._c_file_names.append(c_file_name)
 
         # Request storing time of update in the trace list segment
         # This stores the update time as an nstime_t in the segment's private pointer (seg.prvtptr)
