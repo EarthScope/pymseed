@@ -381,6 +381,46 @@ def test_tracelist_generate_removed_packed_deprecated_alias():
     assert records_old == records_new
 
 
+def test_tracelist_add_file_accepts_pathlike():
+    # pathlib.Path (and any os.PathLike) must be accepted by add_file/__init__,
+    # not crash on .encode() like raw bytes/None used to.
+    import pathlib
+
+    p = pathlib.Path(test_path3)
+    traces = MS3TraceList(file_name=p)
+    assert len(traces) > 0
+
+    traces2 = MS3TraceList()
+    traces2.add_file(p)
+    assert len(traces2) > 0
+
+
+def test_tracelist_add_file_rejects_invalid_filename_types():
+    # bytes/None/list/etc. must fail fast with TypeError, not AttributeError
+    # buried inside ffi.new("char[]", ...encode()).
+    traces = MS3TraceList()
+    for bad in (b"some/path", None, ["a", "b"], 3.14):
+        with pytest.raises(TypeError, match="file_name must be"):
+            traces.add_file(bad)
+
+
+def test_tracelist_to_file_rejects_invalid_filename_types(tmp_path):
+    traces = MS3TraceList(file_name=test_path3)
+    for bad in (b"some/path", None, ["a", "b"], 3.14):
+        with pytest.raises(TypeError, match="filename must be"):
+            traces.to_file(bad)
+
+
+def test_tracelist_to_file_accepts_pathlike(tmp_path):
+    import pathlib
+
+    traces = MS3TraceList(file_name=test_path3, unpack_data=True)
+    out = pathlib.Path(tmp_path) / "out.mseed3"
+    records_written = traces.to_file(out, overwrite=True, format_version=3)
+    assert records_written > 0
+    assert out.exists() and out.stat().st_size > 0
+
+
 def test_tracelist_add_file_does_not_retain_filename_buffer_without_record_list():
     """Without record_list=True no MS3RecordPtr entries reference the C
     filename buffer, so add_file() must not pin it on the trace list. The

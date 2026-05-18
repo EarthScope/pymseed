@@ -8,6 +8,7 @@ parse when possible.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Iterator
 from dataclasses import dataclass
 from importlib.resources import files
@@ -158,7 +159,9 @@ class _FileLikeSource:
 class _FileSource:
     """Iterate over detected records in a file using a sliding buffer."""
 
-    def __init__(self, filename: str, chunk_size: int = 10_485_760) -> None:
+    def __init__(
+        self, filename: str | os.PathLike[str], chunk_size: int = 10_485_760
+    ) -> None:
         self._filename = filename
         self._chunk_size = chunk_size
 
@@ -258,7 +261,7 @@ class MS3RecordValidator:
     @classmethod
     def from_file(
         cls,
-        filename: str,
+        filename: str | os.PathLike[str],
         *,
         chunk_size: int = 10_485_760,
         **kwargs: Any,
@@ -269,7 +272,8 @@ class MS3RecordValidator:
         file does not need to fit in memory.
 
         Args:
-            filename: Path to miniSEED file.
+            filename: Path to miniSEED file. Accepts ``str`` or any
+                :class:`os.PathLike` (e.g. :class:`pathlib.Path`).
             chunk_size: Read chunk size in bytes. Default is 10 MiB.
             **kwargs: Passed to ``MS3RecordValidator.__init__``.
 

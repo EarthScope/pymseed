@@ -3,6 +3,7 @@ Core miniSEED file reader implementation for pymseed.
 
 """
 
+import os
 import sys
 import warnings
 from typing import Any
@@ -30,7 +31,9 @@ class MS3RecordReader:
     are no longer valid and should not be used.
 
     Args:
-        source (str | int): File path (string) or open file descriptor (integer).
+        source (str | os.PathLike | int): File path (``str`` or any
+            :class:`os.PathLike`, e.g. :class:`pathlib.Path`) or open file
+            descriptor (``int``). Any other type raises :class:`TypeError`.
             If an integer, it must be a non-negative, currently-open file
             descriptor (e.g. obtained from :func:`os.open`). Negative integers
             are rejected with :class:`ValueError`. The class will not verify
@@ -112,14 +115,14 @@ class MS3RecordReader:
 
     def __init__(
         self,
-        source: str | int = _INPUT_SENTINEL,
+        source: "str | os.PathLike[str] | int" = _INPUT_SENTINEL,
         start_byte_offset: int = 0,
         end_byte_offset: int = 0,
         unpack_data: bool = False,
         skip_not_data: bool = False,
         validate_crc: bool = True,
         verbose: int = 0,
-        input: str | int = _INPUT_SENTINEL,
+        input: "str | os.PathLike[str] | int" = _INPUT_SENTINEL,
     ) -> None:
         if input is not _INPUT_SENTINEL:
             warnings.warn(
@@ -131,6 +134,19 @@ class MS3RecordReader:
             source = input
         if source is _INPUT_SENTINEL:
             raise TypeError("MS3RecordReader() missing required argument: 'source'")
+
+        # Validate and normalize source
+        if isinstance(source, int):
+            pass
+        elif isinstance(source, str):
+            pass
+        elif isinstance(source, os.PathLike):
+            source = os.fspath(source)
+        else:
+            raise TypeError(
+                "source must be str, int (file descriptor), or os.PathLike; "
+                f"got {type(source).__name__}"
+            )
 
         self._msfp_ptr = ffi.new("MS3FileParam **")
         self._msr_ptr = ffi.new("MS3Record **")
@@ -163,7 +179,7 @@ class MS3RecordReader:
                 )
 
             self.stream_name = ffi.new("char[]", f"File Descriptor {source}".encode())
-        # Otherwise, assume a path name, which will be opened by the library
+        # Otherwise, source is a str path
         else:
             self._msfp_ptr[0] = clibmseed.ms3_msfp_init(start_byte_offset, end_byte_offset, -1)
 

@@ -5,6 +5,7 @@ Core trace list implementation for pymseed
 
 from __future__ import annotations
 
+import os
 import sys
 import warnings
 from collections.abc import Callable, Iterator, Sequence
@@ -915,7 +916,7 @@ class MS3TraceList:
 
     def __init__(
         self,
-        file_name: str | None = None,
+        file_name: "str | os.PathLike[str] | None" = None,
         buffer: bytes | None = None,
         unpack_data: bool = False,
         sourceid: str | None = None,
@@ -1098,7 +1099,7 @@ class MS3TraceList:
 
     def add_file(
         self,
-        file_name: str,
+        file_name: "str | os.PathLike[str]",
         unpack_data: bool = False,
         sourceid: str | None = None,
         starttime: str | None = None,
@@ -1116,7 +1117,9 @@ class MS3TraceList:
         overlapping or adjacent data automatically merged into continuous segments.
 
         Args:
-            file_name: Path to the miniSEED file to read
+            file_name: Path to the miniSEED file to read. Accepts ``str`` or
+                any :class:`os.PathLike` (e.g. :class:`pathlib.Path`). Other
+                types raise :class:`TypeError`.
 
             unpack_data: If True, decode data samples immediately. If False, data
                 samples remain packed and must be unpacked later with
@@ -1220,6 +1223,13 @@ class MS3TraceList:
             True
 
         """
+        if isinstance(file_name, os.PathLike):
+            file_name = os.fspath(file_name)
+        elif not isinstance(file_name, str):
+            raise TypeError(
+                "file_name must be str or os.PathLike; "
+                f"got {type(file_name).__name__}"
+            )
 
         # Store file name for reference and use in record lists
         c_file_name = ffi.new("char[]", file_name.encode("utf-8"))
@@ -2117,7 +2127,7 @@ class MS3TraceList:
 
     def to_file(
         self,
-        filename: str,
+        filename: "str | os.PathLike[str]",
         overwrite: bool = False,
         max_record_length: int = 4096,
         max_reclen: int | None = None,
@@ -2133,8 +2143,10 @@ class MS3TraceList:
         operation.
 
         Args:
-            filename: Path to the output miniSEED file. The file will be created
-                if it doesn't exist. Directory must already exist.
+            filename: Path to the output miniSEED file. Accepts ``str`` or any
+                :class:`os.PathLike` (e.g. :class:`pathlib.Path`); other types
+                raise :class:`TypeError`. The file will be created if it
+                doesn't exist. Directory must already exist.
 
             overwrite: If True, overwrites any existing file. If False and file
                 exists, append data to the end of the file. Default is False for
@@ -2223,6 +2235,14 @@ class MS3TraceList:
                 stacklevel=2,
             )
             max_record_length = max_reclen
+
+        if isinstance(filename, os.PathLike):
+            filename = os.fspath(filename)
+        elif not isinstance(filename, str):
+            raise TypeError(
+                "filename must be str or os.PathLike; "
+                f"got {type(filename).__name__}"
+            )
 
         # Convert filename to bytes (C string)
         c_filename = ffi.new("char[]", filename.encode("utf-8"))

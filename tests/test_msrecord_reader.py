@@ -245,6 +245,27 @@ def test_msrecord_nosuchfile():
             msr = msreader.read()
 
 
+def test_msrecord_reader_accepts_pathlike_source():
+    # pathlib.Path (and any os.PathLike) is converted via os.fspath() rather
+    # than reaching the path branch as a non-string and crashing on `.encode()`.
+    import pathlib
+
+    with MS3Record.from_file(pathlib.Path(test_path3), unpack_data=False) as msreader:
+        msr = msreader.read()
+        assert msr is not None
+
+
+def test_msrecord_reader_rejects_invalid_source_types():
+    # bytes, None, list, etc. used to fall into the path branch and raise a
+    # confusing AttributeError on `.encode()`. They must now fail fast with
+    # TypeError before any C resources are allocated.
+    from pymseed import MS3RecordReader
+
+    for bad in (b"some/path", None, ["a", "b"], 3.14, {"x": 1}):
+        with pytest.raises(TypeError, match="source must be"):
+            MS3RecordReader(bad)
+
+
 def test_msrecord_reader_input_kwarg_is_deprecated_alias():
     # Passing the legacy `input=` keyword must still work but emit a
     # DeprecationWarning pointing users at the new `source=` name.
