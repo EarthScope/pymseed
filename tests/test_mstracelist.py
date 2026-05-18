@@ -232,6 +232,32 @@ def test_tracelist_generate_frees_packer_on_consumer_exception(monkeypatch):
     assert tracker.pack_free_count == 1
 
 
+def test_tracelist_unpack_recordlist_rejects_non_buffer():
+    """unpack_recordlist() must raise ValueError on objects that don't expose
+    the buffer protocol, not bubble up CFFI's TypeError. Also exercises an
+    array.array (no .nbytes, has .itemsize) to keep the fallback branch
+    covered."""
+    import array
+
+    traces = MS3TraceList.from_file(test_path3, record_list=True)
+    traceid = traces.get_traceid("FDSN:IU_COLA_00_B_H_Z")
+    seg = traceid[0]
+
+    class NotABuffer:
+        pass
+
+    with pytest.raises(ValueError, match="buffer protocol"):
+        seg.unpack_recordlist(buffer=NotABuffer())
+
+    # array.array has .itemsize but no .nbytes; the itemsize fallback must
+    # compute the correct byte size so libmseed sees a buffer large enough
+    # to hold all samples.
+    arr = array.array("i", [0] * seg.samplecnt)
+    count = seg.unpack_recordlist(buffer=arr)
+    assert count == seg.samplecnt
+    assert any(v != 0 for v in arr)  # buffer was actually written into
+
+
 def test_tracelist_has_same_data_short_circuits_on_sampletype():
     """has_same_data() must consult sampletype before the byte-level
     memoryview comparison. memoryview equality is value-based across formats

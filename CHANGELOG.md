@@ -17,7 +17,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   When `record_list=True`, calling `unpack_recordlist()` is not supported because
   the source bytes do not persist. Slower than `add_file()` / `add_buffer()`;
   use as a last resort when those methods are not possible.
-- Raise on errors in `timestr2nstime()` instead of returning internal error values.
 
 ### Changed
 - Remove length limit for string values returned from `MS3Record.get_extra_header()`.
@@ -25,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fix `sample_size()` to take sample type codes instead of encoding codes.
 - Fix return typing and improve behavior of `nstime2timestr()`.
 - Fix `sourceid2nslc()` to be honest about return type and accurate docs.
+- Raise on errors in `timestr2nstime()` instead of returning internal error values.
 - Fix return type for `MS3Record.encoding_str()`, will never be None.
 - Add ownership test to `MS3Record.parse_into()` to avoid clobbering foreign data.
 - Harden `MS3Record.encoding` by checking for values 0..255.
@@ -33,6 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fix `MS3TraceList.sample_size_type()` crash on empty record list.
 - Free packer when `MS3TraceList.generate()` when the consumer breaks, raises, or
   otherwise exits the generator before exhausting it.
+- Simplify `MS3TraceList.unpack_recordlist()` so ffi.from_buffer() is called exactly once.
 - Type annotations converted to PEP 604 / PEP 585 form.
 - Apply consistent python formatting with ruff.
 

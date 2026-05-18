@@ -557,24 +557,24 @@ class MS3TraceSeg:
         if self.datasamples and buffer is not None:
             raise ValueError("Data samples already unpacked")
 
-        # Handle buffer types that may not be compatible with memoryview
+        # Bind to the buffer once; only the byte-size derivation needs to vary
+        # across buffer-like types (numpy/memoryview expose .nbytes,
+        # array.array exposes .itemsize, bytes/bytearray/pyarrow.Buffer have
+        # len() in bytes).
         buffer_ptr = ffi.NULL
         buffer_size = 0
         if buffer is not None:
             try:
                 buffer_ptr = ffi.from_buffer(buffer)
+            except TypeError:
+                raise ValueError("Buffer must support the buffer protocol") from None
+
+            if hasattr(buffer, "nbytes"):
                 buffer_size = buffer.nbytes
-            except (TypeError, AttributeError):
-                # Try to get size through len() if nbytes is not available
-                try:
-                    buffer_ptr = ffi.from_buffer(buffer)
-                    buffer_size = (
-                        len(buffer) * buffer.itemsize
-                        if hasattr(buffer, "itemsize")
-                        else len(buffer)
-                    )
-                except (TypeError, AttributeError):
-                    raise ValueError("Buffer must support the buffer protocol") from None
+            elif hasattr(buffer, "itemsize"):
+                buffer_size = len(buffer) * buffer.itemsize
+            else:
+                buffer_size = len(buffer)
 
         status = clibmseed.mstl3_unpack_recordlist(
             self._parent_id,
