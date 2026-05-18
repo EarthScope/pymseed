@@ -5,6 +5,7 @@ Core trace list implementation for pymseed
 
 from __future__ import annotations
 
+import sys
 import warnings
 from collections.abc import Callable, Iterator, Sequence
 from typing import Any
@@ -943,10 +944,20 @@ class MS3TraceList:
 
     def __del__(self):
         """Destructor to ensure proper cleanup"""
+        if sys.is_finalizing():
+            return
         if self._mstl:
-            mstl_ptr = ffi.new("MS3TraceList **")
-            mstl_ptr[0] = self._mstl
-            clibmseed.mstl3_free(mstl_ptr, 1)
+            try:
+                mstl_ptr = ffi.new("MS3TraceList **")
+                mstl_ptr[0] = self._mstl
+                clibmseed.mstl3_free(mstl_ptr, 1)
+            except (AttributeError, TypeError):
+                # Module-teardown race: clibmseed/ffi/cdata fields may have
+                # been nulled out by Python before sys.is_finalizing() flipped.
+                # Nothing actionable; let any other exception propagate via
+                # Python's "Exception ignored in" mechanism so real bugs
+                # surface.
+                pass
 
     def __repr__(self) -> str:
         def indent_repr(thing):

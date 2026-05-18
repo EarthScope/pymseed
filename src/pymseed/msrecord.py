@@ -6,6 +6,7 @@ Core MS3Record implementation for pymseed
 from __future__ import annotations
 
 import os
+import sys
 import warnings
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
@@ -158,6 +159,8 @@ class MS3Record:
         self._record_handler_callback = None
 
     def __del__(self) -> None:
+        if sys.is_finalizing():
+            return
         if self._msr and self._msr_allocated:
             try:
                 msr_ptr = ffi.new("MS3Record **")
@@ -165,8 +168,12 @@ class MS3Record:
                 clibmseed.msr3_free(msr_ptr)
                 self._msr = ffi.NULL
                 self._msr_allocated = False
-            except Exception:
-                # Silently ignore errors during cleanup to avoid issues during interpreter shutdown
+            except (AttributeError, TypeError):
+                # Module-teardown race: clibmseed/ffi/cdata fields may have
+                # been nulled out by Python before sys.is_finalizing() flipped.
+                # Nothing actionable; let any other exception propagate so real
+                # bugs in __del__ surface via Python's "Exception ignored in"
+                # mechanism.
                 pass
 
     def __repr__(self) -> str:

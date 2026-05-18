@@ -3,6 +3,7 @@ Core miniSEED file reader implementation for pymseed.
 
 """
 
+import sys
 from typing import Any
 
 from .clib import clibmseed, ffi
@@ -199,10 +200,15 @@ class MS3RecordReader:
 
     def __del__(self) -> None:
         """Ensure cleanup when object is garbage collected"""
+        if sys.is_finalizing():
+            return
         try:
             self.close()
-        except Exception:
-            # Silently ignore exceptions in __del__ to avoid issues during interpreter shutdown
+        except (AttributeError, TypeError):
+            # Module-teardown race: clibmseed/ffi/cdata fields may have been
+            # nulled out by Python before sys.is_finalizing() flipped. Nothing
+            # actionable; let any other exception propagate via Python's
+            # "Exception ignored in" mechanism so real bugs surface.
             pass
 
     def close(self) -> None:
