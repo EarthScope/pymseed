@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
 from pymseed._json import json_dumps_minified, json_loads
 
-from .clib import cdata_to_string, clibmseed, ffi
+from .clib import clibmseed, ffi
 from .definitions import SubSecond, TimeFormat
 from .exceptions import MiniSEEDError
 from .util import encoding_string, nstime2timestr, timestr2nstime
@@ -608,10 +608,10 @@ class MS3Record:
 
     @property
     def extra(self) -> str:
-        """Return extra headers as JSON string"""
+        """Return extra headers as JSON string, or an empty string if none."""
         if self._msr.extra == ffi.NULL:
             return ""
-        return cdata_to_string(self._msr.extra)
+        return ffi.string(self._msr.extra).decode("utf-8")
 
     @extra.setter
     def extra(self, value: str | None) -> None:
