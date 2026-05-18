@@ -35,8 +35,14 @@ def configure_logging(
     Configure libmseed logging for the current thread.
 
     This function can be called from any thread to configure its logging
-    parameters. When called from threads forked from the main thread, each
-    thread can have its own logging configuration.
+    parameters. Each :class:`threading.Thread` can hold its own log prefixes
+    and message registry; calls from different threads do not interfere.
+
+    Per-thread isolation requires libmseed to be built with thread-local
+    storage (the default — see ``logging.c`` ``lm_thread_local`` selection).
+    When libmseed is built with ``LIBMSEED_NO_THREADING`` defined, all threads
+    share a single global log registry and the last :func:`configure_logging`
+    call wins process-wide.
 
     Args:
         log_prefix: Prefix for log messages. None uses libmseed default.
