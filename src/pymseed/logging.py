@@ -41,13 +41,20 @@ def configure_logging(
     Args:
         log_prefix: Prefix for log messages. None uses libmseed default.
         error_prefix: Prefix for error/diagnostic messages. None uses libmseed default.
-        max_messages: Maximum number of messages to store in the registry.
-            When the registry is full, oldest messages are discarded.
+        max_messages: Maximum number of warning/error messages to store in
+            message registry. When the registry is full, oldest messages
+            are discarded.  A value of 0 disables the registry.
+
+    Raises:
+        ValueError: If ``max_messages`` is negative.
 
     Example:
         >>> from pymseed import configure_logging
         >>> configure_logging(log_prefix="[LOG] ", error_prefix="[ERR] ")
     """
+    if max_messages < 0:
+        raise ValueError(f"max_messages must be >= 0; got {max_messages}. ")
+
     global _atexit_registered_clear_error_messages
 
     # Encode the new prefixes into local bytes objects first. libmseed stores

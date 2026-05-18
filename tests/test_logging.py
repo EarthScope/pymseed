@@ -46,6 +46,20 @@ class TestLoggingCapture:
         configure_logging()
         configure_logging()
 
+    def test_configure_logging_rejects_negative_max_messages(self) -> None:
+        """Negative max_messages is silently ignored by libmseed; the wrapper
+        must surface this as a clear ValueError instead. Zero remains valid
+        — it's the documented 'disable registry' mode."""
+        with pytest.raises(ValueError, match="max_messages must be >= 0"):
+            configure_logging(max_messages=-1)
+        with pytest.raises(ValueError, match="max_messages must be >= 0"):
+            configure_logging(max_messages=-100)
+
+        # max_messages=0 is legal (disables the registry); should not raise.
+        configure_logging(max_messages=0)
+        # Restore a sane registry for any subsequent tests in this class.
+        configure_logging(max_messages=10)
+
     def test_configure_logging_twice_with_distinct_prefixes(self) -> None:
         """Reconfiguring with different prefixes must not corrupt libmseed's
         stored prefix pointer.
