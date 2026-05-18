@@ -551,7 +551,7 @@ class MS3TraceSeg:
             to unpack data into a buffer provided by the caller in order to avoid
             copying the data.
         """
-        if self.recordlist is None:
+        if not self.recordlist:
             raise ValueError("No record list available to unpack")
 
         if self.datasamples and buffer is not None:
