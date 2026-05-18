@@ -128,13 +128,6 @@ class MS3RecordList:
         """Return number of records"""
         return self._list.recordcnt
 
-    def __iter__(self) -> Any:
-        """Return iterator over record pointers"""
-        current_record = self._list.first
-        while current_record != ffi.NULL:
-            yield MS3RecordPtr(current_record)
-            current_record = current_record.next
-
     def __getitem__(self, key: int | slice) -> Any:
         """Enable indexing and slicing access to record pointers"""
         if isinstance(key, slice):
@@ -165,17 +158,21 @@ class MS3RecordList:
         else:
             raise TypeError("indices must be integers or slices")
 
-    @property
-    def recordcnt(self) -> int:
-        """Return record count"""
-        return self._list.recordcnt
-
-    def records(self) -> Any:
-        """Return the records via a generator iterator"""
+    def __iter__(self) -> Iterator[MS3RecordPtr]:
+        """Return iterator over record pointers"""
         current_record = self._list.first
         while current_record != ffi.NULL:
             yield MS3RecordPtr(current_record)
             current_record = current_record.next
+
+    def records(self) -> Iterator[MS3RecordPtr]:
+        """Alias for __iter__()"""
+        return iter(self)
+
+    @property
+    def recordcnt(self) -> int:
+        """Return record count"""
+        return self._list.recordcnt
 
 
 class MS3TraceSeg:
