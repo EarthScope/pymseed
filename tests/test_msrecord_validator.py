@@ -268,7 +268,9 @@ class TestExtraHeadersSchemaLoadFailures:
         ).validate()
 
         skipped = [e for e in errors if "Extra headers validation skipped" in e.message]
-        assert len(skipped) >= 1
+        # Emit-once: even if every record carries extra headers, only the
+        # first one produces the warning.
+        assert len(skipped) == 1
         assert "failed to load JSON schema" in skipped[0].message
         assert "simulated corrupt schema JSON" in skipped[0].message
 
@@ -296,8 +298,36 @@ class TestExtraHeadersSchemaLoadFailures:
         ).validate()
 
         skipped = [e for e in errors if "Extra headers validation skipped" in e.message]
-        assert len(skipped) >= 1
+        assert len(skipped) == 1
         assert "bundled schema file unavailable" in skipped[0].message
+
+    def test_load_warning_emitted_at_most_once_per_validate(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """On a multi-record buffer where every record carries extra headers,
+        the schema-load failure must produce exactly one 'skipped' warning,
+        not one-per-record — otherwise the errors list is drowned in
+        duplicated noise."""
+        from pymseed import msrecord_validator as mv
+
+        monkeypatch.setattr(mv, "json_loads", lambda _b: (_ for _ in ()).throw(ValueError("boom")))
+
+        # Build a buffer with several records, all carrying extra headers.
+        records = get_test_records(TEST_MSEED3_FILE)
+        records_with_eh = [r for r in records if b'"FDSN"' in r]
+        assert len(records_with_eh) >= 3, "need >=3 records with extra headers"
+        buffer = b"".join(records_with_eh[:5])
+
+        errors, _ = MS3RecordValidator.from_buffer(
+            buffer,
+            validate_crc=False,
+            validate_extra_headers=True,
+        ).validate()
+
+        skipped = [e for e in errors if "Extra headers validation skipped" in e.message]
+        assert len(skipped) == 1, (
+            f"expected exactly one skip warning across all records; got {len(skipped)}"
+        )
 
     def test_schema_loader_is_cached(self) -> None:
         """The loader's cached outcome must be reused across repeated

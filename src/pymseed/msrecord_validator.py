@@ -393,6 +393,7 @@ class MS3RecordValidator:
         # Resolve the extra-headers JSON schema validator (cached at module level)
         _eh_validator: Any = None
         _eh_load_error: str | None = None
+        _eh_load_warning_emitted = False
         if self._validate_extra_headers:
             if self._extra_headers_schema not in _KNOWN_SCHEMAS:
                 raise ValueError(f"Unknown schema_id: {self._extra_headers_schema}")
@@ -471,15 +472,25 @@ class MS3RecordValidator:
                 # Step 3: Optionally validate extra headers
                 if self._validate_extra_headers and msr.extralength > 0:
                     if _eh_load_error is not None:
-                        errors.append(
-                            ValidationError(
-                                offset=offset,
-                                message=(f"Extra headers validation skipped: {_eh_load_error}"),
-                                sourceid=sourceid,
-                                starttime=msr.starttime,
-                                reclen=record_length,
+                        # Emit the schema-load warning at most once per
+                        # validate() — the same error would otherwise repeat
+                        # for every record that carries extra headers, drowning
+                        # real validation results in identical noise.
+                        if not _eh_load_warning_emitted:
+                            errors.append(
+                                ValidationError(
+                                    offset=offset,
+                                    message=(
+                                        "Extra headers validation skipped for "
+                                        "all records: "
+                                        f"{_eh_load_error}"
+                                    ),
+                                    sourceid=sourceid,
+                                    starttime=msr.starttime,
+                                    reclen=record_length,
+                                )
                             )
-                        )
+                            _eh_load_warning_emitted = True
                     else:
                         try:
                             extra_str = (
