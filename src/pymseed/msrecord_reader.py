@@ -124,6 +124,13 @@ class MS3RecordReader:
         verbose: int = 0,
         input: "str | os.PathLike[str] | int" = _INPUT_SENTINEL,
     ) -> None:
+        self._msfp_ptr = ffi.new("MS3FileParam **")
+        self._msr_ptr = ffi.new("MS3Record **")
+        self._selections = ffi.NULL
+        self.stream_name = ffi.NULL
+        self.verbose = verbose
+        self.parse_flags = 0
+
         if input is not _INPUT_SENTINEL:
             warnings.warn(
                 "'input' is a deprecated alias for 'source' and will be removed "
@@ -148,13 +155,7 @@ class MS3RecordReader:
                 f"got {type(source).__name__}"
             )
 
-        self._msfp_ptr = ffi.new("MS3FileParam **")
-        self._msr_ptr = ffi.new("MS3Record **")
-        self._selections = ffi.NULL
-        self.verbose = verbose
-
         # Construct parse flags
-        self.parse_flags = 0
         if unpack_data:
             self.parse_flags |= clibmseed.MSF_UNPACKDATA
         if skip_not_data:
@@ -181,6 +182,8 @@ class MS3RecordReader:
             self.stream_name = ffi.new("char[]", f"File Descriptor {source}".encode())
         # Otherwise, source is a str path
         else:
+            # Encode upfront so a UnicodeEncodeError allows fast failure.
+            encoded_path = source.encode("utf-8")
             self._msfp_ptr[0] = clibmseed.ms3_msfp_init(start_byte_offset, end_byte_offset, -1)
 
             if self._msfp_ptr[0] == ffi.NULL:
@@ -189,7 +192,7 @@ class MS3RecordReader:
                     f"Error initializing file {source}",
                 )
 
-            self.stream_name = ffi.new("char[]", source.encode())
+            self.stream_name = ffi.new("char[]", encoded_path)
 
     def __enter__(self) -> "MS3RecordReader":
         """Context manager entry point - returns self for use in 'with' statements."""

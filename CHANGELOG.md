@@ -53,6 +53,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `MS3RecordReader`: rename constructor parameter input -> source to match
   `MS3Record.iter_records(source, ...)` and stop shadowing the builtin; `input=` kept
   as a deprecated keyword alias with a DeprecationWarning.
+- `MS3RecordReader`: initialism all instance attributes up front and perform
+  pre-encoding to fail faster and cleanly on errors.
 - Type annotations converted to PEP 604 / PEP 585 form.
 - Apply consistent python formatting with ruff.
 
@@ -231,6 +233,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CFFI-based bindings to libmseed
 
 [Unreleased]: https://github.com/EarthScope/pymseed/compare/v0.0.5...HEAD
+[0.8.1]: https://github.com/EarthScope/pymseed/releases/tag/v0.8.1
+[0.8.0]: https://github.com/EarthScope/pymseed/releases/tag/v0.8.0
+[0.7.0]: https://github.com/EarthScope/pymseed/releases/tag/v0.7.0
+[0.6.1]: https://github.com/EarthScope/pymseed/releases/tag/v0.6.1
+[0.6.0]: https://github.com/EarthScope/pymseed/releases/tag/v0.6.0
+[0.5.0]: https://github.com/EarthScope/pymseed/releases/tag/v0.5.0
+[0.4.0]: https://github.com/EarthScope/pymseed/releases/tag/v0.4.0
+[0.3.0]: https://github.com/EarthScope/pymseed/releases/tag/v0.3.0
+[0.2.0]: https://github.com/EarthScope/pymseed/releases/tag/v0.2.0
+[0.1.0]: https://github.com/EarthScope/pymseed/releases/tag/v0.1.0
 [0.0.5]: https://github.com/EarthScope/pymseed/releases/tag/v0.0.5
 [0.0.4]: https://github.com/EarthScope/pymseed/releases/tag/v0.0.4
 [0.0.3]: https://github.com/EarthScope/pymseed/releases/tag/v0.0.3

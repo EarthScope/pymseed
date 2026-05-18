@@ -255,6 +255,43 @@ def test_msrecord_reader_accepts_pathlike_source():
         assert msr is not None
 
 
+def test_msrecord_reader_half_initialized_object_cleans_up():
+    # When __init__ raises before opening the file, __del__ must still be
+    # able to run close() without tripping AttributeError on missing
+    # attributes — i.e. all instance attributes must be initialised before
+    # any code that can raise.
+    import gc
+    import io
+    import sys
+
+    from pymseed import MS3RecordReader
+
+    # Capture any "Exception ignored in __del__" chatter that would indicate
+    # the broad swallow in __del__ caught an AttributeError on a missing
+    # attribute (rather than running close() cleanly).
+    stderr_buf = io.StringIO()
+    saved_stderr = sys.stderr
+    sys.stderr = stderr_buf
+    try:
+        # Bad source type: TypeError raised during validation.
+        with pytest.raises(TypeError):
+            MS3RecordReader(3.14)
+        # Missing required argument.
+        with pytest.raises(TypeError):
+            MS3RecordReader()
+        # Negative fd: passes type validation, fails on the < 0 check
+        # after C resources have been partially set up.
+        with pytest.raises(ValueError):
+            MS3RecordReader(-1)
+        gc.collect()
+    finally:
+        sys.stderr = saved_stderr
+
+    assert "Exception ignored" not in stderr_buf.getvalue(), (
+        f"__del__ tripped on half-init object: {stderr_buf.getvalue()!r}"
+    )
+
+
 def test_msrecord_reader_rejects_invalid_source_types():
     # bytes, None, list, etc. used to fall into the path branch and raise a
     # confusing AttributeError on `.encode()`. They must now fail fast with
