@@ -106,6 +106,6 @@ def get_error_messages() -> list[str]:
         length = clibmseed.ms_rlog_pop(ffi.NULL, buf, _MAX_RLOG_MSG_LEN, 0)
         if length <= 0:
             break
-        messages.append(ffi.unpack(buf, length).decode("utf-8").rstrip("\n"))
+        messages.append(ffi.unpack(buf, length).decode("utf-8", errors="replace").rstrip("\n"))
 
     return messages

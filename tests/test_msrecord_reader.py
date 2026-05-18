@@ -303,6 +303,22 @@ def test_msrecord_reader_rejects_invalid_source_types():
             MS3RecordReader(bad)
 
 
+def test_msrecord_reader_handles_surrogateescape_paths(tmp_path):
+    # Filesystem APIs on POSIX with a non-UTF-8 locale can return paths that
+    # contain surrogate-escaped bytes (e.g. b"foo\xff" -> "foo\udcff"). Using
+    # str.encode("utf-8") on such paths raises UnicodeEncodeError; os.fsencode
+    # round-trips them. Verify the wrapper survives __init__ on a surrogate
+    # path — libmseed will raise MiniSEEDError on the first read (file doesn't
+    # exist), which is the *correct* failure mode, not UnicodeEncodeError.
+    if sys.platform.startswith("win"):
+        pytest.skip("surrogateescape paths are POSIX-only")
+
+    weird_path = str(tmp_path / "missing_\udcff_byte.mseed")
+    with pytest.raises(MiniSEEDError):
+        with MS3Record.from_file(weird_path) as r:
+            r.read()
+
+
 def test_msrecord_reader_rejects_invalid_byte_offsets():
     # libmseed silently treats negative offsets as "no offset" — that hides
     # caller bugs. The Python wrapper must reject them.

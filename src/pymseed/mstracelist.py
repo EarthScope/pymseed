@@ -1226,13 +1226,10 @@ class MS3TraceList:
         if isinstance(file_name, os.PathLike):
             file_name = os.fspath(file_name)
         elif not isinstance(file_name, str):
-            raise TypeError(
-                "file_name must be str or os.PathLike; "
-                f"got {type(file_name).__name__}"
-            )
+            raise TypeError(f"file_name must be str or os.PathLike; got {type(file_name).__name__}")
 
-        # Store file name for reference and use in record lists
-        c_file_name = ffi.new("char[]", file_name.encode("utf-8"))
+        # Store file name for reference and use in record lists.
+        c_file_name = ffi.new("char[]", os.fsencode(file_name))
         if record_list:
             self._c_file_names.append(c_file_name)
 
@@ -2239,13 +2236,10 @@ class MS3TraceList:
         if isinstance(filename, os.PathLike):
             filename = os.fspath(filename)
         elif not isinstance(filename, str):
-            raise TypeError(
-                "filename must be str or os.PathLike; "
-                f"got {type(filename).__name__}"
-            )
+            raise TypeError(f"filename must be str or os.PathLike; got {type(filename).__name__}")
 
-        # Convert filename to bytes (C string)
-        c_filename = ffi.new("char[]", filename.encode("utf-8"))
+        # Convert filename to bytes (C string).
+        c_filename = ffi.new("char[]", os.fsencode(filename))
 
         pack_flags = 0
         if format_version is not None:

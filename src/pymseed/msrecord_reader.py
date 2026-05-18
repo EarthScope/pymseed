@@ -199,8 +199,7 @@ class MS3RecordReader:
             self.stream_name = ffi.new("char[]", f"File Descriptor {source}".encode())
         # Otherwise, source is a str path
         else:
-            # Encode upfront so a UnicodeEncodeError allows fast failure.
-            encoded_path = source.encode("utf-8")
+            encoded_path = os.fsencode(source)
             self._msfp_ptr[0] = clibmseed.ms3_msfp_init(start_byte_offset, end_byte_offset, -1)
 
             if self._msfp_ptr[0] == ffi.NULL:
