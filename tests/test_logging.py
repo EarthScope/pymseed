@@ -46,6 +46,43 @@ class TestLoggingCapture:
         configure_logging()
         configure_logging()
 
+    def test_configure_logging_twice_with_distinct_prefixes(self) -> None:
+        """Reconfiguring with different prefixes must not corrupt libmseed's
+        stored prefix pointer.
+
+        libmseed keeps the prefix by pointer (not by copy). If the wrapper
+        drops the previous prefix bytes from TLS *before* updating libmseed
+        to a new pointer, libmseed briefly holds a dangling pointer. The
+        next log emission can then crash, scramble, or leak the freed
+        memory. We force several real log emissions across reconfiguration
+        cycles and force CPython to actually free dangling objects so any
+        latent use-after-free surfaces as a crash here rather than in
+        production.
+        """
+        import gc
+
+        from pymseed import MS3Record
+
+        for cycle in range(5):
+            configure_logging(
+                log_prefix=f"LOG-{cycle}-{'X' * cycle}: ",
+                error_prefix=f"ERR-{cycle}-{'Y' * cycle}: ",
+            )
+            # Force any newly-unreferenced bytes objects to actually be reclaimed.
+            gc.collect()
+
+            # Generate a real error message via libmseed and drain it. If the
+            # prefix pointer is dangling, libmseed will dereference freed
+            # memory while constructing the log message.
+            clear_error_messages()
+            try:
+                for _ in MS3Record.from_buffer(get_corrupted_record()):
+                    pass
+            except Exception:
+                pass
+            # Drain so the message store doesn't fill up over cycles.
+            get_error_messages()
+
     def test_get_error_messages_returns_empty_list_when_empty(self) -> None:
         """Test that get_error_messages returns empty list when no messages."""
         result = get_error_messages()
