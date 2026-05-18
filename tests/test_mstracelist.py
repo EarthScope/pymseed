@@ -232,6 +232,33 @@ def test_tracelist_generate_frees_packer_on_consumer_exception(monkeypatch):
     assert tracker.pack_free_count == 1
 
 
+def test_tracelist_has_same_data_short_circuits_on_sampletype():
+    """has_same_data() must consult sampletype before the byte-level
+    memoryview comparison. memoryview equality is value-based across formats
+    (e.g. ``memoryview(b"abc") == memoryview(array('i', [97,98,99]))`` is
+    ``True``), so a text segment whose bytes happen to align with an int
+    segment's samples would otherwise be reported as equivalent. Also pins
+    that datasamples is not consulted at all when scalar metadata disagrees.
+    """
+    from unittest.mock import PropertyMock, patch
+
+    from pymseed.mstracelist import MS3TraceSeg
+
+    traces = MS3TraceList.from_file(test_path3, unpack_data=True)
+    traceid = traces.get_traceid("FDSN:IU_COLA_00_B_H_Z")
+    seg = traceid[0]
+
+    assert seg.has_same_data(seg) is True
+
+    with (
+        patch.object(MS3TraceSeg, "sampletype", new_callable=PropertyMock) as mock_sampletype,
+        patch.object(MS3TraceSeg, "datasamples", new_callable=PropertyMock) as mock_datasamples,
+    ):
+        mock_sampletype.side_effect = ["i", "t"]
+        assert seg.has_same_data(seg) is False
+        assert mock_datasamples.call_count == 0
+
+
 def test_tracelist_sample_size_type_requires_record_list():
     """sample_size_type needs record_list=True; absent it, raises a clear ValueError."""
     # Default construction does not retain a record list.
