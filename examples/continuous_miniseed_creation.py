@@ -201,7 +201,7 @@ def create_continuous_miniseed(
                 # Pack traces with idle data flushing, but don't flush all data yet
                 packed_records = 0
                 for record in trace_buffer.generate(
-                    record_length=record_length,
+                    max_record_length=record_length,
                     encoding=encoding,
                     flush_data=False,
                     flush_idle_seconds=flush_idle_seconds,
@@ -229,7 +229,7 @@ def create_continuous_miniseed(
         print("\nPerforming final data creation to flush remaining data...")
         packed_records = 0
         for record in trace_buffer.generate(
-            record_length=record_length,
+            max_record_length=record_length,
             encoding=encoding,
             flush_data=True,
             remove_packed=True,

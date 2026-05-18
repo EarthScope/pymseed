@@ -1758,7 +1758,8 @@ class MS3TraceList:
         handlerdata: Any = None,
         flush_data: bool = True,
         flush_idle_seconds: int = 0,
-        record_length: int = 4096,
+        max_record_length: int = 4096,
+        record_length: int | None = None,
         encoding: DataEncoding = DataEncoding.STEIM1,
         format_version: int | None = None,
         extra_headers: str | None = None,
@@ -1790,9 +1791,18 @@ class MS3TraceList:
             flush_idle_seconds: If > 0, forces flushing of data segments that have not been
                 updated within the specified number of seconds. Default is 0 (disabled).
 
-            record_length: Maximum length of each miniSEED record in bytes. For miniSEED
-                format version 2, this must be a power of 2 between 128 and 65536.
-                Common values are 512 and 4096. Default is 4096.
+            max_record_length: Maximum length of each miniSEED record in bytes.
+                For miniSEED format version 3, this is the maximum record length.
+                For miniSEED format version 2, this must be a power of 2 between
+                128 and 65536. Common values are 512 and 4096.
+                Default is 4096.
+
+            record_length: Deprecated alias for ``max_record_length``;
+                accepted for backward compatibility and forwarded to
+                ``max_record_length`` (overriding any explicit
+                ``max_record_length`` value passed in the same call).
+                Passing it emits a ``DeprecationWarning``. This alias will
+                be removed in a future release.
 
             encoding: Data encoding format for compression. Options include:
                 - DataEncoding.STEIM1: Steim-1 compression (default, good general purpose for 32-bit ints)
@@ -1817,7 +1827,7 @@ class MS3TraceList:
                 - packed_records: Total number of miniSEED records generated
 
         Raises:
-            ValueError: If format_version is not 2 or 3, or if record_length is invalid.
+            ValueError: If format_version is not 2 or 3, or if max_record_length is invalid.
             MiniSEEDError: If the underlying libmseed library encounters an error during packing.
 
         Examples:
@@ -1854,6 +1864,15 @@ class MS3TraceList:
             stacklevel=2,
         )
 
+        if record_length is not None:
+            warnings.warn(
+                "'record_length' is a deprecated alias and will be removed in "
+                "a future release; use 'max_record_length' instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            max_record_length = record_length
+
         # Set handler function as CFFI callback function
         self._record_handler = handler
         self._record_handler_data = handlerdata
@@ -1879,7 +1898,7 @@ class MS3TraceList:
             self._mstl,
             RECORD_HANDLER,
             ffi.NULL,
-            record_length,
+            max_record_length,
             encoding,
             packed_samples,
             pack_flags,
@@ -1895,7 +1914,8 @@ class MS3TraceList:
 
     def generate(
         self,
-        record_length: int = 4096,
+        max_record_length: int = 4096,
+        record_length: int | None = None,
         encoding: DataEncoding = DataEncoding.STEIM1,
         format_version: int | None = None,
         extra_headers: str | None = None,
@@ -1912,9 +1932,18 @@ class MS3TraceList:
         (encoding, record length, etc.).
 
         Args:
-            record_length: Maximum length of each miniSEED record in bytes. For
-                miniSEED format version 2, this must be a power of 2 between 128
-                and 65536. Common values are 512 and 4096. Default is 4096.
+            max_record_length: Maximum length of each miniSEED record in bytes.
+                For miniSEED format version 3, this is the maximum record length.
+                For miniSEED format version 2, this must be a power of 2 between
+                128 and 65536. Common values are 512 and 4096.
+                Default is 4096.
+
+            record_length: Deprecated alias for ``max_record_length``;
+                accepted for backward compatibility and forwarded to
+                ``max_record_length`` (overriding any explicit
+                ``max_record_length`` value passed in the same call).
+                Passing it emits a ``DeprecationWarning``. This alias will
+                be removed in a future release.
 
             encoding: Data encoding format for compression. Options include:
                 - DataEncoding.STEIM1: Steim-1 compression (default, good
@@ -1961,8 +1990,8 @@ class MS3TraceList:
             bytes: Each miniSEED record as it is created
 
         Raises:
-            ValueError: If format_version is not 2 or 3, or if record_length is
-                invalid.
+            ValueError: If format_version is not 2 or 3, or if
+                max_record_length is invalid.
             MiniSEEDError: If the underlying libmseed library encounters an
                 error during creation of miniSEED records.
 
@@ -2012,9 +2041,17 @@ class MS3TraceList:
                 stacklevel=2,
             )
             remove_packed = removed_packed
+        if record_length is not None:
+            warnings.warn(
+                "'record_length' is a deprecated alias and will be removed in "
+                "a future release; use 'max_record_length' instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            max_record_length = record_length
 
         return self._generate(
-            record_length=record_length,
+            max_record_length=max_record_length,
             encoding=encoding,
             format_version=format_version,
             extra_headers=extra_headers,
@@ -2026,7 +2063,7 @@ class MS3TraceList:
 
     def _generate(
         self,
-        record_length: int,
+        max_record_length: int,
         encoding: DataEncoding,
         format_version: int | None,
         extra_headers: str | None,
@@ -2055,7 +2092,7 @@ class MS3TraceList:
 
         packer = clibmseed.mstl3_pack_init(
             self._mstl,
-            record_length,
+            max_record_length,
             encoding,
             flags,
             verbose,
@@ -2081,7 +2118,8 @@ class MS3TraceList:
         self,
         filename: str,
         overwrite: bool = False,
-        max_reclen: int = 4096,
+        max_record_length: int = 4096,
+        max_reclen: int | None = None,
         encoding: DataEncoding = DataEncoding.STEIM1,
         format_version: int | None = None,
         verbose: int = 0,
@@ -2101,9 +2139,18 @@ class MS3TraceList:
                 exists, append data to the end of the file. Default is False for
                 safety.
 
-            max_reclen: Maximum length of each miniSEED record in bytes. For
-                miniSEED format version 2, this must be a power of 2 between 128 and 65536.
-                Common values are 512 and 4096. Default is 4096.
+            max_record_length: Maximum length of each miniSEED record in bytes.
+                For miniSEED format version 3, this is the maximum record length.
+                For miniSEED format version 2, this must be a power of 2
+                between 128 and 65536. Common values are 512 and 4096.
+                Default is 4096.
+
+            max_reclen: Deprecated alias for ``max_record_length``;
+                accepted for backward compatibility and forwarded to
+                ``max_record_length`` (overriding any explicit
+                ``max_record_length`` value passed in the same call).
+                Passing it emits a ``DeprecationWarning``. This alias will
+                be removed in a future release.
 
             encoding: Data encoding format for compression. Options include:
                 - DataEncoding.STEIM1: Steim-1 compression (default, good
@@ -2126,8 +2173,8 @@ class MS3TraceList:
             int: Number of miniSEED records written to the file.
 
         Raises:
-            ValueError: If format_version is not 2 or 3, or if max_reclen is
-                invalid.
+            ValueError: If format_version is not 2 or 3, or if
+                max_record_length is invalid.
 
             MiniSEEDError: If the underlying libmseed library
                 encounters an error during file writing (e.g., permission
@@ -2153,7 +2200,7 @@ class MS3TraceList:
             ...     overwrite=True,
             ...     format_version=2,
             ...     encoding=DataEncoding.STEIM2,
-            ...     max_reclen=512
+            ...     max_record_length=512
             ... )
             >>> print(f"Wrote {records_written} records to output.mseed") # doctest: +SKIP
             Wrote 1 records to output.mseed
@@ -2167,6 +2214,15 @@ class MS3TraceList:
             - add_data(): Add time series data to the trace list
             - from_file(): Read miniSEED data from file
         """
+        if max_reclen is not None:
+            warnings.warn(
+                "'max_reclen' is a deprecated alias and will be removed in a "
+                "future release; use 'max_record_length' instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            max_record_length = max_reclen
+
         # Convert filename to bytes (C string)
         c_filename = ffi.new("char[]", filename.encode("utf-8"))
 
@@ -2182,7 +2238,7 @@ class MS3TraceList:
             self._mstl,
             c_filename,
             overwrite,
-            max_reclen,
+            max_record_length,
             encoding,
             pack_flags,
             verbose,

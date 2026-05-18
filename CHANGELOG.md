@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   use as a last resort when those methods are not possible.
 
 ### Changed
+- Unify the record-length parameter name across APIs for creating records to
+  `max_record_length`; the old names (record_length, max_reclen) are deprecated
+  and will be removed in a future release.
 - Remove length limit for string values returned from `MS3Record.get_extra_header()`.
 - Improve `MS3Record.extra` setter to allow removal of all headers.
 - Fix `sample_size()` to take sample type codes instead of encoding codes.

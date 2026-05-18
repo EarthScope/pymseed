@@ -73,7 +73,7 @@ output_file = "output.mseed"
 sample_rate = 40.0
 start_time = timestr2nstime("2024-01-01T15:13:55.123456789Z")
 format_version = 2
-record_length = 512
+max_record_length = 512
 
 # Add generated data to the trace list
 traces.add_data(sourceid="FDSN:XX_TEST__B_S_1",
@@ -90,7 +90,7 @@ traces.add_data(sourceid="FDSN:XX_TEST__B_S_3",
 
 traces.to_file(output_file,
                format_version=format_version,
-               max_reclen = record_length)
+               max_record_length=max_record_length)
 ```
 
 ### Converting between Source IDs and NSLC codes

@@ -74,7 +74,7 @@ total_records = 0
 sample_rate = 40.0
 start_time = timestr2nstime("2024-01-01T15:13:55.123456789Z")
 format_version = 2
-record_length = 512
+max_record_length = 512
 
 # A loop that iteratively adds data to traces in the list.
 #
@@ -112,7 +112,7 @@ for i in range(10):
     # Generate full records and do not flush the data buffers
     for record in traces.generate(
         format_version=format_version,
-        record_length=record_length,
+        max_record_length=max_record_length,
         flush_data=False,
         flush_idle_seconds=60,
         remove_packed=True,
@@ -123,7 +123,7 @@ for i in range(10):
 # Flush the data buffers and write any data to records
 for record in traces.generate(
     format_version=format_version,
-    record_length=record_length,
+    max_record_length=max_record_length,
     flush_data=True,
 ):
     output_file.write(record)

@@ -629,7 +629,7 @@ def test_mstracelist_pack():
     sample_rate = 40.0
     start_time = timestr2nstime("2024-01-01T15:13:55.123456789Z")
     format_version = 3
-    record_length = 512
+    max_record_length = 512
 
     for new_data in sine_generator(yield_count=100, total=2000):
         traces.add_data(
@@ -646,14 +646,16 @@ def test_mstracelist_pack():
             record_handler,
             flush_data=False,
             format_version=format_version,
-            record_length=record_length,
+            max_record_length=max_record_length,
         )
 
         total_samples += packed_samples
         total_records += packed_records
 
     (packed_samples, packed_records) = traces.pack(
-        record_handler, format_version=format_version, record_length=record_length
+        record_handler,
+        format_version=format_version,
+        max_record_length=max_record_length,
     )
 
     total_samples += packed_samples
@@ -680,7 +682,7 @@ def test_mstracelist_generate_rollingbuffer():
     sample_rate = 40.0
     start_time = timestr2nstime("2024-01-01T15:13:55.123456789Z")
     format_version = 3
-    record_length = 512
+    max_record_length = 512
 
     # Test creation of a miniSEED v3 records
     record_buffer = b""
@@ -701,7 +703,7 @@ def test_mstracelist_generate_rollingbuffer():
 
         # Generate filled records during regular data flow
         for record in traces.generate(
-            record_length=record_length,
+            max_record_length=max_record_length,
             format_version=format_version,
             flush_data=False,
             flush_idle_seconds=10,
@@ -712,7 +714,7 @@ def test_mstracelist_generate_rollingbuffer():
 
     # Final record creation to flush any remaining data
     for record in traces.generate(
-        record_length=record_length,
+        max_record_length=max_record_length,
         format_version=format_version,
         flush_data=True,
         remove_packed=True,
@@ -749,7 +751,7 @@ def test_mstracelist_generate():
 
     sample_rate = 40.0
     start_time = timestr2nstime("2024-01-01T15:13:55.123456789Z")
-    record_length = 512
+    max_record_length = 512
 
     # Add 3 traces to the list
     traces.add_data(
@@ -778,7 +780,7 @@ def test_mstracelist_generate():
     record_buffer = b""
     record_count = 0
 
-    for record in traces.generate(record_length=record_length, format_version=3):
+    for record in traces.generate(max_record_length=max_record_length, format_version=3):
         record_buffer += record
         record_count += 1
 
@@ -793,7 +795,7 @@ def test_mstracelist_generate():
     record_buffer = b""
     record_count = 0
 
-    for record in traces.generate(record_length=record_length, format_version=2):
+    for record in traces.generate(max_record_length=max_record_length, format_version=2):
         record_buffer += record
         record_count += 1
 
@@ -837,7 +839,7 @@ def test_mstracelist_to_file(tmp_path):
 
     # Write using to_file method
     records_written = traces.to_file(
-        str(temp_file), overwrite=True, format_version=2, max_reclen=512
+        str(temp_file), overwrite=True, format_version=2, max_record_length=512
     )
 
     # Verify number of records written
