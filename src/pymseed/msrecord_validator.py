@@ -259,6 +259,12 @@ class MS3RecordValidator:
         - Validation stops only when record length cannot be determined
         - Each error is a ``ValidationError`` with ``offset``, ``message``,
           and optional ``sourceid``, ``starttime``, ``reclen``
+        - **Not thread-safe.** Each thread should use its own
+          ``MS3RecordValidator`` instance. The internal record-source
+          iterator, error list, and reused ``MS3Record`` C struct have no
+          synchronization. Separate instances running concurrently on
+          separate threads *are* safe (libmseed's log registry is
+          thread-local by default).
     """
 
     def __init__(
