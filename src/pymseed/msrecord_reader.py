@@ -4,11 +4,14 @@ Core miniSEED file reader implementation for pymseed.
 """
 
 import sys
+import warnings
 from typing import Any
 
 from .clib import clibmseed, ffi
 from .exceptions import MiniSEEDError
 from .msrecord import MS3Record
+
+_INPUT_SENTINEL: Any = object()
 
 
 class MS3RecordReader:
@@ -27,7 +30,7 @@ class MS3RecordReader:
     are no longer valid and should not be used.
 
     Args:
-        input (str | int): File path (string) or open file descriptor (integer).
+        source (str | int): File path (string) or open file descriptor (integer).
             If an integer, it must be a non-negative, currently-open file
             descriptor (e.g. obtained from :func:`os.open`). Negative integers
             are rejected with :class:`ValueError`. The class will not verify
@@ -36,7 +39,7 @@ class MS3RecordReader:
             whatever ``fd`` is currently bound to that slot (commonly
             ``0=stdin``, ``1=stdout``, ``2=stderr``).
 
-            Ownership semantics differ by input type:
+            Ownership semantics differ by source type:
 
             * **Path (str):** libmseed opens an internal file handle and
               closes it automatically on :meth:`close`, context-manager exit,
@@ -109,14 +112,26 @@ class MS3RecordReader:
 
     def __init__(
         self,
-        input: str | int,
+        source: str | int = _INPUT_SENTINEL,
         start_byte_offset: int = 0,
         end_byte_offset: int = 0,
         unpack_data: bool = False,
         skip_not_data: bool = False,
         validate_crc: bool = True,
         verbose: int = 0,
+        input: str | int = _INPUT_SENTINEL,
     ) -> None:
+        if input is not _INPUT_SENTINEL:
+            warnings.warn(
+                "'input' is a deprecated alias for 'source' and will be removed "
+                "in a future release; use 'source' instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            source = input
+        if source is _INPUT_SENTINEL:
+            raise TypeError("MS3RecordReader() missing required argument: 'source'")
+
         self._msfp_ptr = ffi.new("MS3FileParam **")
         self._msr_ptr = ffi.new("MS3Record **")
         self._selections = ffi.NULL
@@ -132,22 +147,22 @@ class MS3RecordReader:
             self.parse_flags |= clibmseed.MSF_VALIDATECRC
 
         # If the stream is an integer, assume an open file descriptor
-        if isinstance(input, int):
-            if input < 0:
+        if isinstance(source, int):
+            if source < 0:
                 raise ValueError(
-                    f"File descriptor must be non-negative; got {input}. "
+                    f"File descriptor must be non-negative; got {source}. "
                     "(A negative value typically indicates an unopened or "
                     "already-closed descriptor.)"
                 )
-            self._msfp_ptr[0] = clibmseed.ms3_msfp_init(start_byte_offset, end_byte_offset, input)
+            self._msfp_ptr[0] = clibmseed.ms3_msfp_init(start_byte_offset, end_byte_offset, source)
 
             if self._msfp_ptr[0] == ffi.NULL:
                 raise MiniSEEDError(
                     clibmseed.MS_GENERROR,
-                    f"Error initializing file descriptor {input}",
+                    f"Error initializing file descriptor {source}",
                 )
 
-            self.stream_name = ffi.new("char[]", f"File Descriptor {input}".encode())
+            self.stream_name = ffi.new("char[]", f"File Descriptor {source}".encode())
         # Otherwise, assume a path name, which will be opened by the library
         else:
             self._msfp_ptr[0] = clibmseed.ms3_msfp_init(start_byte_offset, end_byte_offset, -1)
@@ -155,10 +170,10 @@ class MS3RecordReader:
             if self._msfp_ptr[0] == ffi.NULL:
                 raise MiniSEEDError(
                     clibmseed.MS_GENERROR,
-                    f"Error initializing file {input}",
+                    f"Error initializing file {source}",
                 )
 
-            self.stream_name = ffi.new("char[]", input.encode())
+            self.stream_name = ffi.new("char[]", source.encode())
 
     def __enter__(self) -> "MS3RecordReader":
         """Context manager entry point - returns self for use in 'with' statements."""

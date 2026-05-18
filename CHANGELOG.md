@@ -48,6 +48,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   descriptors passed as int.  Callers must close the descriptor.
 - `MS3RecordReader`: raise ValueError on read() / next() after close() instead of
   silently re-opening the file.
+- `MS3RecordReader`: rename constructor parameter input -> source to match
+  `MS3Record.iter_records(source, ...)` and stop shadowing the builtin; `input=` kept
+  as a deprecated keyword alias with a DeprecationWarning.
 - Type annotations converted to PEP 604 / PEP 585 form.
 - Apply consistent python formatting with ruff.
 
