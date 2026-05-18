@@ -515,6 +515,15 @@ class MS3Record:
     def samprate_period_seconds(self) -> float:
         """Nominal sample period in seconds.
 
+        Returned as a 64-bit IEEE-754 float, i.e. the closest binary
+        representation of ``period_ns / 1_000_000_000``. For typical seismic
+        sample periods the value round-trips back to the exact integer
+        nanosecond count, but the float is not bit-identical to the
+        corresponding decimal (e.g. a 40 Hz period is the nearest float to
+        ``0.025``, not the decimal ``0.025`` itself), so downstream arithmetic
+        can accumulate small errors. Use :attr:`samprate_period_ns` when you
+        need exact integer-nanosecond arithmetic.
+
         Examples:
             >>> from pymseed import MS3Record
             >>> msr = MS3Record()
@@ -526,7 +535,7 @@ class MS3Record:
             10.0
 
         See Also:
-            samprate_period_ns: Nominal sample period in nanoseconds (for accuracy)
+            samprate_period_ns: Nominal sample period in nanoseconds (exact integer)
         """
         return clibmseed.msr3_nsperiod(self._msr) / clibmseed.NSTMODULUS
 
