@@ -161,6 +161,17 @@ class MS3RecordReader:
                 f"got {type(source).__name__}"
             )
 
+        # Validate byte offsets
+        if start_byte_offset < 0:
+            raise ValueError(f"start_byte_offset must be non-negative; got {start_byte_offset}")
+        if end_byte_offset < 0:
+            raise ValueError(f"end_byte_offset must be non-negative; got {end_byte_offset}")
+        if 0 < end_byte_offset < start_byte_offset:
+            raise ValueError(
+                f"end_byte_offset ({end_byte_offset}) must be >= "
+                f"start_byte_offset ({start_byte_offset})"
+            )
+
         # Construct parse flags
         if unpack_data:
             self.parse_flags |= clibmseed.MSF_UNPACKDATA

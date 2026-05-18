@@ -303,6 +303,26 @@ def test_msrecord_reader_rejects_invalid_source_types():
             MS3RecordReader(bad)
 
 
+def test_msrecord_reader_rejects_invalid_byte_offsets():
+    # libmseed silently treats negative offsets as "no offset" — that hides
+    # caller bugs. The Python wrapper must reject them.
+    from pymseed import MS3RecordReader
+
+    with pytest.raises(ValueError, match="start_byte_offset must be non-negative"):
+        MS3RecordReader(test_path3, start_byte_offset=-1)
+    with pytest.raises(ValueError, match="end_byte_offset must be non-negative"):
+        MS3RecordReader(test_path3, end_byte_offset=-5)
+    with pytest.raises(ValueError, match=r"end_byte_offset .* must be >="):
+        MS3RecordReader(test_path3, start_byte_offset=1000, end_byte_offset=500)
+
+    # Boundary: end_byte_offset == 0 means "read to EOF" and must be allowed
+    # regardless of start_byte_offset.
+    with MS3RecordReader(test_path3, start_byte_offset=1000, end_byte_offset=0) as r:
+        # Just confirm construction succeeds; reading may or may not return
+        # data depending on the offset, but we don't care here.
+        assert r is not None
+
+
 def test_msrecord_reader_input_kwarg_is_deprecated_alias():
     # Passing the legacy `input=` keyword must still work but emit a
     # DeprecationWarning pointing users at the new `source=` name.
