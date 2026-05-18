@@ -262,6 +262,49 @@ def test_tracelist_time_str_sentinels():
     assert traceid.latest_str() == "ERROR"
 
 
+def test_tracelist_add_data_rejects_ambiguous_time_arguments():
+    """add_data() documents the three start_time_* parameters as mutually
+    exclusive; previously the implementation just let start_time_str win
+    silently when multiple were passed. Enforce the exclusivity and keep
+    the existing 'none-passed' error too."""
+    traces = MS3TraceList()
+    common = dict(
+        sourceid="FDSN:XX_STA__B_H_Z",
+        data_samples=[1, 2, 3],
+        sample_type="i",
+        sample_rate=20.0,
+    )
+
+    # None passed: pre-existing contract preserved.
+    with pytest.raises(ValueError, match="exactly one of"):
+        traces.add_data(**common)
+
+    # Two passed: previously silently accepted (string won), now rejected.
+    with pytest.raises(ValueError, match="exactly one of"):
+        traces.add_data(
+            **common,
+            start_time_str="2023-01-01T00:00:00.000Z",
+            start_time=1672531200_000000000,
+        )
+
+    # All three passed: also rejected.
+    with pytest.raises(ValueError, match="exactly one of"):
+        traces.add_data(
+            **common,
+            start_time_str="2023-01-01T00:00:00.000Z",
+            start_time=1672531200_000000000,
+            start_time_seconds=1672531200.0,
+        )
+
+    # Exactly one passed: each form still works.
+    for tkw in (
+        {"start_time_str": "2023-01-01T00:00:00.000Z"},
+        {"start_time": 1672531200_000000000},
+        {"start_time_seconds": 1672531200.0},
+    ):
+        MS3TraceList().add_data(**common, **tkw)
+
+
 def test_tracelist_unpack_recordlist_rejects_non_buffer():
     """unpack_recordlist() must raise ValueError on objects that don't expose
     the buffer protocol, not bubble up CFFI's TypeError. Also exercises an

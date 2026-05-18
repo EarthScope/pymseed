@@ -41,6 +41,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   when `record_list=False`.
 - Begin deprecation of the typo'd `MS3TraceList.generate(removed_packed=...)`
   parameter in favor of `remove_packed=...`.
+- `MS3TraceList.add_data()` now raises `ValueError` if more than one of `start_time_str`,
+  `start_time`, `start_time_seconds` is supplied.
 - Type annotations converted to PEP 604 / PEP 585 form.
 - Apply consistent python formatting with ruff.
 

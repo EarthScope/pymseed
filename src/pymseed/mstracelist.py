@@ -1720,17 +1720,19 @@ class MS3TraceList:
         msr.samprate = sample_rate
         msr.pubversion = publication_version
 
-        # Set start time
+        # Ensure that start time definitions are mutually exclusive.
+        provided = sum(x is not None for x in (start_time_str, start_time, start_time_seconds))
+        if provided != 1:
+            raise ValueError(
+                "Specify exactly one of start_time_str, start_time, or start_time_seconds"
+            )
+
         if start_time_str is not None:
             msr.set_starttime_str(start_time_str)
         elif start_time is not None:
             msr.starttime = start_time
         elif start_time_seconds is not None:
             msr.starttime_seconds = start_time_seconds
-        else:
-            raise ValueError(
-                "Must specify one of start_time_str, start_time, or start_time_seconds"
-            )
 
         # Request storing time of update in the trace list segment
         # This stores the update time as an nstime_t in the segment's private pointer (seg.prvtptr)
