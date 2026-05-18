@@ -18,9 +18,52 @@ import pickle
 
 import pytest
 
-from pymseed import MiniSEEDError
+from pymseed import MiniSEEDError, PymseedError
 from pymseed.clib import clibmseed
 from pymseed.exceptions import NoSuchSourceID
+
+
+class TestPymseedErrorHierarchy:
+    """Tests for the shared base class so callers can write a single
+    `except PymseedError:` catch and reach every pymseed-defined exception."""
+
+    def test_miniseed_error_is_pymseed_error(self) -> None:
+        assert issubclass(MiniSEEDError, PymseedError)
+        assert isinstance(MiniSEEDError(-1, "x"), PymseedError)
+
+    def test_no_such_source_id_is_pymseed_error(self) -> None:
+        assert issubclass(NoSuchSourceID, PymseedError)
+        assert isinstance(NoSuchSourceID("foo"), PymseedError)
+
+    def test_pymseed_error_is_runtime_error(self) -> None:
+        # The base intentionally inherits from RuntimeError because the
+        # concrete subclasses describe runtime / I/O / data-corruption
+        # conditions (bad CRC, EOF, wrong length, allocation failure,
+        # missing source ID) rather than "right type, wrong value" inputs
+        # that ValueError is meant for. This was a deliberate breaking
+        # change from ValueError; callers catching `except ValueError`
+        # to pick up pymseed errors must now use PymseedError (preferred)
+        # or RuntimeError.
+        assert issubclass(PymseedError, RuntimeError)
+        assert isinstance(MiniSEEDError(-1, "x"), RuntimeError)
+        assert isinstance(NoSuchSourceID("foo"), RuntimeError)
+
+        # Make the breaking change explicit: pymseed errors are no longer
+        # ValueError. Regression-protect anyone tempted to "fix" the base.
+        assert not issubclass(PymseedError, ValueError)
+        assert not isinstance(MiniSEEDError(-1, "x"), ValueError)
+        assert not isinstance(NoSuchSourceID("foo"), ValueError)
+
+    def test_single_except_catches_all_pymseed_errors(self) -> None:
+        # The whole point of the base class: one except clause catches every
+        # concrete subclass.
+        for exc in (MiniSEEDError(-1, "x"), NoSuchSourceID("foo")):
+            try:
+                raise exc
+            except PymseedError as caught:
+                assert caught is exc
+            else:
+                pytest.fail(f"PymseedError did not catch {type(exc).__name__}")
 
 
 class TestMiniSEEDError:

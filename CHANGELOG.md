@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   use as a last resort when those methods are not possible.
 
 ### Changed
+- **Breaking:** pymseed exceptions now inherit from RuntimeError (via the new
+  PymseedError base) instead of ValueError.
 - Where string filenames are accepted also accept os.PathLike (e.g. pathlib.Path) and
   reject other non-str types with a clear TypeError.
 - Unify the record-length parameter name across APIs for creating records to

@@ -5,7 +5,7 @@ from .definitions import (
     SubSecond,
     TimeFormat,
 )
-from .exceptions import MiniSEEDError
+from .exceptions import MiniSEEDError, PymseedError
 from .logging import (
     clear_error_messages,
     configure_logging,
@@ -45,6 +45,7 @@ __all__ = [
     "DataEncoding",
     "TimeFormat",
     "SubSecond",
+    "PymseedError",
     "MiniSEEDError",
     "MS3Record",
     "MS3RecordReader",
