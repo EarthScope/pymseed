@@ -916,7 +916,7 @@ class MS3TraceList:
 
     def __init__(
         self,
-        file_name: "str | os.PathLike[str] | None" = None,
+        file_name: str | os.PathLike[str] | None = None,
         buffer: bytes | None = None,
         unpack_data: bool = False,
         sourceid: str | None = None,
@@ -1099,7 +1099,7 @@ class MS3TraceList:
 
     def add_file(
         self,
-        file_name: "str | os.PathLike[str]",
+        file_name: str | os.PathLike[str],
         unpack_data: bool = False,
         sourceid: str | None = None,
         starttime: str | None = None,
@@ -2127,7 +2127,7 @@ class MS3TraceList:
 
     def to_file(
         self,
-        filename: "str | os.PathLike[str]",
+        filename: str | os.PathLike[str],
         overwrite: bool = False,
         max_record_length: int = 4096,
         max_reclen: int | None = None,

@@ -288,12 +288,12 @@ def test_tracelist_add_data_rejects_ambiguous_time_arguments():
     silently when multiple were passed. Enforce the exclusivity and keep
     the existing 'none-passed' error too."""
     traces = MS3TraceList()
-    common = dict(
-        sourceid="FDSN:XX_STA__B_H_Z",
-        data_samples=[1, 2, 3],
-        sample_type="i",
-        sample_rate=20.0,
-    )
+    common = {
+        "sourceid": "FDSN:XX_STA__B_H_Z",
+        "data_samples": [1, 2, 3],
+        "sample_type": "i",
+        "sample_rate": 20.0,
+    }
 
     # None passed: pre-existing contract preserved.
     with pytest.raises(ValueError, match="exactly one of"):
@@ -962,7 +962,7 @@ def test_mstracelist_to_file(tmp_path):
 
 def test_mstracelist_nosuchfile():
     with pytest.raises(MiniSEEDError):
-        traces = MS3TraceList("NOSUCHFILE")
+        MS3TraceList("NOSUCHFILE")
 
 
 # ---------------------------------------------------------------------------

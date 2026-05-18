@@ -242,7 +242,7 @@ def test_msrecord_read_records_summary():
 def test_msrecord_nosuchfile():
     with pytest.raises(MiniSEEDError):
         with MS3Record.from_file("NOSUCHFILE") as msreader:
-            msr = msreader.read()
+            msreader.read()
 
 
 def test_msrecord_reader_accepts_pathlike_source():

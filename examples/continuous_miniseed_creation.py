@@ -33,7 +33,7 @@ import threading
 from collections.abc import Generator
 from typing import Any
 
-from pymseed import DataEncoding, MS3TraceList, NSTMODULUS, system_time
+from pymseed import NSTMODULUS, DataEncoding, MS3TraceList, system_time
 
 # Global flag and event for handling shutdown signals
 shutdown_requested = False

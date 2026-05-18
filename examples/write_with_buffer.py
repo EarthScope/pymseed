@@ -80,7 +80,7 @@ max_record_length = 512
 #
 # This could be any data collection operation that continually
 # adds samples to the trace list.
-for i in range(10):
+for _ in range(10):
     # Add new synthetic data to each trace using generators
     traces.add_data(
         sourceid="FDSN:XX_TEST__B_S_0",

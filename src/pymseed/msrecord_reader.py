@@ -115,14 +115,14 @@ class MS3RecordReader:
 
     def __init__(
         self,
-        source: "str | os.PathLike[str] | int" = _INPUT_SENTINEL,
+        source: str | os.PathLike[str] | int = _INPUT_SENTINEL,
         start_byte_offset: int = 0,
         end_byte_offset: int = 0,
         unpack_data: bool = False,
         skip_not_data: bool = False,
         validate_crc: bool = True,
         verbose: int = 0,
-        input: "str | os.PathLike[str] | int" = _INPUT_SENTINEL,
+        input: str | os.PathLike[str] | int = _INPUT_SENTINEL,
     ) -> None:
         self._msfp_ptr = ffi.new("MS3FileParam **")
         self._msr_ptr = ffi.new("MS3Record **")
