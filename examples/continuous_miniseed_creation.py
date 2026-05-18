@@ -205,7 +205,7 @@ def create_continuous_miniseed(
                     encoding=encoding,
                     flush_data=False,
                     flush_idle_seconds=flush_idle_seconds,
-                    removed_packed=True,
+                    remove_packed=True,
                 ):
                     output_handle.write(record)
                     packed_records += 1
@@ -232,7 +232,7 @@ def create_continuous_miniseed(
             record_length=record_length,
             encoding=encoding,
             flush_data=True,
-            removed_packed=True,
+            remove_packed=True,
         ):
             output_handle.write(record)
             packed_records += 1

@@ -23,13 +23,13 @@ The general pattern is (writing bytes to a file for example):
     # Generate filled records during regular data flow
     for record in traces.generate(flush_data=False,
                                   flush_idle_seconds=60,
-                                  removed_packed=True):
+                                  remove_packed=True):
         # Write the record (bytes) to the output file
         output_file.write(record)
 
   # Flush any data remaining in the buffers
   for record in traces.generate(flush_data=True,
-                                removed_packed=True):
+                                remove_packed=True):
     output_file.write(record)
 ```
 
@@ -115,7 +115,7 @@ for i in range(10):
         record_length=record_length,
         flush_data=False,
         flush_idle_seconds=60,
-        removed_packed=True,
+        remove_packed=True,
     ):
         output_file.write(record)
         total_records += 1

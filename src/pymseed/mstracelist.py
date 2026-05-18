@@ -1901,7 +1901,8 @@ class MS3TraceList:
         extra_headers: str | None = None,
         flush_data: bool = True,
         flush_idle_seconds: int = 0,
-        removed_packed: bool = False,
+        remove_packed: bool = False,
+        removed_packed: bool | None = None,
         verbose: int = 0,
     ) -> Iterator[bytes]:
         """Create miniSEED record(s) for data in the trace list.
@@ -1942,9 +1943,16 @@ class MS3TraceList:
                 have not been updated within the specified number of seconds.
                 Default is 0 (disabled).
 
-            removed_packed: If True, data samples packed into records will be
+            remove_packed: If True, data samples packed into records will be
                 removed from the trace list.  See "Rolling buffer" section below
                 for more details. Default is False.
+
+            removed_packed: Deprecated misspelling of ``remove_packed``;
+                accepted for backward compatibility and forwarded to
+                ``remove_packed`` (overriding any explicit ``remove_packed``
+                value passed in the same call). Passing it emits a
+                ``DeprecationWarning``. This alias will be removed in a
+                future release.
 
             verbose: Verbosity level for libmseed output (0=quiet, 1=info,
                 2=detailed). Default is 0 (quiet).
@@ -1987,21 +1995,54 @@ class MS3TraceList:
             For creating filled records during regular data flow:
             * `flush_data=False` to keep data in the trace list
             * `flush_idle_seconds=N` to flush data segments that have not been updated within N seconds
-            * `removed_packed=True` to remove packed data from the trace list
+            * `remove_packed=True` to remove packed data from the trace list
 
             To flush the all data from the buffer on termination:
             * `flush_data=True` to flush all data from the trace list
-            * `removed_packed=True` to remove packed data from the trace list
+            * `remove_packed=True` to remove packed data from the trace list
 
         See also:
             - to_file()
         """
+        if removed_packed is not None:
+            warnings.warn(
+                "'removed_packed' is a deprecated misspelling and will be "
+                "removed in a future release; use 'remove_packed' instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            remove_packed = removed_packed
+
+        return self._generate(
+            record_length=record_length,
+            encoding=encoding,
+            format_version=format_version,
+            extra_headers=extra_headers,
+            flush_data=flush_data,
+            flush_idle_seconds=flush_idle_seconds,
+            remove_packed=remove_packed,
+            verbose=verbose,
+        )
+
+    def _generate(
+        self,
+        record_length: int,
+        encoding: DataEncoding,
+        format_version: int | None,
+        extra_headers: str | None,
+        flush_data: bool,
+        flush_idle_seconds: int,
+        remove_packed: bool,
+        verbose: int,
+    ) -> Iterator[bytes]:
+        """Generator body for :meth:`generate`. Kept private so the public
+        wrapper can validate arguments eagerly before the first yield."""
         flags = 0
 
         if flush_data:
             flags |= clibmseed.MSF_FLUSHDATA
 
-        if not removed_packed:
+        if not remove_packed:
             flags |= clibmseed.MSF_MAINTAINMSTL
 
         if format_version is not None:

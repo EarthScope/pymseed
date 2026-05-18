@@ -1,6 +1,7 @@
 import io
 import math
 import os
+import warnings
 
 import pytest
 
@@ -285,6 +286,36 @@ def test_tracelist_unpack_recordlist_rejects_non_buffer():
     count = seg.unpack_recordlist(buffer=arr)
     assert count == seg.samplecnt
     assert any(v != 0 for v in arr)  # buffer was actually written into
+
+
+def test_tracelist_generate_removed_packed_deprecated_alias():
+    """`generate(removed_packed=...)` is a typo'd alias for `remove_packed`.
+    Keep accepting it for backward compatibility but emit DeprecationWarning
+    eagerly and produce the same output as the canonical spelling."""
+
+    def _populated_list() -> MS3TraceList:
+        traces = MS3TraceList()
+        traces.add_data(
+            "FDSN:XX_STA__H_H_Z",
+            [1, 2, 3, 4, 5],
+            "i",
+            100.0,
+            start_time_str="2023-01-01T00:00:00.000Z",
+        )
+        return traces
+
+    # Canonical spelling: silent.
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        records_new = list(_populated_list().generate(remove_packed=True))
+
+    # Deprecated spelling: DeprecationWarning raised eagerly at the
+    # generate() call (not lazily on first iteration), and the resulting
+    # records are byte-identical to the canonical spelling.
+    with pytest.warns(DeprecationWarning, match="removed_packed"):
+        gen = _populated_list().generate(removed_packed=True)
+    records_old = list(gen)
+    assert records_old == records_new
 
 
 def test_tracelist_add_file_does_not_retain_filename_buffer_without_record_list():
@@ -674,7 +705,7 @@ def test_mstracelist_generate_rollingbuffer():
             format_version=format_version,
             flush_data=False,
             flush_idle_seconds=10,
-            removed_packed=True,
+            remove_packed=True,
         ):
             record_buffer += record
             record_count += 1
@@ -684,7 +715,7 @@ def test_mstracelist_generate_rollingbuffer():
         record_length=record_length,
         format_version=format_version,
         flush_data=True,
-        removed_packed=True,
+        remove_packed=True,
     ):
         record_buffer += record
         record_count += 1

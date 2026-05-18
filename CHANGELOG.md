@@ -34,6 +34,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Free packer when `MS3TraceList.generate()` when the consumer breaks, raises, or
   otherwise exits the generator before exhausting it.
 - Simplify `MS3TraceList.unpack_recordlist()` so ffi.from_buffer() is called exactly once.
+- Avoid an unbounded retention of per-file C string buffers in `MS3TraceList.add_file()`
+  when `record_list=False`.
+- Begin deprecation of the typo'd `MS3TraceList.generate(removed_packed=...)`
+  parameter in favor of `remove_packed=...`.
 - Type annotations converted to PEP 604 / PEP 585 form.
 - Apply consistent python formatting with ruff.
 
