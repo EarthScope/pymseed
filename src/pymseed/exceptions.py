@@ -26,20 +26,28 @@ class MiniSEEDError(PymseedError):
         self.status_code = status_code
         self.message = message
 
-        # Capture error messages from libmseed registry for generic errors
+        # Drain libmseed's per-thread log registry for generic errors so the
+        # exception carries the underlying diagnostic context. Must run
+        # BEFORE _render() because the renderer reads `self.error_messages`.
         if status_code == clibmseed.MS_GENERROR:
             self.error_messages = get_error_messages()
         else:
             self.error_messages = []
 
+        # Cache the rendered description once.
+        self._rendered = self._render()
+
     def __str__(self) -> str:
+        return self._rendered
+
+    def _render(self) -> str:
         # For generic errors, use captured error messages if available
         if self.status_code == clibmseed.MS_GENERROR and self.error_messages:
             library_message = "; ".join(self.error_messages)
         else:
-            library_message = error_string(self.status_code)
-            if library_message is None:
-                library_message = f"Unknown error code: {self.status_code}"
+            library_message = (
+                error_string(self.status_code) or f"Unknown error code: {self.status_code}"
+            )
 
         if self.message:
             return f"{library_message} :: {self.message}"

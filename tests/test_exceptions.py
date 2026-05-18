@@ -90,6 +90,33 @@ class TestMiniSEEDError:
         rendering = str(exc)
         assert "boom" in rendering
 
+    def test_str_renders_once_and_caches(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Logging frameworks often stringify an exception more than once.
+        Verify that ``str(exc)`` is cached: ``error_string`` (a C-call) is
+        invoked at most during ``__init__``, never again on subsequent
+        ``str()`` calls.
+        """
+        from pymseed import exceptions as ex_mod
+
+        call_count = {"n": 0}
+        real_error_string = ex_mod.error_string
+
+        def counting_error_string(code: int) -> str | None:
+            call_count["n"] += 1
+            return real_error_string(code)
+
+        monkeypatch.setattr(ex_mod, "error_string", counting_error_string)
+
+        exc = MiniSEEDError(-1, "boom")
+        baseline = call_count["n"]
+        # Render the exception many times.
+        for _ in range(50):
+            str(exc)
+        assert call_count["n"] == baseline, (
+            f"str(exc) re-invoked error_string: {call_count['n']} calls "
+            f"(expected {baseline} after construction)"
+        )
+
     def test_str_has_no_trailing_space_when_message_is_none(self) -> None:
         # Regression: the old f-string concatenation produced a trailing space
         # like "Error reading miniSEED record " when message was None/empty.
