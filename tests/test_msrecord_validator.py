@@ -233,7 +233,20 @@ class TestExtraHeadersSchemaLoadFailures:
     exceptions too narrow). All failure modes should produce a descriptive
     per-record ValidationError rather than aborting validate() with an
     unhandled exception.
+
+    The loader is module-level cached via functools.cache, so these tests
+    clear the cache before AND after each scenario so the patched failure
+    mode is what gets loaded, and so a poisoned negative result doesn't
+    leak into other tests.
     """
+
+    @pytest.fixture(autouse=True)
+    def _clear_schema_cache(self):
+        from pymseed import msrecord_validator as mv
+
+        mv._load_extra_headers_validator.cache_clear()
+        yield
+        mv._load_extra_headers_validator.cache_clear()
 
     def test_corrupt_schema_file_does_not_abort_validation(
         self, monkeypatch: pytest.MonkeyPatch
@@ -285,6 +298,30 @@ class TestExtraHeadersSchemaLoadFailures:
         skipped = [e for e in errors if "Extra headers validation skipped" in e.message]
         assert len(skipped) >= 1
         assert "bundled schema file unavailable" in skipped[0].message
+
+    def test_schema_loader_is_cached(self) -> None:
+        """The loader's cached outcome must be reused across repeated
+        validate() calls and across separate validator instances using the
+        same schema_id — verified by inspecting cache_info."""
+        from pymseed import msrecord_validator as mv
+
+        buffer = _get_record_with_bad_extra_headers()
+
+        # First call populates the cache (1 miss, 0 hits).
+        MS3RecordValidator.from_buffer(
+            buffer, validate_crc=False, validate_extra_headers=True
+        ).validate()
+        info1 = mv._load_extra_headers_validator.cache_info()
+        assert info1.misses == 1
+        assert info1.hits == 0
+
+        # Second validate() call on a fresh instance must hit the cache.
+        MS3RecordValidator.from_buffer(
+            buffer, validate_crc=False, validate_extra_headers=True
+        ).validate()
+        info2 = mv._load_extra_headers_validator.cache_info()
+        assert info2.misses == 1, "expected no additional schema load"
+        assert info2.hits == 1
 
 
 class TestMS3RecordValidatorPartialData:

@@ -8,6 +8,7 @@ parse when possible.
 
 from __future__ import annotations
 
+import functools
 import os
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -26,6 +27,38 @@ _RecordTuple = tuple[Any, int, int]
 _KNOWN_SCHEMAS: dict[str, str] = {
     "FDSN-v1.0": "ExtraHeaders-FDSN-v1.0.schema-2020-12.json",
 }
+
+
+@functools.cache
+def _load_extra_headers_validator(schema_id: str) -> tuple[Any, str | None]:
+    """Load (and cache) the JSON schema validator for ``schema_id``.
+
+    Returns ``(validator, None)`` on success, or ``(None, error_message)``
+    on any failure. The result is cached at the module level via
+    :func:`functools.cache` so the bundled-schema read + JSON parse +
+    jsonschema-rs validator compile happens at most once per process per
+    schema. Both success and failure outcomes are cached, so a broken
+    install reports the same descriptive error without retrying the
+    failing load on every record.
+
+    Tests that need to exercise distinct loading outcomes for the same
+    ``schema_id`` should call ``_load_extra_headers_validator.cache_clear()``
+    between scenarios.
+    """
+    try:
+        from ._extra_headers_jsonschema import validator_for_extra_headers_schema
+
+        schema_bytes = files("pymseed.schemas").joinpath(_KNOWN_SCHEMAS[schema_id]).read_bytes()
+        validator = validator_for_extra_headers_schema(json_loads(schema_bytes))
+        return validator, None
+    except ImportError:
+        return None, "jsonschema-rs not installed"
+    except (FileNotFoundError, OSError) as e:
+        return None, f"bundled schema file unavailable: {e}"
+    except Exception as e:
+        # Covers json_loads failure, jsonschema-rs validator-construction
+        # errors, etc. — any of these means the install is broken.
+        return None, f"failed to load JSON schema: {type(e).__name__}: {e}"
 
 
 @dataclass(frozen=True)
@@ -347,31 +380,15 @@ class MS3RecordValidator:
 
         msr_ptr = ffi.new("MS3Record **")
 
-        # Pre-load JSON schema validator once — avoid reloading per-record.
+        # Resolve the extra-headers JSON schema validator (cached at module level)
         _eh_validator: Any = None
         _eh_load_error: str | None = None
         if self._validate_extra_headers:
             if self._extra_headers_schema not in _KNOWN_SCHEMAS:
                 raise ValueError(f"Unknown schema_id: {self._extra_headers_schema}")
-            try:
-                from ._extra_headers_jsonschema import (
-                    validator_for_extra_headers_schema,
-                )
-
-                schema_bytes = (
-                    files("pymseed.schemas")
-                    .joinpath(_KNOWN_SCHEMAS[self._extra_headers_schema])
-                    .read_bytes()
-                )
-                _eh_validator = validator_for_extra_headers_schema(json_loads(schema_bytes))
-            except ImportError:
-                _eh_load_error = "jsonschema-rs not installed"
-            except (FileNotFoundError, OSError) as e:
-                _eh_load_error = f"bundled schema file unavailable: {e}"
-            except Exception as e:
-                # Covers json_loads failure, jsonschema-rs validator-construction
-                # errors, etc. — any of these means the install is broken.
-                _eh_load_error = f"failed to load JSON schema: {type(e).__name__}: {e}"
+            _eh_validator, _eh_load_error = _load_extra_headers_validator(
+                self._extra_headers_schema
+            )
 
         try:
             for buf_ptr, offset, record_length in self._source:
