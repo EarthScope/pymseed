@@ -183,6 +183,38 @@ def test_pack_rejects_partial_sample_args():
         msr.pack(_noop, None, sample_type="i")
 
 
+def test_msrecord_encoding_setter():
+    """Encoding setter validates against the 0..255 miniSEED on-wire range."""
+    msr = MS3Record()
+
+    # Fresh record reports -1 (libmseed's "not set" sentinel) for the getter.
+    assert msr.encoding == -1
+
+    # Real encoding values should pass through unchanged.
+    msr.encoding = DataEncoding.STEIM2
+    assert msr.encoding == DataEncoding.STEIM2
+
+    # Range boundaries should both be accepted.
+    msr.encoding = 0
+    assert msr.encoding == 0
+    msr.encoding = 255
+    assert msr.encoding == 255
+
+    # Out-of-range values must raise a clear ValueError, not OverflowError.
+    with pytest.raises(ValueError, match="0..255"):
+        msr.encoding = 256
+    with pytest.raises(ValueError, match="0..255"):
+        msr.encoding = -1  # getter sentinel, but not a valid assignment
+    with pytest.raises(ValueError, match="0..255"):
+        msr.encoding = 1_000_000
+
+    # State after a failed assignment is unchanged.
+    msr.encoding = DataEncoding.FLOAT32
+    with pytest.raises(ValueError):
+        msr.encoding = 999
+    assert msr.encoding == DataEncoding.FLOAT32
+
+
 def test_msrecord_sourceid_setter():
     """Setter accepts boundary lengths, overwrites cleanly, and rejects oversize."""
 

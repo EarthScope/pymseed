@@ -587,7 +587,15 @@ class MS3Record:
 
     @encoding.setter
     def encoding(self, value: int) -> None:
-        """Set data encoding format"""
+        """Set data encoding format.
+
+        Accepts any value in the range 0..255.
+
+        Raises:
+            ValueError: If ``value`` is outside the range 0..255.
+        """
+        if not 0 <= value <= 255:
+            raise ValueError(f"encoding must be in the range 0..255; got {value}")
         self._msr.encoding = value
 
     @property
