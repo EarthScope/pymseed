@@ -1877,9 +1877,9 @@ class MS3TraceList:
         # Set handler function as CFFI callback function
         self._record_handler = handler
         self._record_handler_data = handlerdata
-
-        # Create callback function type and instance
-        RECORD_HANDLER = ffi.callback("void(char *, int, void *)", self._record_handler_wrapper)
+        self._record_handler_callback = ffi.callback(
+            "void(char *, int, void *)", self._record_handler_wrapper
+        )
 
         pack_flags = 0
         if flush_data:
@@ -1897,7 +1897,7 @@ class MS3TraceList:
 
         packed_records = clibmseed.mstl3_pack_ppupdate_flushidle(
             self._mstl,
-            RECORD_HANDLER,
+            self._record_handler_callback,
             ffi.NULL,
             max_record_length,
             encoding,
