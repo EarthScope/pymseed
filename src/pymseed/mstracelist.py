@@ -345,13 +345,13 @@ class MS3TraceSeg:
         NOTE: This is a guesstimate based on the first record in the record list.
         It is not guaranteed to be correct for any other records in the list.
         """
-        if self._seg.recordlist is None:
+        if not self._seg.recordlist:
             raise ValueError("No record list available to determine sample size and type")
 
         # Get the first record
         first_record_ptr = self._seg.recordlist.first
 
-        if first_record_ptr is None:
+        if not first_record_ptr:
             raise ValueError("No records in record list")
 
         return encoding_sizetype(first_record_ptr.msr.encoding)

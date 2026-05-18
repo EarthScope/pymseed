@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Harden `MS3Record.encoding` by checking for values 0..255.
 - Harden `MS3Record.packet()` and `MS3Record.generate()` by raising an exception
   when only one of `data_samples` or `sample_type` is provided.
+- Fix `MS3TraceList.sample_size_type()` crash on empty record list.
 - Type annotations converted to PEP 604 / PEP 585 form.
 - Apply consistent python formatting with ruff.
 

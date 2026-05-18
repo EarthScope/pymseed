@@ -168,6 +168,19 @@ def test_tracelist_read_buffer():
     ]
 
 
+def test_tracelist_sample_size_type_requires_record_list():
+    """sample_size_type needs record_list=True; absent it, raises a clear ValueError."""
+    # Default construction does not retain a record list.
+    traces = MS3TraceList.from_file(test_path3, unpack_data=False)
+    traceid = traces.get_traceid("FDSN:IU_COLA_00_B_H_Z")
+    seg = traceid[0]
+
+    assert seg.recordlist is None  # contract sanity check
+
+    with pytest.raises(ValueError, match="No record list available"):
+        _ = seg.sample_size_type
+
+
 def test_tracelist_read_recordlist():
     traces = MS3TraceList(test_path3, unpack_data=False, record_list=True)
 
