@@ -47,6 +47,22 @@ class TestMiniSEEDError:
         rendering = str(exc)
         assert "boom" in rendering
 
+    def test_str_has_no_trailing_space_when_message_is_none(self) -> None:
+        # Regression: the old f-string concatenation produced a trailing space
+        # like "Error reading miniSEED record " when message was None/empty.
+        # That broke test assertions and log scraping. Verify the trailing
+        # space is gone for None, empty string, and a non-empty message.
+        for message in (None, ""):
+            exc = MiniSEEDError(-1, message)
+            rendering = str(exc)
+            assert rendering == rendering.rstrip(), (
+                f"str(MiniSEEDError(-1, {message!r})) has trailing whitespace: {rendering!r}"
+            )
+
+        # Sanity: non-empty message still gets the ` :: <message>` suffix.
+        exc = MiniSEEDError(-1, "boom")
+        assert str(exc).endswith(" :: boom")
+
     @pytest.mark.parametrize(
         "args",
         [

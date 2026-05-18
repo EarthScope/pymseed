@@ -26,7 +26,9 @@ class MiniSEEDError(ValueError):
             if library_message is None:
                 library_message = f"Unknown error code: {self.status_code}"
 
-        return f"{library_message} {':: ' + self.message if self.message else ''}"
+        if self.message:
+            return f"{library_message} :: {self.message}"
+        return library_message
 
 
 class NoSuchSourceID(ValueError):
