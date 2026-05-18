@@ -2003,14 +2003,13 @@ class MS3TraceList:
         record_pp = ffi.new("char **")
         reclen_p = ffi.new("int32_t *")
 
-        # Pack miniSEED records and yield each record
-        while clibmseed.mstl3_pack_next(packer, flags, record_pp, reclen_p) == 1:
-            yield ffi.buffer(record_pp[0], reclen_p[0])[:]
-
-        # Free packer
-        packer_pp = ffi.new("MS3TraceListPacker **")
-        packer_pp[0] = packer
-        clibmseed.mstl3_pack_free(packer_pp, ffi.NULL)
+        try:
+            while clibmseed.mstl3_pack_next(packer, flags, record_pp, reclen_p) == 1:
+                yield ffi.buffer(record_pp[0], reclen_p[0])[:]
+        finally:
+            packer_pp = ffi.new("MS3TraceListPacker **")
+            packer_pp[0] = packer
+            clibmseed.mstl3_pack_free(packer_pp, ffi.NULL)
 
     def to_file(
         self,

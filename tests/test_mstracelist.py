@@ -168,6 +168,70 @@ def test_tracelist_read_buffer():
     ]
 
 
+class _PackFreeTracker:
+    """Wraps the cffi lib namespace, counting calls to mstl3_pack_free."""
+
+    def __init__(self, real):
+        self._real = real
+        self.pack_free_count = 0
+
+    def __getattr__(self, name):
+        attr = getattr(self._real, name)
+        if name == "mstl3_pack_free":
+            tracker = self
+
+            def wrapped(*args, **kwargs):
+                tracker.pack_free_count += 1
+                return attr(*args, **kwargs)
+
+            return wrapped
+        return attr
+
+
+def _install_pack_free_tracker(monkeypatch) -> _PackFreeTracker:
+    """Replace mstracelist.clibmseed with a tracker; return it for assertions."""
+    from pymseed import mstracelist
+
+    tracker = _PackFreeTracker(mstracelist.clibmseed)
+    monkeypatch.setattr(mstracelist, "clibmseed", tracker)
+    return tracker
+
+
+def test_tracelist_generate_frees_packer_on_full_consumption(monkeypatch):
+    """Baseline: exhausting the generator frees the packer exactly once."""
+    tracker = _install_pack_free_tracker(monkeypatch)
+    traces = MS3TraceList.from_file(test_path3, unpack_data=True)
+    for _ in traces.generate():
+        pass
+    assert tracker.pack_free_count == 1
+
+
+def test_tracelist_generate_frees_packer_on_early_break(monkeypatch):
+    """Breaking out of the generator after one record still frees the packer."""
+    tracker = _install_pack_free_tracker(monkeypatch)
+    traces = MS3TraceList.from_file(test_path3, unpack_data=True)
+    gen = traces.generate()
+    next(gen)  # take exactly one record
+    gen.close()  # simulates `break` / falling out of the for-loop
+    assert tracker.pack_free_count == 1
+
+
+def test_tracelist_generate_frees_packer_on_consumer_exception(monkeypatch):
+    """An exception raised by the consumer mid-iteration still frees the packer."""
+    tracker = _install_pack_free_tracker(monkeypatch)
+    traces = MS3TraceList.from_file(test_path3, unpack_data=True)
+
+    class ConsumerError(Exception):
+        pass
+
+    with pytest.raises(ConsumerError):
+        for i, _ in enumerate(traces.generate()):
+            if i == 1:
+                raise ConsumerError("simulated consumer failure")
+
+    assert tracker.pack_free_count == 1
+
+
 def test_tracelist_sample_size_type_requires_record_list():
     """sample_size_type needs record_list=True; absent it, raises a clear ValueError."""
     # Default construction does not retain a record list.
