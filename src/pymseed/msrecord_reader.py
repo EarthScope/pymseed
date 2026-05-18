@@ -34,9 +34,18 @@ class MS3RecordReader:
             that an arbitrary non-negative integer corresponds to a valid open
             descriptor — passing the wrong number will silently read from
             whatever ``fd`` is currently bound to that slot (commonly
-            ``0=stdin``, ``1=stdout``, ``2=stderr``). The file or descriptor
-            will be automatically closed when :meth:`close` is called or when
-            the object is used as a context manager.
+            ``0=stdin``, ``1=stdout``, ``2=stderr``).
+
+            Ownership semantics differ by input type:
+
+            * **Path (str):** libmseed opens an internal file handle and
+              closes it automatically on :meth:`close`, context-manager exit,
+              or garbage collection.
+            * **File descriptor (int):** the caller retains ownership of the
+              descriptor. libmseed reads through an internal ``dup`` of the
+              fd and closes only the duplicate; the original fd is **not**
+              closed by :meth:`close`, ``__exit__``, or ``__del__``, and
+              the caller is responsible for closing it.
 
         start_byte_offset (int, optional): Start byte offset in the input bytes stream.
             Defaults to 0.
@@ -76,15 +85,17 @@ class MS3RecordReader:
     Total samples: 12600
 
 
-        Using with an open file descriptor:
+        Using with an open file descriptor (caller closes the fd):
 
     >>> import os
     >>> flags = os.O_RDONLY | getattr(os, 'O_BINARY', 0) # For Windows portability
     >>> fd = os.open('examples/example_data.mseed', flags)
-
-    >>> total_records = 0
-    >>> for msr in MS3Record.from_file(fd, unpack_data=False):
-    ...     total_records += 1
+    >>> try:
+    ...     total_records = 0
+    ...     for msr in MS3Record.from_file(fd, unpack_data=False):
+    ...         total_records += 1
+    ... finally:
+    ...     os.close(fd)
     >>> print(f"Total records: {total_records}")
     Total records: 107
 
