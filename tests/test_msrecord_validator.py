@@ -639,6 +639,29 @@ class TestMS3RecordValidatorFromFilelike:
         with pytest.raises(ValueError):
             MS3RecordValidator.from_filelike(fh, chunk_size=1_073_741_825)
 
+    def test_from_filelike_rejects_non_filelike(self) -> None:
+        """Without a .read() method, fail fast at the factory rather than
+        with a context-free AttributeError deep inside the iterator on the
+        first chunk read."""
+
+        class _NoReadMethod:
+            pass
+
+        class _NonCallableRead:
+            read = "this is not a method"
+
+        for bad in (
+            b"raw bytes",
+            "/some/path",
+            None,
+            42,
+            [1, 2],
+            _NoReadMethod(),
+            _NonCallableRead(),
+        ):
+            with pytest.raises(TypeError, match="callable .read"):
+                MS3RecordValidator.from_filelike(bad)
+
     def test_non_seekable_stream(self) -> None:
         """from_filelike works with a forward-only stream that has no seek/tell."""
 

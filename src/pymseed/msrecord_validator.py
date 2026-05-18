@@ -364,6 +364,13 @@ class MS3RecordValidator:
 
             errors, traces = MS3RecordValidator.from_filelike(fh).validate()
         """
+        # Fail fast at the factory level if fh is not a file-like object.
+        if not callable(getattr(fh, "read", None)):
+            raise TypeError(
+                "fh must be a file-like object exposing a callable .read(n) "
+                f"method; got {type(fh).__name__}"
+            )
+
         if chunk_size <= 0:
             raise ValueError("chunk_size must be greater than 0")
         elif chunk_size > 1_073_741_824:
