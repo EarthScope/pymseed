@@ -452,6 +452,71 @@ class TestMS3RecordParse:
         assert mv.itemsize == 1
         assert mv.shape == (msr.reclen,)
 
+    def test_parse_into_reuses_owning_wrapper(self):
+        """parse_into() works on a default-constructed (owning) wrapper."""
+        with open(test_pack3, "rb") as f:
+            buf = f.read()
+
+        msr = MS3Record()
+        original_ptr = msr._msr
+        result = msr.parse_into(buf)
+
+        assert result is msr
+        # libmseed reuses the existing struct in place; pointer is stable.
+        assert msr._msr == original_ptr
+        assert msr.sourceid == "FDSN:XX_TEST__B_S_X"
+        assert msr.samplecnt == 500
+        assert msr._msr_allocated is True
+
+        # Second call on the same wrapper must also work (the reuse-in-loop case).
+        msr.parse_into(buf)
+        assert msr.samplecnt == 500
+
+    def test_parse_into_rejects_borrowed_wrapper(self):
+        """parse_into() on a non-owning view must raise instead of corrupting
+        the foreign owner's struct."""
+        with open(test_pack3, "rb") as f:
+            buf = f.read()
+
+        # Establish a real owner and a borrowed view into the same C struct.
+        owner = MS3Record.parse(buf)
+        view = MS3Record(recordptr=owner._msr)  # owns=False by default
+        assert view._msr_allocated is False
+
+        with pytest.raises(ValueError, match="own"):
+            view.parse_into(buf)
+
+        # Owner's state must be untouched by the failed call.
+        assert owner.sourceid == "FDSN:XX_TEST__B_S_X"
+        assert owner.samplecnt == 500
+
+    def test_parse_owns_record(self):
+        """parse() returns an owning record; non-recordptr construction also owns."""
+        with open(test_pack3, "rb") as f:
+            buf = f.read()
+
+        # parse() must produce a wrapper that owns and will free its C struct.
+        parsed = MS3Record.parse(buf)
+        assert parsed._msr_allocated is True
+
+        # Default constructor allocates and owns.
+        fresh = MS3Record()
+        assert fresh._msr_allocated is True
+
+        # Wrapping an existing pointer without owns=True is a non-owning view
+        # (the default for callers like from_buffer / from_filelike / readers).
+        view = MS3Record(recordptr=parsed._msr)
+        assert view._msr_allocated is False
+
+        # Explicit owns=True flag flips ownership for the recordptr case.
+        # NOTE: we don't actually free here — just assert the flag plumbs through.
+        flagged = MS3Record(recordptr=parsed._msr, owns=True)
+        assert flagged._msr_allocated is True
+        # Defuse the duplicate-free that would otherwise happen at GC: parsed
+        # holds the real ownership; clear the test wrappers' flags before exit.
+        view._msr_allocated = False
+        flagged._msr_allocated = False
+
     def test_parse_v2_metadata(self):
         """Parse a v2 record and verify all header fields."""
         with open(test_pack2, "rb") as f:

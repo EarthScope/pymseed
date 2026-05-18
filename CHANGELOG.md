@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fix return typing and improve behavior of `nstime2timestr()`.
 - Fix `sourceid2nslc()` to be honest about return type and accurate docs.
 - Fix return type for `MS3Record.encoding_str()`, will never be None.
+- Add ownership test to `MS3Record.parse_into()` to avoid clobbering foreign data.
 - Type annotations converted to PEP 604 / PEP 585 form.
 - Apply consistent python formatting with ruff.
 

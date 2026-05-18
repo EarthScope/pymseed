@@ -94,6 +94,7 @@ class MS3Record:
         reclen: int | None = None,
         encoding: int | None = None,
         recordptr: Any = None,
+        owns: bool = False,
     ) -> None:
         """
         Initialize MS3Record wrapper.
@@ -110,6 +111,11 @@ class MS3Record:
                     DataEncoding.FLOAT32, DataEncoding.FLOAT64. If None, uses library default.
             recordptr: Internal C structure pointer. Only used when wrapping
                       existing parsed records. Should not be set by users.
+            owns: Whether this Python wrapper takes ownership of ``recordptr``
+                 and is responsible for freeing it via ``msr3_free`` on
+                 finalization. Ignored when ``recordptr`` is ``None`` (a
+                 freshly allocated record is always owned by its wrapper).
+                 Internal use only.
 
         Note:
             Most users should create records with MS3Record() and set properties
@@ -127,11 +133,11 @@ class MS3Record:
 
         """
         if recordptr is not None:
-            # Wrap an existing record structure
+            # Wrap an existing record structure; ownership is caller-declared.
             self._msr = recordptr
-            self._msr_allocated = False
+            self._msr_allocated = owns
         else:
-            # Allocate a new record
+            # Allocate a new record; the wrapper always owns what it allocates.
             self._msr = clibmseed.msr3_init(ffi.NULL)
             self._msr_allocated = True
 
@@ -2020,9 +2026,7 @@ class MS3Record:
         )
 
         if status == clibmseed.MS_NOERROR:
-            msr = cls(recordptr=msr_ptr[0])
-            msr._msr_allocated = True
-            return msr
+            return cls(recordptr=msr_ptr[0], owns=True)
         else:
             raise MiniSEEDError(status, "Error parsing miniSEED record")
 
@@ -2057,6 +2061,12 @@ class MS3Record:
         Raises:
             MiniSEEDError: If the buffer does not contain a complete, valid
                 miniSEED record.
+            ValueError: If this wrapper does not own its underlying C struct
+                (e.g. it was obtained from an iterator like
+                :meth:`from_buffer`, :meth:`from_filelike`, or
+                :class:`MS3RecordReader`, or it is a view into an
+                :class:`MS3TraceList`). Reparsing into a borrowed struct
+                would silently corrupt the foreign owner's state.
 
         Example:
             >>> from pymseed import MS3Record
@@ -2073,6 +2083,16 @@ class MS3Record:
             parse(): Classmethod that allocates a new MS3Record per call
             from_buffer(): Iterate over multiple records in a buffer
         """
+        if not self._msr_allocated:
+            raise ValueError(
+                "parse_into() requires an MS3Record that owns its C struct; "
+                "this wrapper is a non-owning view into a foreign record "
+                "(e.g. from from_buffer/from_filelike/MS3RecordReader/"
+                "MS3TraceList). Use MS3Record.parse() to allocate a new "
+                "record, or call parse_into() on a wrapper created with "
+                "MS3Record()."
+            )
+
         buf_ptr = ffi.from_buffer(buffer)
         msr_ptr = ffi.new("MS3Record **")
         msr_ptr[0] = self._msr
