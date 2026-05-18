@@ -1997,7 +1997,7 @@ class MS3TraceList:
             flush_idle_seconds,
         )
 
-        if packer is None:
+        if not packer:
             raise MiniSEEDError(-1, "Error initializing packer")
 
         record_pp = ffi.new("char **")
