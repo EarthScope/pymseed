@@ -19,7 +19,12 @@ class PymseedError(RuntimeError):
 
 
 class MiniSEEDError(PymseedError):
-    """Exception for libmseed return values"""
+    """Exception for libmseed return values."""
+
+    status_code: int
+    message: str | None
+    error_messages: list[str]
+    _rendered: str
 
     def __init__(self, status_code: int, message: str | None = None) -> None:
         super().__init__(status_code, message)
@@ -55,7 +60,9 @@ class MiniSEEDError(PymseedError):
 
 
 class NoSuchSourceID(PymseedError):
-    """Exception for non-existent trace source IDs"""
+    """Exception for non-existent trace source IDs."""
+
+    sourceid: str
 
     def __init__(self, sourceid: str) -> None:
         super().__init__(sourceid)
