@@ -1965,8 +1965,9 @@ class MS3Record:
 
         Args:
             source: A file path (``str`` / :class:`os.PathLike`), an open file
-                descriptor (``int``), a file-like object with ``.read()``, or a
-                bytes-like object.
+                descriptor (non-negative ``int``, e.g. from :func:`os.open`),
+                a file-like object with ``.read()``, or a bytes-like object.
+                Negative integers raise :class:`ValueError`.
             **kwargs: Forwarded to the underlying reader method.
 
         Yields:
@@ -1975,6 +1976,7 @@ class MS3Record:
         Raises:
             MiniSEEDError: If a record cannot be parsed.
             TypeError: If *source* is not a recognised type.
+            ValueError: If *source* is a negative integer (not a valid fd).
 
         Examples:
             >>> record_count = 0

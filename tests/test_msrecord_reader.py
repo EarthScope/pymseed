@@ -167,6 +167,23 @@ def test_msrecord_read_record_offsets():
         ]
 
 
+def test_msrecord_from_file_rejects_negative_fd():
+    """Negative ints are not valid file descriptors and must be rejected."""
+    with pytest.raises(ValueError, match="non-negative"):
+        MS3Record.from_file(-1)
+    with pytest.raises(ValueError, match="non-negative"):
+        MS3Record.from_file(-1234)
+
+
+def test_iter_records_rejects_negative_fd():
+    """iter_records routes int sources to from_file; the validation must surface."""
+    # iter_records returns a generator, so the validation has to fire on first
+    # iteration (next()) rather than at call time — confirm that's what happens.
+    gen = MS3Record.iter_records(-1)
+    with pytest.raises(ValueError, match="non-negative"):
+        next(gen)
+
+
 def test_msrecord_read_record_details_fd():
     # Test reading from a file descriptor - we simulate this using the buffer reader
 

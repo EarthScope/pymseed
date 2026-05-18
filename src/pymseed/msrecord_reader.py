@@ -27,8 +27,14 @@ class MS3RecordReader:
 
     Args:
         input (str | int): File path (string) or open file descriptor (integer).
-            If an integer, it must be a valid open file descriptor. The file or
-            descriptor will be automatically closed when close() is called or when
+            If an integer, it must be a non-negative, currently-open file
+            descriptor (e.g. obtained from :func:`os.open`). Negative integers
+            are rejected with :class:`ValueError`. The class will not verify
+            that an arbitrary non-negative integer corresponds to a valid open
+            descriptor — passing the wrong number will silently read from
+            whatever ``fd`` is currently bound to that slot (commonly
+            ``0=stdin``, ``1=stdout``, ``2=stderr``). The file or descriptor
+            will be automatically closed when :meth:`close` is called or when
             the object is used as a context manager.
 
         start_byte_offset (int, optional): Start byte offset in the input bytes stream.
@@ -115,6 +121,12 @@ class MS3RecordReader:
 
         # If the stream is an integer, assume an open file descriptor
         if isinstance(input, int):
+            if input < 0:
+                raise ValueError(
+                    f"File descriptor must be non-negative; got {input}. "
+                    "(A negative value typically indicates an unopened or "
+                    "already-closed descriptor.)"
+                )
             self._msfp_ptr[0] = clibmseed.ms3_msfp_init(start_byte_offset, end_byte_offset, input)
 
             if self._msfp_ptr[0] == ffi.NULL:
