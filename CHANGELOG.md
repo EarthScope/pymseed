@@ -55,6 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   as a deprecated keyword alias with a DeprecationWarning.
 - `MS3RecordReader`: initialism all instance attributes up front and perform
   pre-encoding to fail faster and cleanly on errors.
+- `MS3RecordValidator`: extra-headers JSON schema loader is now cached at module level.
 - Type annotations converted to PEP 604 / PEP 585 form.
 - Apply consistent python formatting with ruff.
 

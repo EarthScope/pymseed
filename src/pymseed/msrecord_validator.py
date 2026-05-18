@@ -129,6 +129,16 @@ class _FileLikeSource:
         buf_generation = -1
         generation = 0
 
+        # Compact the consumed prefix of `buf` whenever it exceeds this many
+        # bytes. The threshold trades two memmove costs against peak memory:
+        #   * smaller → lower peak memory, more frequent (but smaller) memmoves
+        #   * larger  → higher peak memory, less frequent (but larger) memmoves
+        # In steady state the total bytes moved is roughly conserved, so the
+        # main lever is peak memory. Half the chunk size keeps peak memory
+        # near `1.5 * chunk_size` (vs. ~2x with the previous chunk_size
+        # threshold) while still compacting at most once per chunk read.
+        compact_threshold = max(1, self._chunk_size // 2)
+
         while True:
             # --- Fill buffer ---
             if not eof:
@@ -136,7 +146,7 @@ class _FileLikeSource:
                 if chunk:
                     buf_base = None
 
-                    if buf_offset > self._chunk_size:
+                    if buf_offset > compact_threshold:
                         del buf[:buf_offset]
                         buf_offset = 0
 
