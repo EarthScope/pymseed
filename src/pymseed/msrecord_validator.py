@@ -159,9 +159,7 @@ class _FileLikeSource:
 class _FileSource:
     """Iterate over detected records in a file using a sliding buffer."""
 
-    def __init__(
-        self, filename: str | os.PathLike[str], chunk_size: int = 10_485_760
-    ) -> None:
+    def __init__(self, filename: str | os.PathLike[str], chunk_size: int = 10_485_760) -> None:
         self._filename = filename
         self._chunk_size = chunk_size
 
@@ -349,9 +347,9 @@ class MS3RecordValidator:
 
         msr_ptr = ffi.new("MS3Record **")
 
-        # Pre-load JSON schema validator once — avoid reloading per-record
+        # Pre-load JSON schema validator once — avoid reloading per-record.
         _eh_validator: Any = None
-        _eh_import_error = False
+        _eh_load_error: str | None = None
         if self._validate_extra_headers:
             if self._extra_headers_schema not in _KNOWN_SCHEMAS:
                 raise ValueError(f"Unknown schema_id: {self._extra_headers_schema}")
@@ -367,7 +365,13 @@ class MS3RecordValidator:
                 )
                 _eh_validator = validator_for_extra_headers_schema(json_loads(schema_bytes))
             except ImportError:
-                _eh_import_error = True
+                _eh_load_error = "jsonschema-rs not installed"
+            except (FileNotFoundError, OSError) as e:
+                _eh_load_error = f"bundled schema file unavailable: {e}"
+            except Exception as e:
+                # Covers json_loads failure, jsonschema-rs validator-construction
+                # errors, etc. — any of these means the install is broken.
+                _eh_load_error = f"failed to load JSON schema: {type(e).__name__}: {e}"
 
         try:
             for buf_ptr, offset, record_length in self._source:
@@ -433,11 +437,11 @@ class MS3RecordValidator:
 
                 # Step 3: Optionally validate extra headers
                 if self._validate_extra_headers and msr.extralength > 0:
-                    if _eh_import_error:
+                    if _eh_load_error is not None:
                         errors.append(
                             ValidationError(
                                 offset=offset,
-                                message="Extra headers validation skipped: jsonschema-rs not installed",
+                                message=(f"Extra headers validation skipped: {_eh_load_error}"),
                                 sourceid=sourceid,
                                 starttime=msr.starttime,
                                 reclen=record_length,

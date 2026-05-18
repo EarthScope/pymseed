@@ -228,6 +228,65 @@ class TestMS3RecordValidatorExtraHeaders:
         assert len(eh_errors_off) == 0
 
 
+class TestExtraHeadersSchemaLoadFailures:
+    """Tests for broad catch of schema-loading failures (issue: schema-loading
+    exceptions too narrow). All failure modes should produce a descriptive
+    per-record ValidationError rather than aborting validate() with an
+    unhandled exception.
+    """
+
+    def test_corrupt_schema_file_does_not_abort_validation(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """If json_loads on the bundled schema raises, validate() must still
+        complete and emit a 'schema load failed' warning per affected record."""
+        from pymseed import msrecord_validator as mv
+
+        def boom(_data: bytes) -> object:
+            raise ValueError("simulated corrupt schema JSON")
+
+        monkeypatch.setattr(mv, "json_loads", boom)
+
+        buffer = _get_record_with_bad_extra_headers()
+        errors, _ = MS3RecordValidator.from_buffer(
+            buffer,
+            validate_crc=False,
+            validate_extra_headers=True,
+        ).validate()
+
+        skipped = [e for e in errors if "Extra headers validation skipped" in e.message]
+        assert len(skipped) >= 1
+        assert "failed to load JSON schema" in skipped[0].message
+        assert "simulated corrupt schema JSON" in skipped[0].message
+
+    def test_missing_schema_file_does_not_abort_validation(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A missing bundled schema (corrupt install) must downgrade to a
+        per-record warning, not crash."""
+        from pymseed import msrecord_validator as mv
+
+        class _FakeJoin:
+            def joinpath(self, *_args: object) -> "_FakeJoin":
+                return self
+
+            def read_bytes(self) -> bytes:
+                raise FileNotFoundError("simulated missing schema file")
+
+        monkeypatch.setattr(mv, "files", lambda _pkg: _FakeJoin())
+
+        buffer = _get_record_with_bad_extra_headers()
+        errors, _ = MS3RecordValidator.from_buffer(
+            buffer,
+            validate_crc=False,
+            validate_extra_headers=True,
+        ).validate()
+
+        skipped = [e for e in errors if "Extra headers validation skipped" in e.message]
+        assert len(skipped) >= 1
+        assert "bundled schema file unavailable" in skipped[0].message
+
+
 class TestMS3RecordValidatorPartialData:
     """Tests for handling partial/incomplete data."""
 
