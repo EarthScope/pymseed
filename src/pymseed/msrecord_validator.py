@@ -144,6 +144,8 @@ class _FileLikeSource:
             if not eof:
                 chunk = self._fh.read(self._chunk_size)
                 if chunk:
+                    # Drop the previous CFFI buffer-protocol export over
+                    # `buf` BEFORE mutating the bytearray.
                     buf_base = None
 
                     if buf_offset > compact_threshold:
@@ -166,7 +168,6 @@ class _FileLikeSource:
                     break
 
                 if buf_generation != generation:
-                    buf_base = None
                     buf_base = ffi.from_buffer(buf)
                     buf_generation = generation
 
