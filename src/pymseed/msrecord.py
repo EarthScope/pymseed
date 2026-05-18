@@ -1785,6 +1785,19 @@ class MS3Record:
         the generator. If you need to retain a record beyond the current
         iteration step, copy the fields you need or use :meth:`parse` instead.
 
+        The buffer is held by reference for the lifetime of the generator
+        (CFFI keeps a buffer-protocol export over it). For mutable buffer
+        types (``bytearray``, ``memoryview`` over a ``bytearray``, writable
+        ``numpy.ndarray``), the caller must not modify the contents until
+        iteration finishes — doing so is **undefined behavior** that
+        silently corrupts the next record read and is not caught by Python
+        or CFFI. Resizing operations (e.g. ``buf.extend(...)``,
+        ``buf.clear()``, ``del buf[i:]``) *are* caught by the buffer
+        protocol and raise ``BufferError`` while the generator is alive.
+        If the source must remain writable, pass an immutable copy
+        (``bytes(buf)``), or close the generator (e.g. ``gen.close()``, or
+        let the ``for`` loop complete) before mutating.
+
         Args:
             buffer: Bytes-like object containing miniSEED data. Must support
                 the buffer protocol (e.g. ``bytes``, ``bytearray``,
