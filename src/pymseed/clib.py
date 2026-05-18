@@ -5,11 +5,13 @@ Core library interface for pymseed using CFFI
 
 from typing import Any
 
+__all__ = ["ffi", "clibmseed", "cdata_to_string"]
+
 try:
     # This is the correct pattern: import the ffi and lib objects
     # directly FROM the compiled _libmseed_cffi module.
     from ._libmseed_cffi import ffi
-    from ._libmseed_cffi import lib as clibmseed  # noqa: F401
+    from ._libmseed_cffi import lib as clibmseed
 
 except ImportError as exc:
     # The friendly error message is still a good idea.
@@ -33,9 +35,9 @@ def cdata_to_string(cdata: Any, encoding: str = "utf-8") -> str | None:
         encoding: String encoding
 
     Returns:
-        Python string
+        Python string, or None if `cdata` is NULL.
     """
-    if cdata == ffi.NULL:
+    if not cdata:
         return None
     else:
         return ffi.string(cdata).decode(encoding)
