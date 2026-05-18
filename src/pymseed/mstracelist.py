@@ -781,7 +781,11 @@ class MS3TraceID:
         return nstime2timestr(self._id.latest, timeformat, subsecond)
 
 
-def _build_selections(sourceid, starttime, endtime):
+def _build_selections(
+    sourceid: str | None,
+    starttime: str | None,
+    endtime: str | None,
+) -> tuple[Any, Callable[[], None] | None]:
     """Build a libmseed MS3Selections from optional filter arguments.
 
     Returns (selections_ptr, free_fn).  When all arguments are None, returns
@@ -805,7 +809,7 @@ def _build_selections(sourceid, starttime, endtime):
     sidpattern = sourceid if sourceid is not None else "*"
     c_sidpattern = ffi.new("char[]", sidpattern.encode("utf-8"))
 
-    def _time_value(time_string, name):
+    def _time_value(time_string: str | None, name: str) -> int:
         if time_string is None:
             return clibmseed.NSTUNSET
         try:
@@ -821,7 +825,7 @@ def _build_selections(sourceid, starttime, endtime):
     if status < 0:
         raise MiniSEEDError(status, "Error building selections")
 
-    def _free():
+    def _free() -> None:
         if ppselections[0] != ffi.NULL:
             clibmseed.ms3_freeselections(ppselections[0])
 
@@ -912,17 +916,17 @@ class MS3TraceList:
 
     def __init__(
         self,
-        file_name=None,
-        buffer=None,
-        unpack_data=False,
-        sourceid=None,
-        starttime=None,
-        endtime=None,
-        record_list=False,
-        skip_not_data=False,
-        validate_crc=True,
-        split_version=False,
-        verbose=0,
+        file_name: str | None = None,
+        buffer: bytes | None = None,
+        unpack_data: bool = False,
+        sourceid: str | None = None,
+        starttime: str | None = None,
+        endtime: str | None = None,
+        record_list: bool = False,
+        skip_not_data: bool = False,
+        validate_crc: bool = True,
+        split_version: bool = False,
+        verbose: int = 0,
     ) -> None:
         # Initialize trace list - mstl3_init() returns an initialized pointer
         self._mstl = clibmseed.mstl3_init(ffi.NULL)
