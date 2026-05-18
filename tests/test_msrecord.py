@@ -144,6 +144,45 @@ def test_msrecord_extra_header():
         msr.merge_extra_headers("Invalid/JSON/Merge/Patch")
 
 
+def test_generate_rejects_partial_sample_args():
+    """generate() must fail eagerly when only one of data_samples/sample_type is given."""
+    msr = MS3Record()
+    msr.sourceid = "FDSN:XX_TEST__L_H_Z"
+    msr.set_starttime_str("2024-01-01T00:00:00Z")
+    msr.samprate = 1
+
+    # data_samples without sample_type
+    with pytest.raises(ValueError, match="together"):
+        msr.generate(data_samples=[1, 2, 3])
+
+    # sample_type without data_samples
+    with pytest.raises(ValueError, match="together"):
+        msr.generate(sample_type="i")
+
+    # Validation must be eager: the iterator returned by a valid call works,
+    # but the invalid call raises before any iteration begins. Holding the
+    # would-be generator without iterating still triggered the error above,
+    # confirming the wrapper validates synchronously.
+
+
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")
+def test_pack_rejects_partial_sample_args():
+    """pack() must fail when only one of data_samples/sample_type is given."""
+    msr = MS3Record()
+    msr.sourceid = "FDSN:XX_TEST__L_H_Z"
+    msr.set_starttime_str("2024-01-01T00:00:00Z")
+    msr.samprate = 1
+
+    def _noop(record, data):
+        pass
+
+    with pytest.raises(ValueError, match="together"):
+        msr.pack(_noop, None, data_samples=[1, 2, 3])
+
+    with pytest.raises(ValueError, match="together"):
+        msr.pack(_noop, None, sample_type="i")
+
+
 def test_msrecord_sourceid_setter():
     """Setter accepts boundary lengths, overwrites cleanly, and rejects oversize."""
 

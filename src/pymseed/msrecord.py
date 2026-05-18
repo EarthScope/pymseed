@@ -1459,7 +1459,8 @@ class MS3Record:
 
         Raises:
             MiniSEEDError: If packing fails due to invalid configuration or data
-            ValueError: If sample_type is invalid or data format is incompatible
+            ValueError: If sample_type is invalid, data format is incompatible,
+                or only one of ``data_samples`` and ``sample_type`` is provided.
 
         Examples:
             >>> from pymseed import MS3Record, DataEncoding
@@ -1505,6 +1506,14 @@ class MS3Record:
             DeprecationWarning,
             stacklevel=2,
         )
+
+        if (data_samples is None) != (sample_type is None):
+            raise ValueError(
+                "data_samples and sample_type must be provided together "
+                "(both or neither); got "
+                f"data_samples={'set' if data_samples is not None else 'None'}, "
+                f"sample_type={sample_type!r}"
+            )
 
         # Set handler function as CFFI callback function
         self._record_handler = handler
@@ -1553,8 +1562,8 @@ class MS3Record:
         record length, etc.) in this MS3Record. Alternate data samples (and
         type) can be provided, otherwise the existing record data is used.
 
-        This method is a generator that yields each miniSEED record as it is
-        created as bytes.
+        This method returns a generator that yields each miniSEED record as
+        ``bytes``.
 
         Args:
             data_samples: Data to pack. If None, uses existing record data.
@@ -1568,6 +1577,10 @@ class MS3Record:
 
         Yields:
             bytes: Each miniSEED record as it is created
+
+        Raises:
+            ValueError: If only one of ``data_samples`` and ``sample_type``
+                is provided. They must be passed together or both omitted.
 
         Examples:
             >>> from pymseed import MS3Record, DataEncoding
@@ -1599,6 +1612,23 @@ class MS3Record:
         See Also:
             MS3Record: Full record documentation
         """
+        if (data_samples is None) != (sample_type is None):
+            raise ValueError(
+                "data_samples and sample_type must be provided together "
+                "(both or neither); got "
+                f"data_samples={'set' if data_samples is not None else 'None'}, "
+                f"sample_type={sample_type!r}"
+            )
+
+        return self._generate(data_samples, sample_type, verbose)
+
+    def _generate(
+        self,
+        data_samples: list[int] | list[float] | list[str] | None,
+        sample_type: str | None,
+        verbose: int,
+    ) -> Iterator[bytes]:
+        """Generator body for :meth:`generate`. Assumes arguments are validated."""
         flags = clibmseed.MSF_FLUSHDATA  # Always flush data when packing
 
         record_pp = ffi.new("char **")
