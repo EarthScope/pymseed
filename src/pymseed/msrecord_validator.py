@@ -225,12 +225,15 @@ class MS3RecordValidator:
     This approach ensures maximum information recovery — all records with
     parseable headers are added to the trace list, with complete error tracking.
 
-    Use the factory classmethods ``from_buffer`` and ``from_file`` to create
-    instances, then call ``validate()`` to run validation.
+    Use the factory classmethods :meth:`from_buffer`, :meth:`from_file`, or
+    :meth:`from_filelike` to create instances, then call :meth:`validate` to
+    run validation.
 
     Args:
-        source: A record source iterable (``_BufferSource`` or ``_FileSource``).
-            Use ``from_buffer()`` or ``from_file()`` instead of constructing directly.
+        source: A record source iterable: :class:`_BufferSource`,
+            :class:`_FileSource`, or :class:`_FileLikeSource`. Use
+            :meth:`from_buffer`, :meth:`from_file`, or :meth:`from_filelike`
+            instead of constructing directly.
         return_trace_list: If True, build and return an MS3TraceList.
         unpack_data: If True, decompress data samples to detect decoding errors.
         validate_crc: If True, validate CRC checksums (miniSEED v3 only).
