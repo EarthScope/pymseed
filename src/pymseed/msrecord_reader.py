@@ -206,48 +206,36 @@ class MS3RecordReader:
         """Iterator protocol - allows the reader to be used in for loops."""
         return self
 
+    def read(self) -> MS3Record | None:
+        """Read the next miniSEED record from the file or file descriptor.
+
+        Returns the next :class:`MS3Record`, or ``None`` at end of stream.
+        Raises :class:`ValueError` if the reader has been closed.
+        """
+        if self._msfp_ptr[0] == ffi.NULL:
+            raise ValueError("I/O operation on closed MS3RecordReader")
+
+        status = clibmseed.ms3_readmsr_selection(
+            self._msfp_ptr,
+            self._msr_ptr,
+            self.stream_name,
+            self.parse_flags,
+            self._selections,
+            self.verbose,
+        )
+
+        if status == clibmseed.MS_NOERROR:
+            return MS3Record(recordptr=self._msr_ptr[0])
+        if status == clibmseed.MS_ENDOFFILE:
+            return None
+        raise MiniSEEDError(status, "Error reading miniSEED record")
+
     def __next__(self) -> MS3Record:
         """Iterator protocol - returns the next record or raises StopIteration."""
-        if self._msfp_ptr[0] == ffi.NULL:
-            raise ValueError("I/O operation on closed MS3RecordReader")
-
-        status = clibmseed.ms3_readmsr_selection(
-            self._msfp_ptr,
-            self._msr_ptr,
-            self.stream_name,
-            self.parse_flags,
-            self._selections,
-            self.verbose,
-        )
-
-        if status == clibmseed.MS_NOERROR:
-            return MS3Record(recordptr=self._msr_ptr[0])
-        elif status == clibmseed.MS_ENDOFFILE:
+        msr = self.read()
+        if msr is None:
             raise StopIteration
-        else:
-            raise MiniSEEDError(status, "Error reading miniSEED record")
-
-    def read(self) -> MS3Record | None:
-        """Read the next miniSEED record from the file or file descriptor"""
-
-        if self._msfp_ptr[0] == ffi.NULL:
-            raise ValueError("I/O operation on closed MS3RecordReader")
-
-        status = clibmseed.ms3_readmsr_selection(
-            self._msfp_ptr,
-            self._msr_ptr,
-            self.stream_name,
-            self.parse_flags,
-            self._selections,
-            self.verbose,
-        )
-
-        if status == clibmseed.MS_NOERROR:
-            return MS3Record(recordptr=self._msr_ptr[0])
-        elif status == clibmseed.MS_ENDOFFILE:
-            return None
-        else:
-            raise MiniSEEDError(status, "Error reading miniSEED record")
+        return msr
 
     def __del__(self) -> None:
         """Ensure cleanup when object is garbage collected"""
