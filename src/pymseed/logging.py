@@ -1,8 +1,27 @@
 """
 Logging capture for libmseed error and warning messages.
 
-This module provides facilities to capture libmseed error and warning messages
-using the logging registry, instead of having them printed to stderr/stdout.
+.. note::
+    This module is **not** an adapter for the standard-library
+    :mod:`logging` package. It is a thin wrapper over libmseed's own
+    internal message registry (``ms_rloginit`` / ``ms_rlog_pop`` /
+    ``ms_rlog_free``). The names overlap, but the APIs and concepts do
+    not — ``configure_logging`` here does not configure a
+    :class:`logging.Logger`, and the messages it captures are not
+    :class:`logging.LogRecord` instances. Users wanting bridge libmseed
+    messages into stdlib logging should drain
+    :func:`get_error_messages` and forward each string themselves.
+
+This module provides facilities to capture libmseed error and warning
+messages using libmseed's logging registry, instead of having them printed
+to stderr/stdout.
+
+The three public entry points are also re-exported from the top-level
+:mod:`pymseed` package, so the typical usage is::
+
+    from pymseed import configure_logging, get_error_messages
+
+rather than importing from ``pymseed.logging`` directly.
 """
 
 import atexit
