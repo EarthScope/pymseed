@@ -51,11 +51,9 @@ class MS3RecordPtr:
 
     @property
     def filename(self) -> str | None:
-        """Return filename as string"""
-        result = cdata_to_string(self._ptr.filename)
-        if result is None:
-            return None
-        return result
+        """Return filename, or None if the record came from a buffer rather
+        than a file."""
+        return cdata_to_string(self._ptr.filename)
 
     @property
     def fileoffset(self) -> int:
@@ -235,12 +233,19 @@ class MS3TraceSeg:
         self,
         timeformat: TimeFormat = TimeFormat.ISOMONTHDAY_Z,
         subsecond: SubSecond = SubSecond.NANO_MICRO_NONE,
-    ) -> str | None:
-        """Return start time as formatted string"""
-        result = nstime2timestr(self._seg.starttime, timeformat, subsecond)
-        if result is None:
-            return None
-        return result
+    ) -> str:
+        """Return start time as formatted string
+
+        Returns the sentinel strings ``"ERROR"`` or ``"UNSET"`` when the
+        underlying nanosecond timestamp is the corresponding libmseed
+        sentinel, mirroring :meth:`MS3Record.starttime_str`.
+        """
+        if self._seg.starttime == clibmseed.NSTERROR:
+            return "ERROR"
+        if self._seg.starttime == clibmseed.NSTUNSET:
+            return "UNSET"
+
+        return nstime2timestr(self._seg.starttime, timeformat, subsecond)
 
     @property
     def endtime(self) -> int:
@@ -256,12 +261,19 @@ class MS3TraceSeg:
         self,
         timeformat: TimeFormat = TimeFormat.ISOMONTHDAY_Z,
         subsecond: SubSecond = SubSecond.NANO_MICRO_NONE,
-    ) -> str | None:
-        """Return end time as formatted string"""
-        result = nstime2timestr(self._seg.endtime, timeformat, subsecond)
-        if result is None:
-            return None
-        return result
+    ) -> str:
+        """Return end time as formatted string
+
+        Returns the sentinel strings ``"ERROR"`` or ``"UNSET"`` when the
+        underlying nanosecond timestamp is the corresponding libmseed
+        sentinel, mirroring :meth:`MS3Record.endtime_str`.
+        """
+        if self._seg.endtime == clibmseed.NSTERROR:
+            return "ERROR"
+        if self._seg.endtime == clibmseed.NSTUNSET:
+            return "UNSET"
+
+        return nstime2timestr(self._seg.endtime, timeformat, subsecond)
 
     @property
     def samprate(self) -> float:
@@ -706,12 +718,9 @@ class MS3TraceID:
             raise TypeError("indices must be integers or slices")
 
     @property
-    def sourceid(self) -> str | None:
+    def sourceid(self) -> str:
         """Return source ID as string"""
-        result = cdata_to_string(self._id.sid)
-        if result is None:
-            return None
-        return result
+        return ffi.string(self._id.sid).decode("utf-8")
 
     @property
     def pubversion(self) -> int:
@@ -732,12 +741,19 @@ class MS3TraceID:
         self,
         timeformat: TimeFormat = TimeFormat.ISOMONTHDAY_Z,
         subsecond: SubSecond = SubSecond.NANO_MICRO_NONE,
-    ) -> str | None:
-        """Return earliest time as formatted string"""
-        result = nstime2timestr(self._id.earliest, timeformat, subsecond)
-        if result is None:
-            return None
-        return result
+    ) -> str:
+        """Return earliest time as formatted string
+
+        Returns the sentinel strings ``"ERROR"`` or ``"UNSET"`` when the
+        underlying nanosecond timestamp is the corresponding libmseed
+        sentinel.
+        """
+        if self._id.earliest == clibmseed.NSTERROR:
+            return "ERROR"
+        if self._id.earliest == clibmseed.NSTUNSET:
+            return "UNSET"
+
+        return nstime2timestr(self._id.earliest, timeformat, subsecond)
 
     @property
     def latest(self) -> int:
@@ -753,12 +769,19 @@ class MS3TraceID:
         self,
         timeformat: TimeFormat = TimeFormat.ISOMONTHDAY_Z,
         subsecond: SubSecond = SubSecond.NANO_MICRO_NONE,
-    ) -> str | None:
-        """Return latest time as formatted string"""
-        result = nstime2timestr(self._id.latest, timeformat, subsecond)
-        if result is None:
-            return None
-        return result
+    ) -> str:
+        """Return latest time as formatted string
+
+        Returns the sentinel strings ``"ERROR"`` or ``"UNSET"`` when the
+        underlying nanosecond timestamp is the corresponding libmseed
+        sentinel.
+        """
+        if self._id.latest == clibmseed.NSTERROR:
+            return "ERROR"
+        if self._id.latest == clibmseed.NSTUNSET:
+            return "UNSET"
+
+        return nstime2timestr(self._id.latest, timeformat, subsecond)
 
 
 def _build_selections(sourceid, starttime, endtime):

@@ -232,6 +232,35 @@ def test_tracelist_generate_frees_packer_on_consumer_exception(monkeypatch):
     assert tracker.pack_free_count == 1
 
 
+def test_tracelist_time_str_sentinels():
+    """starttime_str/endtime_str on MS3TraceSeg and earliest_str/latest_str
+    on MS3TraceID must return the libmseed sentinel strings ``"ERROR"`` and
+    ``"UNSET"`` instead of falling through to ``nstime2timestr``, which would
+    now raise. Mirrors MS3Record.starttime_str()'s contract."""
+    from pymseed.clib import clibmseed
+
+    traces = MS3TraceList.from_file(test_path3)
+    traceid = next(iter(traces))
+    seg = traceid[0]
+
+    # Sanity: a real record yields a real ISO string for all four methods.
+    assert seg.starttime_str().endswith("Z")
+    assert seg.endtime_str().endswith("Z")
+    assert traceid.earliest_str().endswith("Z")
+    assert traceid.latest_str().endswith("Z")
+
+    # Force sentinel values by writing into the underlying C structs.
+    seg._seg.starttime = clibmseed.NSTUNSET
+    seg._seg.endtime = clibmseed.NSTERROR
+    traceid._id.earliest = clibmseed.NSTUNSET
+    traceid._id.latest = clibmseed.NSTERROR
+
+    assert seg.starttime_str() == "UNSET"
+    assert seg.endtime_str() == "ERROR"
+    assert traceid.earliest_str() == "UNSET"
+    assert traceid.latest_str() == "ERROR"
+
+
 def test_tracelist_unpack_recordlist_rejects_non_buffer():
     """unpack_recordlist() must raise ValueError on objects that don't expose
     the buffer protocol, not bubble up CFFI's TypeError. Also exercises an

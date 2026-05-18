@@ -29,6 +29,22 @@ def record_handler(record, handler_data):
     record_buffer = bytes(record)
 
 
+def test_msrecord_time_str_sentinels():
+    """A fresh MS3Record has NSTUNSET timestamps; starttime_str/endtime_str
+    must surface that as the ``"UNSET"`` sentinel rather than falling
+    through to nstime2timestr (which would now raise). Forcing NSTERROR
+    confirms the error sentinel branch."""
+    from pymseed.clib import clibmseed
+
+    msr = MS3Record()
+    assert msr.starttime_str() == "UNSET"
+    assert msr.endtime_str() == "UNSET"
+
+    msr._msr.starttime = clibmseed.NSTERROR
+    assert msr.starttime_str() == "ERROR"
+    assert msr.endtime_str() == "ERROR"
+
+
 def test_msrecord_setters():
     """Test the setters for an MS3Record object."""
 

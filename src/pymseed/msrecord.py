@@ -412,8 +412,13 @@ class MS3Record:
         self,
         timeformat: TimeFormat = TimeFormat.ISOMONTHDAY_Z,
         subsecond: SubSecond = SubSecond.NANO_MICRO_NONE,
-    ) -> str | None:
-        """Return start time as formatted string"""
+    ) -> str:
+        """Return start time as formatted string
+
+        Returns the sentinel strings ``"ERROR"`` or ``"UNSET"`` when the
+        underlying nanosecond timestamp is the corresponding libmseed
+        sentinel.
+        """
         if self._msr.starttime == clibmseed.NSTERROR:
             return "ERROR"
         if self._msr.starttime == clibmseed.NSTUNSET:
@@ -1227,8 +1232,13 @@ class MS3Record:
         self,
         timeformat: TimeFormat = TimeFormat.ISOMONTHDAY_Z,
         subsecond: SubSecond = SubSecond.NANO_MICRO_NONE,
-    ) -> str | None:
-        """Return end time as formatted string"""
+    ) -> str:
+        """Return end time as formatted string
+
+        Returns the sentinel strings ``"ERROR"`` or ``"UNSET"`` when the
+        underlying nanosecond timestamp is the corresponding libmseed
+        sentinel.
+        """
         if self.endtime == clibmseed.NSTERROR:
             return "ERROR"
         if self.endtime == clibmseed.NSTUNSET:
