@@ -279,9 +279,12 @@ class MS3RecordReader:
             pass
 
     def close(self) -> None:
-        """Close the reader and free any allocated memory"""
+        """Close the reader and free any allocated memory.
 
-        # Perform cleanup by calling the function with NULL stream name
+        Idempotent: safe to call multiple times.
+        """
+        # Perform cleanup by calling the function with NULL stream name.
+        # The pointer-NULL guard makes this method idempotent.
         if self._msfp_ptr[0] != ffi.NULL or self._msr_ptr[0] != ffi.NULL:
             clibmseed.ms3_readmsr_selection(
                 self._msfp_ptr,
