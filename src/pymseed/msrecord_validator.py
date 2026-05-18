@@ -444,7 +444,13 @@ class MS3RecordValidator:
                         )
                     continue
 
-                # Read metadata directly from C struct
+                # Read metadata directly from the C struct rather than wrapping
+                # in MS3Record. This is a tight inner loop over potentially
+                # millions of records, and skipping the wrapper avoids a Python
+                # object allocation + property-call overhead per record. The
+                # tradeoff: if MS3Record.sourceid (and friends) ever grows new
+                # normalization or validation logic, that code is NOT exercised
+                # here.
                 msr = msr_ptr[0]
                 sourceid = ffi.string(msr.sid).decode("utf-8")
 
