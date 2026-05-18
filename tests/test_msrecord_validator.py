@@ -130,84 +130,6 @@ class TestMS3RecordValidatorBasic:
         assert len(errors) == 0
 
 
-def _crc_capture_diagnostics(corrupted: bytes) -> str:
-    """Probe libmseed's logging registry state directly around a CRC failure.
-
-    Used as part of the assertion message on
-    ``test_crc_error_detected_and_logged`` so that the next CI run on the
-    matrix where capture has been observed to silently fail (PyPy 3.11 /
-    macos-15-intel x86_64) emits actionable evidence instead of a bare
-    "0 >= 1" assertion.
-
-    Three things are exercised, independent of MS3RecordValidator:
-
-    1. Thread identity at probe time vs. the interpreter main thread. A
-       mismatch would explain registry-disabled state on the calling
-       thread (libmseed stores gMSLogParam in ``_Thread_local``;
-       ``configure_logging`` only initialises ``maxmessages`` on the
-       thread that calls it — which on import is the main thread).
-    2. Whether calling :func:`msr3_parse` directly with
-       ``MSF_VALIDATECRC`` returns ``MS_INVALIDCRC`` and whether
-       :func:`ms_rlog_pop` on the *same* thread sees the CRC log
-       message immediately after.
-    3. Whether explicitly calling ``configure_logging(max_messages=10)``
-       on the current thread before the parse attempt changes the
-       captured-message count. If (2) returns no message but (3) does,
-       the current thread's registry was unconfigured.
-    """
-    import threading
-
-    from pymseed import clear_error_messages, configure_logging, get_error_messages
-    from pymseed.clib import clibmseed, ffi
-
-    lines: list[str] = []
-    lines.append(
-        f"current thread ident={threading.get_ident()} "
-        f"main thread ident={threading.main_thread().ident} "
-        f"name={threading.current_thread().name!r}"
-    )
-
-    # Direct probe: bypass the validator entirely.
-    msr_pp = ffi.new("MS3Record **")
-    cleared_before = clear_error_messages()
-    status_direct = clibmseed.msr3_parse(
-        ffi.from_buffer(corrupted),
-        len(corrupted),
-        msr_pp,
-        clibmseed.MSF_VALIDATECRC,
-        0,
-    )
-    msgs_direct = get_error_messages()
-    lines.append(
-        f"direct msr3_parse: status={status_direct} "
-        f"(MS_INVALIDCRC={clibmseed.MS_INVALIDCRC}), "
-        f"cleared_before={cleared_before}, "
-        f"messages_captured={len(msgs_direct)}: {msgs_direct!r}"
-    )
-
-    # Same probe again, but explicitly re-configure logging on the current
-    # thread immediately beforehand. If this captures and the previous
-    # attempt did not, the current thread's gMSLogParam was uninitialised
-    # (maxmessages=0) and libmseed silently dropped the message.
-    configure_logging(max_messages=10)
-    cleared_before2 = clear_error_messages()
-    status_direct2 = clibmseed.msr3_parse(
-        ffi.from_buffer(corrupted),
-        len(corrupted),
-        msr_pp,
-        clibmseed.MSF_VALIDATECRC,
-        0,
-    )
-    msgs_direct2 = get_error_messages()
-    lines.append(
-        f"direct msr3_parse after configure_logging(max_messages=10): "
-        f"status={status_direct2}, "
-        f"cleared_before={cleared_before2}, "
-        f"messages_captured={len(msgs_direct2)}: {msgs_direct2!r}"
-    )
-    return "\n".join(lines)
-
-
 class TestMS3RecordValidatorCRCValidation:
     """Tests for CRC validation error handling."""
 
@@ -217,19 +139,9 @@ class TestMS3RecordValidatorCRCValidation:
 
         errors, _ = MS3RecordValidator.from_buffer(corrupted, validate_crc=True).validate()
 
+        assert len(errors) >= 1
         crc_errors = [e for e in errors if "CRC" in e.message]
-        # On failure, dump direct-libmseed probe state so CI logs reveal
-        # whether the failure is "libmseed didn't detect the CRC error"
-        # vs. "libmseed detected it but the log message wasn't visible
-        # to get_error_messages on this thread" — see
-        # ``_crc_capture_diagnostics`` for what gets printed.
-        assert len(errors) >= 1 and len(crc_errors) >= 1, (
-            "expected at least one CRC validation error from "
-            "MS3RecordValidator; got "
-            f"errors={[e.message for e in errors]!r}\n"
-            f"--- direct libmseed probe ---\n"
-            f"{_crc_capture_diagnostics(corrupted)}"
-        )
+        assert len(crc_errors) >= 1
 
     def test_crc_validation_disabled(self) -> None:
         """Test that disabling CRC validation suppresses CRC errors."""
