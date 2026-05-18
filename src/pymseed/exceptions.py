@@ -7,6 +7,7 @@ class MiniSEEDError(ValueError):
     """Exception for libmseed return values"""
 
     def __init__(self, status_code: int, message: str | None = None) -> None:
+        super().__init__(status_code, message)
         self.status_code = status_code
         self.message = message
 
@@ -32,6 +33,7 @@ class NoSuchSourceID(ValueError):
     """Exception for non-existent trace source IDs"""
 
     def __init__(self, sourceid: str) -> None:
+        super().__init__(sourceid)
         self.sourceid = sourceid
 
     def __str__(self) -> str:
