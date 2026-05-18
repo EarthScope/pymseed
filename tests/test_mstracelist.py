@@ -262,6 +262,26 @@ def test_tracelist_time_str_sentinels():
     assert traceid.latest_str() == "ERROR"
 
 
+def test_tracelist_sampletype_returns_none_when_unset():
+    """MS3TraceSeg.sampletype must return None when the underlying C struct
+    has no sample-type byte set (zero byte). The old truthiness check
+    ``if self._seg.sampletype:`` was always True because CFFI char fields
+    surface as a 1-byte bytes object and ``bool(b'\\x00')`` is True, so the
+    None branch was unreachable and callers got the literal '\\x00' character
+    instead of None."""
+    # unpack_data=False leaves the segment's sampletype byte as 0 because no
+    # decoding has happened yet.
+    traces = MS3TraceList.from_file(test_path3, unpack_data=False)
+    seg = next(iter(traces))[0]
+    assert seg._seg.sampletype == b"\x00"  # contract sanity on the C side
+    assert seg.sampletype is None
+
+    # Once decoded, the property surfaces the actual ASCII code.
+    traces = MS3TraceList.from_file(test_path3, unpack_data=True)
+    seg = next(iter(traces))[0]
+    assert seg.sampletype == "i"
+
+
 def test_tracelist_add_data_rejects_ambiguous_time_arguments():
     """add_data() documents the three start_time_* parameters as mutually
     exclusive; previously the implementation just let start_time_str win

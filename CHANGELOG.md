@@ -43,6 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   parameter in favor of `remove_packed=...`.
 - `MS3TraceList.add_data()` now raises `ValueError` if more than one of `start_time_str`,
   `start_time`, `start_time_seconds` is supplied.
+- Fix `MS3TraceSeg.sampletype` returning the one-character string '\x00' instead of None.
 - Type annotations converted to PEP 604 / PEP 585 form.
 - Apply consistent python formatting with ruff.
 

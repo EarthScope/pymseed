@@ -332,10 +332,9 @@ class MS3TraceSeg:
     @property
     def sampletype(self) -> str | None:
         """Return sample type code if available, otherwise None"""
-        if self._seg.sampletype:
-            return str(self._seg.sampletype.decode("ascii"))
-        else:
+        if self._seg.sampletype == b"\x00":
             return None
+        return self._seg.sampletype.decode("ascii")
 
     @property
     def numsamples(self) -> int:
