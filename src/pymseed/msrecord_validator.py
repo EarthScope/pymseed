@@ -330,6 +330,16 @@ class MS3RecordValidator:
         Returns:
             A new ``MS3RecordValidator`` instance.
 
+        Raises:
+            OSError: File-open failures (e.g. :class:`FileNotFoundError`,
+                :class:`PermissionError`, :class:`IsADirectoryError`)
+                propagate from :meth:`validate` as the corresponding
+                :class:`OSError` subclass. These are *setup* failures
+                distinct from per-record parse failures and are intentionally
+                **not** converted to :class:`ValidationError` entries so the
+                caller can distinguish "couldn't open the source" from
+                "source opened but contained bad records".
+
         Example::
 
             errors, traces = MS3RecordValidator.from_file("data.mseed").validate()
@@ -397,9 +407,21 @@ class MS3RecordValidator:
 
         Note:
             Validation stops when:
+
             - All records have been processed
             - Incomplete record at end of source
             - Cannot determine record length
+
+            Per-record parse failures are accumulated into the returned
+            ``errors`` list.
+
+            *Setup* failures from the underlying source —
+            most commonly :class:`OSError` (and its subclasses
+            :class:`FileNotFoundError`, :class:`PermissionError`,
+            :class:`IsADirectoryError`) raised when a :meth:`from_file`
+            source first opens the file — propagate as exceptions, so the
+            caller can distinguish "couldn't open the source" from
+            "source opened but contained bad records".
         """
         errors: list[ValidationError] = []
         tracelist = MS3TraceList() if self._return_trace_list else None

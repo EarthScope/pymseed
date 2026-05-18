@@ -639,6 +639,20 @@ class TestMS3RecordValidatorFromFilelike:
         with pytest.raises(ValueError):
             MS3RecordValidator.from_filelike(fh, chunk_size=1_073_741_825)
 
+    def test_from_file_propagates_open_errors(self, tmp_path) -> None:
+        """File-open failures must propagate as OSError subclasses from
+        validate(), not get swallowed into the errors list. The caller relies
+        on this to distinguish 'source unavailable' from 'source contains bad
+        records'."""
+
+        # FileNotFoundError on missing path.
+        with pytest.raises(FileNotFoundError):
+            MS3RecordValidator.from_file(tmp_path / "does_not_exist.mseed").validate()
+
+        # IsADirectoryError when pointed at a directory.
+        with pytest.raises(IsADirectoryError):
+            MS3RecordValidator.from_file(tmp_path).validate()
+
     def test_from_filelike_rejects_non_filelike(self) -> None:
         """Without a .read() method, fail fast at the factory rather than
         with a context-free AttributeError deep inside the iterator on the
