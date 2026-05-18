@@ -649,8 +649,10 @@ class TestMS3RecordValidatorFromFilelike:
         with pytest.raises(FileNotFoundError):
             MS3RecordValidator.from_file(tmp_path / "does_not_exist.mseed").validate()
 
-        # IsADirectoryError when pointed at a directory.
-        with pytest.raises(IsADirectoryError):
+        # Pointing at a directory: IsADirectoryError on POSIX, PermissionError
+        # on Windows. The contract we care about is that it's an OSError
+        # subclass propagated through validate(), not swallowed.
+        with pytest.raises((IsADirectoryError, PermissionError)):
             MS3RecordValidator.from_file(tmp_path).validate()
 
     def test_from_filelike_rejects_non_filelike(self) -> None:

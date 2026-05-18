@@ -225,10 +225,17 @@ def test_tracelist_generate_frees_packer_on_consumer_exception(monkeypatch):
     class ConsumerError(Exception):
         pass
 
-    with pytest.raises(ConsumerError):
-        for i, _ in enumerate(traces.generate()):
-            if i == 1:
-                raise ConsumerError("simulated consumer failure")
+    # Bind the generator and close it explicitly in finally so cleanup is
+    # deterministic across CPython (refcount-driven finalization) and PyPy
+    # (tracing GC; the unnamed generator would not finalize until the next GC).
+    gen = traces.generate()
+    try:
+        with pytest.raises(ConsumerError):
+            for i, _ in enumerate(gen):
+                if i == 1:
+                    raise ConsumerError("simulated consumer failure")
+    finally:
+        gen.close()
 
     assert tracker.pack_free_count == 1
 
