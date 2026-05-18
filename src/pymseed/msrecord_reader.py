@@ -26,9 +26,15 @@ class MS3RecordReader:
     The reader can be used as an iterator to process records sequentially, or as
     a context manager for automatic resource cleanup.
 
-    Note that the objects returned by this iterator are only valid during
-    the lifetime of the iterator. Once the iterator is exhausted, the results
-    are no longer valid and should not be used.
+    .. warning::
+        Each :class:`MS3Record` returned by :meth:`read` (and therefore by
+        iteration via :meth:`__next__`) shares a single C struct with the
+        reader. The record is only valid until the **next** call to
+        :meth:`read` / :func:`next` on this reader, and is fully invalidated
+        when the reader is exhausted or after :meth:`close` is called. If
+        you need to retain a record beyond the current iteration step, copy
+        the fields you need (or load the data with :meth:`MS3Record.parse`,
+        :meth:`MS3Record.from_buffer`, or :class:`MS3TraceList`).
 
     Args:
         source (str | os.PathLike | int): File path (``str`` or any
@@ -211,6 +217,14 @@ class MS3RecordReader:
 
         Returns the next :class:`MS3Record`, or ``None`` at end of stream.
         Raises :class:`ValueError` if the reader has been closed.
+
+        .. warning::
+            The returned :class:`MS3Record` shares a single C struct with
+            this reader. It is only valid until the next call to
+            :meth:`read` / :func:`next` on this reader, and is fully
+            invalidated when the reader is exhausted or after :meth:`close`
+            is called. Copy the fields you need before reading the next
+            record if you need to retain them.
         """
         if self._msfp_ptr[0] == ffi.NULL:
             raise ValueError("I/O operation on closed MS3RecordReader")
@@ -231,7 +245,11 @@ class MS3RecordReader:
         raise MiniSEEDError(status, "Error reading miniSEED record")
 
     def __next__(self) -> MS3Record:
-        """Iterator protocol - returns the next record or raises StopIteration."""
+        """Iterator protocol - returns the next record or raises StopIteration.
+
+        See :meth:`read` for the lifetime contract of the returned record
+        (each yielded :class:`MS3Record` is invalidated by the next call).
+        """
         msr = self.read()
         if msr is None:
             raise StopIteration
