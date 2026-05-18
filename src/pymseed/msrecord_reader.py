@@ -174,6 +174,9 @@ class MS3RecordReader:
 
     def __next__(self) -> MS3Record:
         """Iterator protocol - returns the next record or raises StopIteration."""
+        if self._msfp_ptr[0] == ffi.NULL:
+            raise ValueError("I/O operation on closed MS3RecordReader")
+
         status = clibmseed.ms3_readmsr_selection(
             self._msfp_ptr,
             self._msr_ptr,
@@ -192,6 +195,9 @@ class MS3RecordReader:
 
     def read(self) -> MS3Record | None:
         """Read the next miniSEED record from the file or file descriptor"""
+
+        if self._msfp_ptr[0] == ffi.NULL:
+            raise ValueError("I/O operation on closed MS3RecordReader")
 
         status = clibmseed.ms3_readmsr_selection(
             self._msfp_ptr,

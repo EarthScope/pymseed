@@ -243,3 +243,23 @@ def test_msrecord_nosuchfile():
     with pytest.raises(MiniSEEDError):
         with MS3Record.from_file("NOSUCHFILE") as msreader:
             msr = msreader.read()
+
+
+def test_msrecord_reader_rejects_use_after_close():
+    # Reading or iterating after close() must not silently resurrect the
+    # underlying libmseed file param (which would re-open the file from the
+    # start because *msfp == NULL is libmseed's lazy-init signal).
+    reader = MS3Record.from_file(test_path3)
+    next(reader)
+    reader.close()
+
+    with pytest.raises(ValueError, match="closed"):
+        reader.read()
+    with pytest.raises(ValueError, match="closed"):
+        next(reader)
+
+    # Context-manager exit closes too; same contract applies.
+    with MS3Record.from_file(test_path3) as msreader:
+        msreader.read()
+    with pytest.raises(ValueError, match="closed"):
+        msreader.read()
