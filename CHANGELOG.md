@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-05-17
+
 ### Added
 - `sourceid`, `starttime`, and `endtime` filtering kwargs on `MS3TraceList.__init__()`,
   `add_file()`, and `add_buffer()` (and therefore `from_file()` / `from_buffer()`).
