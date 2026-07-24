@@ -6,11 +6,13 @@ Core miniSEED file reader implementation for pymseed.
 import os
 import sys
 import warnings
+from collections.abc import Callable
 from typing import Any
 
 from .clib import clibmseed, ffi
 from .exceptions import MiniSEEDError
 from .msrecord import MS3Record
+from .selections import build_selections
 
 _INPUT_SENTINEL: Any = object()
 
@@ -70,6 +72,19 @@ class MS3RecordReader:
             compressed format. Defaults to False for better performance when only
             metadata is needed.
 
+        sourceid (str, optional): Source ID glob pattern to select matching
+            records (e.g. ``"FDSN:IU_COLA_*"``). None matches all source IDs.
+            Defaults to None.
+
+        starttime (str, optional): Start of time window as a formatted date-time
+            string (e.g. ``"2024-01-01T00:00:00Z"``). Only records containing
+            data after this time are returned. None means open start.
+            Defaults to None.
+
+        endtime (str, optional): End of time window as a formatted date-time
+            string. Only records containing data before this time are returned.
+            None means open end. Defaults to None.
+
         skip_not_data (bool, optional): Whether to skip non-data bytes in the input
             stream until a valid miniSEED record is found. Useful for reading from
             streams that may contain other data mixed with miniSEED records.
@@ -83,6 +98,7 @@ class MS3RecordReader:
             Defaults to 0 (silent).
 
     Raises:
+        ValueError: If ``starttime`` or ``endtime`` is not a valid date-time string.
         MiniSEEDError: If the file or file descriptor cannot be initialized for reading.
 
     Examples:
@@ -96,6 +112,20 @@ class MS3RecordReader:
     >>> print(f"Total samples: {total_samples}")
     Total samples: 12600
 
+        Selecting records by source ID and time window.  The filtering is
+        applied by libmseed while reading, non-matching records are skipped
+        without leaving the C layer and their data samples are never decoded:
+
+    >>> records = 0
+    >>> for msr in MS3Record.from_file(
+    ...     'examples/example_data.mseed',
+    ...     sourceid='FDSN:IU_COLA_00_L_H_Z',
+    ...     starttime='2010-02-27T07:00:00Z',
+    ...     endtime='2010-02-27T07:30:00Z',
+    ... ):
+    ...     records += 1
+    >>> print(f"Matching records: {records}")
+    Matching records: 15
 
         Using with an open file descriptor (caller closes the fd):
 
@@ -125,6 +155,9 @@ class MS3RecordReader:
         start_byte_offset: int = 0,
         end_byte_offset: int = 0,
         unpack_data: bool = False,
+        sourceid: str | None = None,
+        starttime: str | None = None,
+        endtime: str | None = None,
         skip_not_data: bool = False,
         validate_crc: bool = True,
         verbose: int = 0,
@@ -133,6 +166,7 @@ class MS3RecordReader:
         self._msfp_ptr = ffi.new("MS3FileParam **")
         self._msr_ptr = ffi.new("MS3Record **")
         self._selections = ffi.NULL
+        self._free_selections: Callable[[], None] | None = None
         self.stream_name = ffi.NULL
         self.verbose = verbose
         self.parse_flags = 0
@@ -179,6 +213,12 @@ class MS3RecordReader:
             self.parse_flags |= clibmseed.MSF_SKIPNOTDATA
         if validate_crc:
             self.parse_flags |= clibmseed.MSF_VALIDATECRC
+
+        # Build selections, if sourceid, starttime, or endtime are specified.
+        # Done before opening the input so an invalid time string raises without
+        # leaving a stream open.  libmseed copies the pattern into the selection
+        # structures, which it owns until _free_selections() is called in close().
+        self._selections, self._free_selections = build_selections(sourceid, starttime, endtime)
 
         # If the stream is an integer, assume an open file descriptor
         if isinstance(source, int):
@@ -252,6 +292,27 @@ class MS3RecordReader:
             return MS3Record(recordptr=self._msr_ptr[0])
         if status == clibmseed.MS_ENDOFFILE:
             return None
+
+        # libmseed reports MS_NOTSEED for two different conditions: a record
+        # that could not be parsed as miniSEED, and reaching the end of the
+        # stream having returned no records at all.  An active selection that
+        # rejects every record in an otherwise valid stream produces the
+        # latter, which is a valid empty result rather than an error (mirroring
+        # MS3TraceList.add_buffer()).
+        #
+        # The two are told apart by how much unconsumed data is left buffered:
+        # the end-of-stream case is only reached with less than a minimum
+        # record remaining, whereas a parse failure stops with the offending
+        # (full-length) record still buffered.  A non-miniSEED stream therefore
+        # still raises, even while filtering.  libmseed's "No data records
+        # read, not SEED?" diagnostic remains in the log registry and is
+        # visible through get_error_messages().
+        if status == clibmseed.MS_NOTSEED and self._selections != ffi.NULL:
+            msfp = self._msfp_ptr[0]
+            buffered = msfp.readlength - msfp.readoffset if msfp != ffi.NULL else 0
+            if buffered < clibmseed.MINRECLEN:
+                return None
+
         raise MiniSEEDError(status, "Error reading miniSEED record")
 
     def __next__(self) -> MS3Record:
@@ -297,3 +358,10 @@ class MS3RecordReader:
             # Set to NULL to prevent double cleanup
             self._msfp_ptr[0] = ffi.NULL
             self._msr_ptr[0] = ffi.NULL
+
+        # Free the selections after the final read call, which is handed the
+        # pointer above.  build_selections()'s free function is idempotent.
+        if self._free_selections is not None:
+            self._free_selections()
+            self._free_selections = None
+            self._selections = ffi.NULL

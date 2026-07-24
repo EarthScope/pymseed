@@ -15,7 +15,8 @@ from .clib import cdata_to_string, clibmseed, ffi
 from .definitions import DataEncoding, SubSecond, TimeFormat
 from .exceptions import MiniSEEDError
 from .msrecord import MS3Record
-from .util import encoding_sizetype, nstime2timestr, timestr2nstime
+from .selections import build_selections
+from .util import encoding_sizetype, nstime2timestr
 
 
 class MS3RecordPtr:
@@ -781,57 +782,6 @@ class MS3TraceID:
         return nstime2timestr(self._id.latest, timeformat, subsecond)
 
 
-def _build_selections(
-    sourceid: str | None,
-    starttime: str | None,
-    endtime: str | None,
-) -> tuple[Any, Callable[[], None] | None]:
-    """Build a libmseed MS3Selections from optional filter arguments.
-
-    Returns (selections_ptr, free_fn).  When all arguments are None, returns
-    (ffi.NULL, None) so callers can pass the pointer directly without branching.
-
-    The caller is responsible for invoking free_fn() after the selections are
-    no longer needed (i.e. after the C read call).
-
-    Args:
-        sourceid: Source ID glob pattern, or None to match all (uses ``*``).
-        starttime: Start time as a formatted string, or None for open start.
-        endtime: End time as a formatted string, or None for open end.
-
-    Raises:
-        ValueError: If a time string cannot be parsed.
-        MiniSEEDError: If ms3_addselect() returns an error.
-    """
-    if sourceid is None and starttime is None and endtime is None:
-        return ffi.NULL, None
-
-    sidpattern = sourceid if sourceid is not None else "*"
-    c_sidpattern = ffi.new("char[]", sidpattern.encode("utf-8"))
-
-    def _time_value(time_string: str | None, name: str) -> int:
-        if time_string is None:
-            return clibmseed.NSTUNSET
-        try:
-            return timestr2nstime(time_string)
-        except ValueError as exc:
-            raise ValueError(f"Invalid {name} time string: {time_string!r}") from exc
-
-    start_ns = _time_value(starttime, "starttime")
-    end_ns = _time_value(endtime, "endtime")
-
-    ppselections = ffi.new("MS3Selections **")
-    status = clibmseed.ms3_addselect(ppselections, c_sidpattern, start_ns, end_ns, 0)
-    if status < 0:
-        raise MiniSEEDError(status, "Error building selections")
-
-    def _free() -> None:
-        if ppselections[0] != ffi.NULL:
-            clibmseed.ms3_freeselections(ppselections[0])
-
-    return ppselections[0], _free
-
-
 class MS3TraceList:
     """A container for a list of traces read from miniSEED
 
@@ -1251,7 +1201,7 @@ class MS3TraceList:
         mstl_ptr[0] = self._mstl
 
         # Build selections, if sourceid, starttime, or endtime are specified
-        selections_ptr, free_selections = _build_selections(sourceid, starttime, endtime)
+        selections_ptr, free_selections = build_selections(sourceid, starttime, endtime)
 
         try:
             status = clibmseed.ms3_readtracelist_selection(
@@ -1430,7 +1380,7 @@ class MS3TraceList:
             raise ValueError("Buffer must support the buffer protocol") from None
 
         # Build selections, if sourceid, starttime, or endtime are specified
-        selections_ptr, free_selections = _build_selections(sourceid, starttime, endtime)
+        selections_ptr, free_selections = build_selections(sourceid, starttime, endtime)
 
         try:
             status = clibmseed.mstl3_readbuffer_selection(
@@ -1582,7 +1532,7 @@ class MS3TraceList:
         pprecptr = ffi.new("MS3RecordPtr **") if record_list else ffi.NULL
 
         # Build selections, if sourceid, starttime, or endtime are specified
-        selections_ptr, free_selections = _build_selections(sourceid, starttime, endtime)
+        selections_ptr, free_selections = build_selections(sourceid, starttime, endtime)
         has_selections = selections_ptr != ffi.NULL
 
         # Defer per-record data unpacking past the selection match when filtering

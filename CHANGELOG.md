@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `sourceid`, `starttime`, and `endtime` filtering kwargs on `MS3Record.from_file()`
+  (i.e. `MS3RecordReader`), `MS3Record.from_buffer()`, `MS3Record.from_filelike()`,
+  and therefore `MS3Record.iter_records()`.
+
 ### Changed
 - libmseed updated to v3.5.0
 - For `MS3TraceList.add_data()` deprecate the `start_time` kwargs in favor of

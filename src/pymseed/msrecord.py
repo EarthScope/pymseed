@@ -21,6 +21,7 @@ from pymseed._json import json_dumps_minified, json_loads
 from .clib import clibmseed, ffi
 from .definitions import SubSecond, TimeFormat
 from .exceptions import MiniSEEDError
+from .selections import build_selections
 from .util import encoding_string, nstime2timestr, timestr2nstime
 
 
@@ -1774,12 +1775,60 @@ class MS3Record:
         the lifetime of the iterator. Once the iterator is exhausted, the
         objects are no longer valid and should not be used.
 
+        Records may be filtered with the ``sourceid``, ``starttime``, and
+        ``endtime`` keyword arguments; only records matching the source ID
+        glob pattern and/or overlapping the time window are returned.  The
+        filtering is performed inside libmseed, so non-matching records are
+        skipped without crossing into Python and their data samples are
+        never decoded.
+
         Args:
             filename: Path to miniSEED file
-            **kwargs: Additional arguments passed to MS3RecordReader
+            **kwargs: Additional arguments passed to MS3RecordReader, e.g.
+                ``unpack_data``, ``sourceid``, ``starttime``, ``endtime``,
+                ``skip_not_data``, ``validate_crc``, ``verbose``.
 
         Returns:
             MS3RecordReader: Iterator over records in the file
+
+        Note:
+            A filter that matches nothing yields no records rather than
+            raising; libmseed's "No data records read, not SEED?" diagnostic
+            for that case is left in the log registry (see
+            :func:`pymseed.get_error_messages`).  A file that contains no
+            miniSEED at all is still an error.
+
+        Examples:
+            Read every record in a file:
+
+            >>> from pymseed import MS3Record
+            >>> total_samples = 0
+            >>> for msr in MS3Record.from_file(
+            ...     'examples/example_data.mseed', unpack_data=True
+            ... ):
+            ...     total_samples += msr.numsamples
+            >>> print(f"Total samples: {total_samples}")
+            Total samples: 12600
+
+            Read only the records matching a source ID and time window:
+
+            >>> records = [
+            ...     (msr.sourceid, msr.starttime_str())
+            ...     for msr in MS3Record.from_file(
+            ...         "examples/example_data.mseed",
+            ...         sourceid="FDSN:IU_COLA_00_L_H_Z",
+            ...         starttime="2010-02-27T07:00:00Z",
+            ...         endtime="2010-02-27T07:30:00Z",
+            ...     )
+            ... ]
+            >>> len(records)
+            15
+
+            A record is selected when it *overlaps* the window, so the first
+            one may start before ``starttime``:
+
+            >>> records[0]
+            ('FDSN:IU_COLA_00_L_H_Z', '2010-02-27T06:59:01.069539Z')
 
         See Also:
             from_buffer(): Read from memory buffer
@@ -1795,6 +1844,9 @@ class MS3Record:
         cls,
         buffer: Any,
         unpack_data: bool = False,
+        sourceid: str | None = None,
+        starttime: str | None = None,
+        endtime: str | None = None,
         validate_crc: bool = True,
         verbose: int = 0,
     ) -> Iterator[MS3Record]:
@@ -1828,6 +1880,16 @@ class MS3Record:
                 ``memoryview``, ``numpy.ndarray``).
             unpack_data: If ``True``, decode data samples for each record.
                 Default is ``False``.
+            sourceid: Source ID glob pattern to select matching records
+                (e.g. ``"FDSN:IU_COLA_*"``). ``None`` matches all source IDs.
+                Default is ``None``.
+            starttime: Start of time window as a formatted date-time string
+                (e.g. ``"2024-01-01T00:00:00Z"``). Only records containing
+                data after this time are yielded. ``None`` means open start.
+                Default is ``None``.
+            endtime: End of time window as a formatted date-time string.
+                Only records containing data before this time are yielded.
+                ``None`` means open end. Default is ``None``.
             validate_crc: If ``True``, validate CRC checksums when present
                 (miniSEED v3 only). Default is ``True``.
             verbose: Verbosity level for libmseed diagnostics. Default is 0.
@@ -1836,7 +1898,16 @@ class MS3Record:
             MS3Record: Each parsed record. Valid only until the next iteration.
 
         Raises:
+            ValueError: If ``starttime`` or ``endtime`` is not a valid
+                date-time string.
             MiniSEEDError: If a record cannot be parsed.
+
+        Note:
+            Every record header in the buffer is parsed even when a filter is
+            active; libmseed provides no way to skip a record without first
+            reading its header.  Matching is done in C
+            (:c:func:`msr3_matchselect`) and data samples of rejected records
+            are never decoded, but the per-record loop remains in Python.
 
         Examples:
             >>> from pymseed import MS3Record
@@ -1848,6 +1919,20 @@ class MS3Record:
             >>> print(f"Total samples: {total_samples}")
             Total samples: 12600
 
+            With source ID and time-window filtering, a record is selected
+            when it *overlaps* the requested window:
+
+            >>> selected = 0
+            >>> for msr in MS3Record.from_buffer(
+            ...     buffer,
+            ...     sourceid="FDSN:IU_COLA_00_L_H_Z",
+            ...     starttime="2010-02-27T07:00:00Z",
+            ...     endtime="2010-02-27T07:30:00Z",
+            ... ):
+            ...     selected += 1
+            >>> print(f"Selected records: {selected}")
+            Selected records: 15
+
         See Also:
             parse(): Parse a single record from a buffer (owns the C struct)
             from_file(): Iterate over records in a file
@@ -1856,8 +1941,14 @@ class MS3Record:
         buf_ptr = ffi.from_buffer(buffer)
         offset = 0
 
+        # Build selections, if sourceid, starttime, or endtime are specified
+        selections_ptr, free_selections = build_selections(sourceid, starttime, endtime)
+        has_selections = selections_ptr != ffi.NULL
+
+        # Defer per-record data unpacking past the selection match when filtering
+        # is active, so cycles are not spent decoding records that are rejected.
         parse_flags = 0
-        if unpack_data:
+        if unpack_data and not has_selections:
             parse_flags |= clibmseed.MSF_UNPACKDATA
         if validate_crc:
             parse_flags |= clibmseed.MSF_VALIDATECRC
@@ -1878,6 +1969,19 @@ class MS3Record:
 
                 if status == clibmseed.MS_NOERROR:
                     offset += msr_ptr[0].reclen
+
+                    if has_selections:
+                        if (
+                            clibmseed.msr3_matchselect(selections_ptr, msr_ptr[0], ffi.NULL)
+                            == ffi.NULL
+                        ):
+                            continue
+
+                        if unpack_data and msr_ptr[0].samplecnt > 0:
+                            unpacked = clibmseed.msr3_unpack_data(msr_ptr[0], verbose)
+                            if unpacked < 0:
+                                raise MiniSEEDError(unpacked, "Error unpacking data samples")
+
                     yield cls(recordptr=msr_ptr[0])
                 elif status > 0:
                     return
@@ -1887,6 +1991,8 @@ class MS3Record:
             if msr_ptr[0] != ffi.NULL:
                 clibmseed.msr3_free(msr_ptr)
                 msr_ptr[0] = ffi.NULL
+            if free_selections is not None:
+                free_selections()
 
     @classmethod
     def from_filelike(
@@ -1894,6 +2000,9 @@ class MS3Record:
         fh: Any,
         chunk_size: int = 65536,
         unpack_data: bool = False,
+        sourceid: str | None = None,
+        starttime: str | None = None,
+        endtime: str | None = None,
         validate_crc: bool = True,
         verbose: int = 0,
     ) -> Iterator[MS3Record]:
@@ -1914,6 +2023,16 @@ class MS3Record:
                 Default is 65536.
             unpack_data: If ``True``, decode data samples for each record.
                 Default is ``False``.
+            sourceid: Source ID glob pattern to select matching records
+                (e.g. ``"FDSN:IU_COLA_*"``). ``None`` matches all source IDs.
+                Default is ``None``.
+            starttime: Start of time window as a formatted date-time string
+                (e.g. ``"2024-01-01T00:00:00Z"``). Only records containing
+                data after this time are yielded. ``None`` means open start.
+                Default is ``None``.
+            endtime: End of time window as a formatted date-time string.
+                Only records containing data before this time are yielded.
+                ``None`` means open end. Default is ``None``.
             validate_crc: If ``True``, validate CRC checksums when present
                 (miniSEED v3 only). Default is ``True``.
             verbose: Verbosity level for libmseed diagnostics. Default is 0.
@@ -1922,7 +2041,16 @@ class MS3Record:
             MS3Record: Each parsed record. Valid only until the next iteration.
 
         Raises:
+            ValueError: If ``starttime`` or ``endtime`` is not a valid
+                date-time string.
             MiniSEEDError: If a record cannot be parsed.
+
+        Note:
+            Every record header in the stream is parsed even when a filter is
+            active; libmseed provides no way to skip a record without first
+            reading its header.  Matching is done in C
+            (:c:func:`msr3_matchselect`) and data samples of rejected records
+            are never decoded, but the per-record loop remains in Python.
 
         Examples:
             >>> import io
@@ -1935,14 +2063,34 @@ class MS3Record:
             >>> print(f"Total samples: {total_samples}")
             Total samples: 12600
 
+            With source ID and time-window filtering, a record is selected
+            when it *overlaps* the requested window:
+
+            >>> selected = 0
+            >>> for msr in MS3Record.from_filelike(
+            ...     io.BytesIO(data),
+            ...     sourceid="FDSN:IU_COLA_00_L_H_Z",
+            ...     starttime="2010-02-27T07:00:00Z",
+            ...     endtime="2010-02-27T07:30:00Z",
+            ... ):
+            ...     selected += 1
+            >>> print(f"Selected records: {selected}")
+            Selected records: 15
+
         See Also:
             from_buffer(): Iterate over records in a complete in-memory buffer
             from_file(): Iterate over records in a file
         """
         msr_ptr = ffi.new("MS3Record **")
 
+        # Build selections, if sourceid, starttime, or endtime are specified
+        selections_ptr, free_selections = build_selections(sourceid, starttime, endtime)
+        has_selections = selections_ptr != ffi.NULL
+
+        # Defer per-record data unpacking past the selection match when filtering
+        # is active, so cycles are not spent decoding records that are rejected.
         parse_flags = 0
-        if unpack_data:
+        if unpack_data and not has_selections:
             parse_flags |= clibmseed.MSF_UNPACKDATA
         if validate_crc:
             parse_flags |= clibmseed.MSF_VALIDATECRC
@@ -1964,6 +2112,18 @@ class MS3Record:
 
                     if status == clibmseed.MS_NOERROR:
                         offset += msr_ptr[0].reclen
+
+                        if has_selections:
+                            if (
+                                clibmseed.msr3_matchselect(selections_ptr, msr_ptr[0], ffi.NULL)
+                                == ffi.NULL
+                            ):
+                                continue
+                            if unpack_data and msr_ptr[0].samplecnt > 0:
+                                unpacked = clibmseed.msr3_unpack_data(msr_ptr[0], verbose)
+                                if unpacked < 0:
+                                    raise MiniSEEDError(unpacked, "Error unpacking data samples")
+
                         yield cls(recordptr=msr_ptr[0])
                         continue
                     elif status > 0:
@@ -1988,6 +2148,8 @@ class MS3Record:
             if msr_ptr[0] != ffi.NULL:
                 clibmseed.msr3_free(msr_ptr)
                 msr_ptr[0] = ffi.NULL
+            if free_selections is not None:
+                free_selections()
 
     @classmethod
     def iter_records(cls, source, **kwargs) -> Iterator[MS3Record]:
@@ -2004,8 +2166,15 @@ class MS3Record:
           :meth:`MS3Record.from_buffer` — contiguous memory, generator
 
         All keyword arguments are forwarded to the underlying method.  Common
-        kwargs shared by all three paths: ``unpack_data``, ``validate_crc``,
-        ``verbose``.  ``chunk_size`` is forwarded only for file-like sources.
+        kwargs shared by all three paths: ``unpack_data``, ``sourceid``,
+        ``starttime``, ``endtime``, ``validate_crc``, ``verbose``.
+        ``chunk_size`` is forwarded only for file-like sources.
+
+        Passing ``sourceid``, ``starttime``, and/or ``endtime`` yields only the
+        records matching the source ID glob pattern and/or overlapping the time
+        window.  For file sources the filtering happens entirely inside
+        libmseed; for buffer and file-like sources each record header is parsed
+        in order to be matched, but rejected records are never decoded.
 
         Args:
             source: A file path (``str`` / :class:`os.PathLike`), an open file
