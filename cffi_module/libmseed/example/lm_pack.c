@@ -29,7 +29,7 @@
 #define VERSION "[libmseed " LIBMSEED_VERSION " example]"
 #define PACKAGE "lm_pack"
 
-static flag verbose       = 0;
+static int8_t verbose     = 0;
 static int reclen         = -1;
 static double samprate    = 1.0;
 static char *sourceid     = "FDSN:XX_TEST__X_Y_Z";
@@ -161,7 +161,7 @@ main (int argc, char **argv)
   int32_t isinedata[SINE_DATA_SAMPLES];
   float fsinedata[SINE_DATA_SAMPLES];
   int idx;
-  int rv;
+  int64_t rv;
 
   /* Create integer and double sine data sets */
   for (idx = 0; idx < SINE_DATA_SAMPLES; idx++)
@@ -251,7 +251,7 @@ main (int argc, char **argv)
   rv = msr3_writemseed (msr, outfile, 1, flags, verbose);
 
   if (rv < 0)
-    ms_log (2, "Error (%d) writing miniSEED to %s\n", rv, outfile);
+    ms_log (2, "Error (%" PRId64 ") writing miniSEED to %s\n", rv, outfile);
 
   /* Make sure everything is cleaned up */
   msr->datasamples = NULL;
@@ -287,7 +287,7 @@ parameter_proc (int argcount, char **argvec)
     }
     else if (strncmp (argvec[optind], "-v", 2) == 0)
     {
-      verbose += strspn (&argvec[optind][1], "v");
+      verbose += (int8_t)strspn (&argvec[optind][1], "v");
     }
     else if (strcmp (argvec[optind], "-F") == 0)
     {

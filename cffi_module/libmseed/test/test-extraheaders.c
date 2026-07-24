@@ -56,7 +56,7 @@ TEST (extraheaders, get_set_ptr_r)
   msr = msr3_init (msr);
   REQUIRE (msr != NULL, "msr3_init() returned unexpected NULL");
 
-  msr->extralength = strlen (testheaders);
+  msr->extralength = (uint16_t)strlen (testheaders);
   msr->extra = malloc (msr->extralength);
   REQUIRE (msr->extra != NULL, "Error allocating memory for msr->extra");
   memcpy (msr->extra, testheaders, msr->extralength);
@@ -158,7 +158,7 @@ TEST (extraheaders, get_ptr_type)
   msr = msr3_init (msr);
   REQUIRE (msr != NULL, "msr3_init() returned unexpected NULL");
 
-  msr->extralength = strlen (testheaders);
+  msr->extralength = (uint16_t)strlen (testheaders);
   msr->extra = malloc (msr->extralength);
   REQUIRE (msr->extra != NULL, "Error allocating memory for msr->extra");
   memcpy (msr->extra, testheaders, msr->extralength);
@@ -275,7 +275,7 @@ TEST (extraheaders, replace)
 
   /* Populate initial header JSON */
   jsondoc = "{\"root\":{\"string\":\"value\"}}";
-  msr->extralength = strlen (jsondoc);
+  msr->extralength = (uint16_t)strlen (jsondoc);
   msr->extra = malloc (msr->extralength);
   REQUIRE (msr->extra != NULL, "Error allocating memory for msr->extra");
   memcpy (msr->extra, jsondoc, msr->extralength);

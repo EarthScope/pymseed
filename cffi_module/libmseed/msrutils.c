@@ -317,14 +317,15 @@ msr3_resize_buffer (MS3Record *msr)
 
     if (msr->datasize > datasize)
     {
-      msr->datasamples = libmseed_memory.realloc (msr->datasamples, datasize);
+      void *resized = libmseed_memory.realloc (msr->datasamples, datasize);
 
-      if (msr->datasamples == NULL)
+      if (resized == NULL)
       {
         ms_log (2, "%s: Cannot (re)allocate memory\n", msr->sid);
         return MS_GENERROR;
       }
 
+      msr->datasamples = resized;
       msr->datasize = datasize;
     }
   }

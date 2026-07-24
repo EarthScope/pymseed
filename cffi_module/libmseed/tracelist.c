@@ -24,8 +24,8 @@
 #include <string.h>
 #include <time.h>
 
-#include "libmseed.h"
 #include "internalstate.h"
+#include "libmseed.h"
 
 static MS3TraceSeg *lm_msr2seg (const MS3Record *msr, nstime_t endtime);
 static MS3TraceSeg *lm_addmsrtoseg (MS3TraceSeg *seg, const MS3Record *msr, nstime_t endtime,
@@ -37,13 +37,15 @@ static MS3RecordPtr *lm_add_recordptr (MS3TraceSeg *seg, const MS3Record *msr, n
 static void lm_free_segment_memory (MS3TraceSeg *seg, int8_t freeprvtptr);
 static int lm_remove_segment (MS3TraceList *mstl, MS3TraceID *id, MS3TraceSeg *seg,
                               int8_t freeprvtptr);
+static void lm_update_id_extent (MS3TraceID *id);
 static uint32_t lm_lcg_r (uint64_t *state);
 static uint8_t lm_random_height (uint8_t maximum, uint64_t *state);
+static nstime_t lm_packed_starttime (const MS3TraceSeg *seg, int64_t packedsamples);
 
-/* Test if two sample rates are similar using either specified tolerance (if positive) or default
- * tolerance */
+/* Test if two sample rates are similar using either specified tolerance (if non-negative) or
+ * default tolerance */
 #define IS_SAMPRATE_SIMILAR(SR1, SR2, SRT) \
-  ((SRT > 0.0) ? fabs (SR1 - SR2) > SRT : MS_ISRATETOLERABLE (SR1, SR2))
+  ((SRT >= 0.0) ? fabs (SR1 - SR2) <= SRT : MS_ISRATETOLERABLE (SR1, SR2))
 
 /* Test if a MS3TraceSeg represents time coverage */
 #define SEGMENT_HAS_TIME_COVERAGE(seg) ((seg)->samplecnt > 0 && (seg)->samprate != 0.0)
@@ -106,7 +108,7 @@ mstl3_free (MS3TraceList **ppmstl, int8_t freeprvtptr)
   MS3TraceSeg *seg = NULL;
   MS3TraceSeg *nextseg = NULL;
 
-  if (!ppmstl)
+  if (!ppmstl || !*ppmstl)
     return;
 
   /* Free any associated traces */
@@ -259,7 +261,7 @@ mstl3_addID (MS3TraceList *mstl, MS3TraceID *id, MS3TraceID **prev)
     id->next[level] = NULL;
   }
 
-  /* Connect previous and new ID pointers */
+  /* Verify all required previous pointers exist before linking anything */
   for (level = id->height - 1; level >= 0; level--)
   {
     if (!prev[level])
@@ -267,7 +269,11 @@ mstl3_addID (MS3TraceList *mstl, MS3TraceID *id, MS3TraceID **prev)
       ms_log (2, "No previous pointer at level %d for adding SID %s\n", level, id->sid);
       return NULL;
     }
+  }
 
+  /* Connect previous and new ID pointers */
+  for (level = id->height - 1; level >= 0; level--)
+  {
     id->next[level] = prev[level]->next[level];
     prev[level]->next[level] = id;
   }
@@ -324,7 +330,7 @@ _mstl3_addmsr_impl (MS3TraceList *mstl, const MS3Record *msr, MS3RecordPtr **ppr
 
   /* If splitversion is true and MSF_SPLITISVERSION is set in flags, use splitversion
    * as the version, otherwise use msr->pubversion */
-  int8_t pubversion = (flags & MSF_SPLITISVERSION) ? splitversion : msr->pubversion;
+  uint8_t pubversion = (flags & MSF_SPLITISVERSION) ? splitversion : msr->pubversion;
 
   /* Search for matching trace ID */
   id = mstl3_findID (mstl, msr->sid, (splitversion) ? pubversion : 0, previd);
@@ -348,6 +354,7 @@ _mstl3_addmsr_impl (MS3TraceList *mstl, const MS3Record *msr, MS3RecordPtr **ppr
 
     if (!(seg = lm_msr2seg (msr, endtime)))
     {
+      libmseed_memory.free (id);
       return NULL;
     }
     id->first = id->last = seg;
@@ -355,6 +362,8 @@ _mstl3_addmsr_impl (MS3TraceList *mstl, const MS3Record *msr, MS3RecordPtr **ppr
     /* Add MS3RecordPtr if requested */
     if (pprecptr && !(*pprecptr = lm_add_recordptr (seg, msr, endtime, 1)))
     {
+      lm_free_segment_memory (seg, 0);
+      libmseed_memory.free (id);
       return NULL;
     }
 
@@ -362,6 +371,8 @@ _mstl3_addmsr_impl (MS3TraceList *mstl, const MS3Record *msr, MS3RecordPtr **ppr
     if (mstl3_addID (mstl, id, previd) == NULL)
     {
       ms_log (2, "Error adding new ID to trace list\n");
+      lm_free_segment_memory (seg, 0);
+      libmseed_memory.free (id);
       return NULL;
     }
   }
@@ -373,7 +384,17 @@ _mstl3_addmsr_impl (MS3TraceList *mstl, const MS3Record *msr, MS3RecordPtr **ppr
 
     /* Calculate high-precision time tolerance */
     if (tolerance && tolerance->time)
-      nstimetol = (nstime_t)(NSTMODULUS * tolerance->time (msr));
+    {
+      double timetol = tolerance->time (msr);
+
+      if (timetol < 0.0)
+      {
+        ms_log (1, "%s: Ignoring negative time tolerance (%g), using default\n", msr->sid, timetol);
+        nstimetol = (nstime_t)(0.5 * nsperiod);
+      }
+      else
+        nstimetol = (nstime_t)(NSTMODULUS * timetol);
+    }
     else
       nstimetol = (nstime_t)(0.5 * nsperiod); /* Default time tolerance is 1/2 sample period */
 
@@ -381,7 +402,16 @@ _mstl3_addmsr_impl (MS3TraceList *mstl, const MS3Record *msr, MS3RecordPtr **ppr
 
     /* Calculate sample rate tolerance */
     if (tolerance && tolerance->samprate)
+    {
       sampratetol = tolerance->samprate (msr);
+
+      if (sampratetol < 0.0)
+      {
+        ms_log (1, "%s: Ignoring negative sample rate tolerance (%g), using default\n", msr->sid,
+                sampratetol);
+        sampratetol = -1.0; /* Restore default sentinel */
+      }
+    }
 
     sampratehz = msr3_sampratehz (msr);
 
@@ -603,6 +633,8 @@ _mstl3_addmsr_impl (MS3TraceList *mstl, const MS3Record *msr, MS3RecordPtr **ppr
         /* Add MS3RecordPtr if requested */
         if (pprecptr && !(*pprecptr = lm_add_recordptr (seg, msr, endtime, 0)))
         {
+          /* seg is not yet linked into the segment list, free it directly */
+          lm_free_segment_memory (seg, 0);
           return NULL;
         }
 
@@ -918,7 +950,7 @@ mstl3_readbuffer_selection (MS3TraceList **ppmstl, const char *buffer, uint64_t 
   if ((flags & MSF_UNPACKDATA) && selections)
     pflags &= ~(MSF_UNPACKDATA);
 
-  while ((bufferlength - offset) > MINRECLEN)
+  while ((bufferlength - offset) >= MINRECLEN)
   {
     parsevalue = msr3_parse (buffer + offset, bufferlength - offset, &msr, pflags, verbose);
 
@@ -980,7 +1012,10 @@ mstl3_readbuffer_selection (MS3TraceList **ppmstl, const char *buffer, uint64_t 
     {
       /* Determine offset to data and length of data payload */
       if (msr3_data_bounds (msr, &dataoffset, &datasize))
+      {
+        msr3_free (&msr);
         return MS_GENERROR;
+      }
 
       recordptr->bufferptr = buffer + offset;
       recordptr->fileptr = NULL;
@@ -1041,14 +1076,23 @@ lm_msr2seg (const MS3Record *msr, nstime_t endtime)
     if (!(samplesize = ms_samplesize (msr->sampletype)))
     {
       ms_log (2, "Unknown sample size for sample type: %c\n", msr->sampletype);
+      lm_free_segment_memory (seg, 0);
       return NULL;
     }
 
-    datasize = samplesize * msr->numsamples;
+    if (msr->numsamples < 0 || (uint64_t)msr->numsamples > SIZE_MAX / (size_t)samplesize)
+    {
+      ms_log (2, "Data buffer size overflow for %" PRId64 " samples\n", msr->numsamples);
+      lm_free_segment_memory (seg, 0);
+      return NULL;
+    }
 
-    if (!(seg->datasamples = libmseed_memory.malloc ((size_t)(datasize))))
+    datasize = (size_t)msr->numsamples * (size_t)samplesize;
+
+    if (!(seg->datasamples = libmseed_memory.malloc (datasize)))
     {
       ms_log (2, "Error allocating memory\n");
+      lm_free_segment_memory (seg, 0);
       return NULL;
     }
     seg->datasize = datasize;
@@ -1101,24 +1145,37 @@ lm_addmsrtoseg (MS3TraceSeg *seg, const MS3Record *msr, nstime_t endtime, int8_t
       return NULL;
     }
 
-    newdatasize = (seg->numsamples + msr->numsamples) * samplesize;
+    if (seg->numsamples < 0 || msr->numsamples < 0 ||
+        (uint64_t)seg->numsamples + (uint64_t)msr->numsamples > SIZE_MAX / (size_t)samplesize)
+    {
+      ms_log (2, "Data buffer size overflow combining %" PRId64 " and %" PRId64 " samples\n",
+              seg->numsamples, msr->numsamples);
+      return NULL;
+    }
+
+    newdatasize = ((size_t)seg->numsamples + (size_t)msr->numsamples) * (size_t)samplesize;
 
     if (libmseed_prealloc_block_size)
     {
       size_t current_size = seg->datasize;
       newdatasamples = libmseed_memory_prealloc (seg->datasamples, newdatasize, &current_size);
-      seg->datasize = current_size;
+
+      /* Update datasize only on success; on failure the original buffer and its
+       * recorded size are left intact (prealloc/realloc do not free on failure). */
+      if (newdatasamples)
+        seg->datasize = current_size;
     }
     else
     {
       newdatasamples = libmseed_memory.realloc (seg->datasamples, newdatasize);
-      seg->datasize = newdatasize;
+
+      if (newdatasamples)
+        seg->datasize = newdatasize;
     }
 
     if (!newdatasamples)
     {
       ms_log (2, "Error allocating memory\n");
-      seg->datasize = 0;
       return NULL;
     }
 
@@ -1200,24 +1257,37 @@ lm_addsegtoseg (MS3TraceSeg *seg1, MS3TraceSeg *seg2)
       return NULL;
     }
 
-    newdatasize = (seg1->numsamples + seg2->numsamples) * samplesize;
+    if (seg1->numsamples < 0 || seg2->numsamples < 0 ||
+        (uint64_t)seg1->numsamples + (uint64_t)seg2->numsamples > SIZE_MAX / (size_t)samplesize)
+    {
+      ms_log (2, "Data buffer size overflow combining %" PRId64 " and %" PRId64 " samples\n",
+              seg1->numsamples, seg2->numsamples);
+      return NULL;
+    }
+
+    newdatasize = ((size_t)seg1->numsamples + (size_t)seg2->numsamples) * (size_t)samplesize;
 
     if (libmseed_prealloc_block_size)
     {
       size_t current_size = seg1->datasize;
       newdatasamples = libmseed_memory_prealloc (seg1->datasamples, newdatasize, &current_size);
-      seg1->datasize = current_size;
+
+      /* Update datasize only on success; on failure the original buffer and its
+       * recorded size are left intact (prealloc/realloc do not free on failure). */
+      if (newdatasamples)
+        seg1->datasize = current_size;
     }
     else
     {
       newdatasamples = libmseed_memory.realloc (seg1->datasamples, newdatasize);
-      seg1->datasize = newdatasize;
+
+      if (newdatasamples)
+        seg1->datasize = newdatasize;
     }
 
     if (!newdatasamples)
     {
       ms_log (2, "Error allocating memory\n");
-      seg1->datasize = 0;
       return NULL;
     }
 
@@ -1358,6 +1428,39 @@ lm_add_recordptr (MS3TraceSeg *seg, const MS3Record *msr, nstime_t endtime, int8
   return recordptr;
 } /* End of lm_add_recordptr() */
 
+/***************************************************************************
+ * Test that a floating point sample value can be converted to a 32-bit
+ * integer, and when truncation is not allowed that no sub-integer precision
+ * is lost.  The sourcetype is the singular sample type name for messages.
+ *
+ * The range is tested before any conversion because casting a non-finite or
+ * out-of-range value to an integer is undefined.
+ *
+ * Returns 0 if the value can be converted, otherwise -1.
+ ***************************************************************************/
+static int
+lm_check_int32_sample (double value, int8_t truncate, const char *sourcetype)
+{
+  double rounded = value + (value >= 0 ? 0.5 : -0.5);
+
+  /* Written as a positive range test so NaN, which compares false, is rejected */
+  if (!(rounded > (double)INT32_MIN - 1.0 && rounded < (double)INT32_MAX + 1.0))
+  {
+    ms_log (2, "Cannot convert %s sample value to a 32-bit integer: %g\n", sourcetype, value);
+    return -1;
+  }
+
+  /* Check for loss of sub-integer */
+  if (!truncate && fabs (value - (int32_t)value) > 0.000001)
+  {
+    ms_log (2, "Loss of precision when converting %ss to integers, loss: %g\n", sourcetype,
+            fabs (value - (int32_t)value));
+    return -1;
+  }
+
+  return 0;
+} /* End of lm_check_int32_sample() */
+
 /** ************************************************************************
  * @brief Convert the data samples associated with an MS3TraceSeg to another
  * data type
@@ -1375,8 +1478,12 @@ lm_add_recordptr (MS3TraceSeg *seg, const MS3Record *msr, nstime_t endtime, int8
  * truncated to integers even if loss of sample precision is detected.
  * If the truncate flag is false (zero) and loss of precision is
  * detected an error is returned.  Loss of precision is determined by
- * testing that the difference between the floating point value and
- * the (truncated) integer value is greater than 0.000001.
+ * testing that the absolute difference between the floating point value
+ * and the (truncated) integer value is greater than 0.000001.
+ *
+ * A value that is not representable as a 32-bit integer, including NaN and
+ * the infinities, is an error regardless of the @p truncate flag.  On error
+ * the data samples are left unmodified.
  *
  * @param[in] seg The target ::MS3TraceSeg to convert
  * @param[in] type The desired data sample type:
@@ -1415,6 +1522,12 @@ mstl3_convertsamples (MS3TraceSeg *seg, char type, int8_t truncate)
     return -1;
   }
 
+  if (type != 'i' && type != 'f' && type != 'd')
+  {
+    ms_log (2, "Unsupported target sample type: %c\n", type);
+    return -1;
+  }
+
   idata = (int32_t *)seg->datasamples;
   fdata = (float *)seg->datasamples;
   ddata = (double *)seg->datasamples;
@@ -1424,45 +1537,39 @@ mstl3_convertsamples (MS3TraceSeg *seg, char type, int8_t truncate)
   {
     if (seg->sampletype == 'f') /* Convert floats to integers with simple rounding */
     {
+      /* Check all values first, the conversion is in place and a rejected
+       * value must not leave the buffer partially converted */
       for (idx = 0; idx < seg->numsamples; idx++)
-      {
-        /* Check for loss of sub-integer */
-        if (!truncate && (fdata[idx] - (int32_t)fdata[idx]) > 0.000001)
-        {
-          ms_log (2, "Loss of precision when converting floats to integers, loss: %g\n",
-                  (fdata[idx] - (int32_t)fdata[idx]));
+        if (lm_check_int32_sample (fdata[idx], truncate, "float"))
           return -1;
-        }
 
-        /* Round to nearest integer, handling positive and negative values */
+      /* Round to nearest integer, handling positive and negative values */
+      for (idx = 0; idx < seg->numsamples; idx++)
         idata[idx] = (int32_t)(fdata[idx] + (fdata[idx] >= 0 ? 0.5 : -0.5));
-      }
     }
     else if (seg->sampletype == 'd') /* Convert doubles to integers with simple rounding */
     {
+      /* Check all values first, the conversion is in place and a rejected
+       * value must not leave the buffer partially converted */
       for (idx = 0; idx < seg->numsamples; idx++)
-      {
-        /* Check for loss of sub-integer */
-        if (!truncate && (ddata[idx] - (int32_t)ddata[idx]) > 0.000001)
-        {
-          ms_log (2, "Loss of precision when converting doubles to integers, loss: %g\n",
-                  (ddata[idx] - (int32_t)ddata[idx]));
+        if (lm_check_int32_sample (ddata[idx], truncate, "double"))
           return -1;
-        }
 
-        /* Round to nearest integer, handling positive and negative values */
+      /* Round to nearest integer, handling positive and negative values */
+      for (idx = 0; idx < seg->numsamples; idx++)
         idata[idx] = (int32_t)(ddata[idx] + (ddata[idx] >= 0 ? 0.5 : -0.5));
-      }
 
       /* Reallocate buffer for reduced size needed, only if not pre-allocating */
       if (libmseed_prealloc_block_size == 0)
       {
-        if (!(seg->datasamples = libmseed_memory.realloc (
-                  seg->datasamples, (size_t)(seg->numsamples * sizeof (int32_t)))))
+        void *resized = libmseed_memory.realloc (seg->datasamples,
+                                                 (size_t)(seg->numsamples * sizeof (int32_t)));
+        if (resized == NULL)
         {
           ms_log (2, "Cannot re-allocate buffer for sample conversion\n");
           return -1;
         }
+        seg->datasamples = resized;
         seg->datasize = seg->numsamples * sizeof (int32_t);
       }
     }
@@ -1486,12 +1593,14 @@ mstl3_convertsamples (MS3TraceSeg *seg, char type, int8_t truncate)
       /* Reallocate buffer for reduced size needed, only if not pre-allocating */
       if (libmseed_prealloc_block_size == 0)
       {
-        if (!(seg->datasamples = libmseed_memory.realloc (
-                  seg->datasamples, (size_t)(seg->numsamples * sizeof (float)))))
+        void *resized =
+            libmseed_memory.realloc (seg->datasamples, (size_t)(seg->numsamples * sizeof (float)));
+        if (resized == NULL)
         {
           ms_log (2, "Cannot re-allocate buffer after sample conversion\n");
           return -1;
         }
+        seg->datasamples = resized;
         seg->datasize = seg->numsamples * sizeof (float);
       }
     }
@@ -1572,14 +1681,15 @@ mstl3_resize_buffers (MS3TraceList *mstl)
 
         if (seg->datasize > datasize)
         {
-          seg->datasamples = libmseed_memory.realloc (seg->datasamples, datasize);
+          void *resized = libmseed_memory.realloc (seg->datasamples, datasize);
 
-          if (seg->datasamples == NULL)
+          if (resized == NULL)
           {
             ms_log (2, "%s: Cannot (re)allocate memory\n", id->sid);
             return MS_GENERROR;
           }
 
+          seg->datasamples = resized;
           seg->datasize = datasize;
         }
       }
@@ -1686,7 +1796,13 @@ mstl3_unpack_recordlist (MS3TraceID *id, MS3TraceSeg *seg, void *output, uint64_
   }
 
   /* Calculate buffer size needed for unpacked samples */
-  decodedsize = seg->samplecnt * samplesize;
+  if (seg->samplecnt < 0 || (uint64_t)seg->samplecnt > SIZE_MAX / samplesize)
+  {
+    ms_log (2, "%s: Data buffer size overflow for %" PRId64 " samples\n", id->sid, seg->samplecnt);
+    return -1;
+  }
+
+  decodedsize = (uint64_t)seg->samplecnt * samplesize;
 
   /* If output buffer is supplied, check needed size */
   if (output)
@@ -1789,6 +1905,7 @@ mstl3_unpack_recordlist (MS3TraceID *id, MS3TraceSeg *seg, void *output, uint64_
             ms_log (2, "%s: Cannot open file (%s): %s\n", id->sid, recordptr->filename,
                     strerror (errno));
 
+            libmseed_memory.free (filelistptr);
             totalunpackedsamples = -1;
             break;
           }
@@ -1805,7 +1922,9 @@ mstl3_unpack_recordlist (MS3TraceID *id, MS3TraceSeg *seg, void *output, uint64_
       /* Allocate memory if needed, over-allocating (x2) to minimize reallocation */
       if (recordptr->msr->reclen > filebuffersize)
       {
-        if ((filebuffer = libmseed_memory.realloc (filebuffer, recordptr->msr->reclen * 2)) == NULL)
+        void *resized = libmseed_memory.realloc (filebuffer, recordptr->msr->reclen * 2);
+
+        if (resized == NULL)
         {
           ms_log (2, "%s: Cannot allocate memory for file read buffer\n", id->sid);
 
@@ -1813,6 +1932,7 @@ mstl3_unpack_recordlist (MS3TraceID *id, MS3TraceSeg *seg, void *output, uint64_
           break;
         }
 
+        filebuffer = resized;
         filebuffersize = recordptr->msr->reclen * 2;
       }
 
@@ -1877,7 +1997,10 @@ mstl3_unpack_recordlist (MS3TraceID *id, MS3TraceSeg *seg, void *output, uint64_
     filelist = filelistptr;
   }
 
-  /* If output buffer was allocated here, do some maintenance */
+  /* If decoding targeted the segment's own buffer, do some maintenance.
+   * When the caller supplied a separate output buffer the segment's
+   * datasamples/numsamples/sampletype must be left describing its existing
+   * data, not the data just written to the caller's buffer. */
   if (output == seg->datasamples)
   {
     /* Free allocated memory on error */
@@ -1890,11 +2013,11 @@ mstl3_unpack_recordlist (MS3TraceID *id, MS3TraceSeg *seg, void *output, uint64_
     else
     {
       seg->numsamples = totalunpackedsamples;
+
+      if (totalunpackedsamples > 0)
+        seg->sampletype = sampletype;
     }
   }
-
-  if (totalunpackedsamples > 0)
-    seg->sampletype = sampletype;
 
   return totalunpackedsamples;
 } /* End of mstl3_unpack_recordlist() */
@@ -2003,22 +2126,17 @@ _mstl3_pack_callback (MS3TraceList *mstl, void (*record_handler) (char *, int, v
  * the ::MSF_FLUSHDATA flag to pack all data in the trace list.
  *
  * <b>Use as a rolling buffer to generate data records:</b>
- * The behavior of adjusting the trace list as data are packed is
- * intended to allow using a ::MS3TraceList as an intermediate
- * collection of data buffers to generate data records from an
- * arbitrarily large data source, e.g. continuous data.  In this
- * pattern, data are added to a ::MS3TraceList and mstl3_pack() is
- * called repeatedly.  Data records are only produced if a complete
- * record can be generated, which often leaves small amounts of data
- * in each segment buffer.  On completion or shutdown the caller
- * usually makes a final call to mst3_pack() with the ::MSF_FLUSHDATA
- * flag set to flush all data from the buffers.  Implementing finer
- * control of when data records are generated, such as a time tolerance,
- * can be done using mstraceseg3_pack() directly.
+ * A ::MS3TraceList can be used as an intermediate collection of data
+ * buffers to generate data records from an arbitrarily large data
+ * source, e.g. continuous data. For this pattern use mstl3_pack_init()
+ * and mstl3_pack_next(), instead of mstl3_pack(). See the
+ * lm_pack_rollingbuffer.c example.  If using this function for a
+ * continuous data source, you must set the ::MSF_FLUSHDATA flag on a
+ * final call to pack all data in the buffer.
  *
  * As each record is filled and finished they are passed to @p
- * record_handler() which should expect 1) a @c char* to the record,
- * 2) the length of the record and 3) a pointer supplied by the
+ * record_handler() callback which should expect 1) a @c char* to the
+ * record, 2) the length of the record and 3) a pointer supplied by the
  * original caller containing optional private data (@p handlerdata).
  * It is the responsibility of @p record_handler() to process the
  * record, the memory will be re-used or freed when @p
@@ -2032,6 +2150,11 @@ _mstl3_pack_callback (MS3TraceList *mstl, void (*record_handler) (char *, int, v
  * If @p extra is not NULL it is expected to contain extraheaders, a
  * string containing (compact) JSON, that will be added to each output
  * record.
+ *
+ * When packed data are removed from a segment, the new segment start
+ * time is projected using the apparent sample rate implied by the
+ * segment start and end times, falling back to the nominal rate when
+ * they are inconsistent.
  *
  * @param[in] mstl ::MS3TraceList containing data to pack
  * @param[in] record_handler() Callback function called for each record
@@ -2052,6 +2175,8 @@ _mstl3_pack_callback (MS3TraceList *mstl, void (*record_handler) (char *, int, v
  *
  * @ref MessageOnError - this function logs a message on error
  *
+ * @see mstl3_pack_init()
+ * @see mstl3_pack_next()
  * @see mstl3_pack_segment()
  * @see msr3_pack()
  ***************************************************************************/
@@ -2063,6 +2188,33 @@ mstl3_pack (MS3TraceList *mstl, void (*record_handler) (char *, int, void *), vo
   return _mstl3_pack_callback (mstl, record_handler, handlerdata, reclen, encoding, packedsamples,
                                flags, verbose, extra, 0);
 }
+
+/***************************************************************************
+ * Calculate a new segment start time after packed samples are removed
+ * from the front of the segment.
+ *
+ * The start time is projected using the apparent sample period implied
+ * by the segment start and end times, which distributes small timing
+ * skew proportionally and avoids accumulating rounding drift across
+ * repeated packing.  If the apparent rate is not within tolerance of
+ * the nominal rate, the nominal rate is used instead.
+ ***************************************************************************/
+static nstime_t
+lm_packed_starttime (const MS3TraceSeg *seg, int64_t packedsamples)
+{
+  if (seg->numsamples >= 2 && seg->endtime > seg->starttime && seg->samprate != 0.0)
+  {
+    double apparent_period =
+        (double)(seg->endtime - seg->starttime) / (double)(seg->numsamples - 1);
+    double nominal_period = (seg->samprate > 0.0) ? (double)NSTMODULUS / seg->samprate
+                                                  : (double)NSTMODULUS * -seg->samprate;
+
+    if (MS_ISRATETOLERABLE (apparent_period, nominal_period))
+      return seg->starttime + (nstime_t)((double)packedsamples * apparent_period + 0.5);
+  }
+
+  return ms_sampletime (seg->starttime, packedsamples, seg->samprate);
+} /* End of lm_packed_starttime() */
 
 /** ************************************************************************
  * @copydoc mstl3_pack()
@@ -2090,7 +2242,22 @@ mstl3_pack_ppupdate_flushidle (MS3TraceList *mstl, void (*record_handler) (char 
  * Create and initialize an opaque ::MS3TraceListPacker context for generating
  * miniSEED records one at a time from an ::MS3TraceList.
  *
+ * <b>Use as a rolling buffer to generate data records:</b>
+ * A ::MS3TraceList can be used as an intermediate collection of data
+ * buffers to generate data records from an arbitrarily large or continuous
+ * data source. The final call should be made with the ::MSF_FLUSHDATA flag
+ * set to flush all data from the buffers. See the lm_pack_rollingbuffer.c
+ * example.
+ *
  * The packing state should be freed with mstl3_pack_free() when done.
+ *
+ * If ::MSF_MAINTAINMSTL is set, the trace list is not trimmed, so a partial
+ * record cannot be continued on a later call; each segment is therefore
+ * packed completely on its first visit, as if ::MSF_FLUSHDATA were also set
+ * for that segment. Scanning resumes after the last completed segment on
+ * each call, so trace IDs and segments added after that point are packed by
+ * a later call, but data added at or before it is not. See mstl3_pack_next()
+ * for the complete ::MSF_MAINTAINMSTL contract.
  *
  * If @p flush_idle_seconds is > 0, segments idle longer than the threshold will
  * be flushed automatically. This requires the ::MSF_PPUPDATETIME flag to be set
@@ -2119,8 +2286,8 @@ mstl3_pack_ppupdate_flushidle (MS3TraceList *mstl, void (*record_handler) (char 
  * @see mstl3_pack_free()
  ***************************************************************************/
 MS3TraceListPacker *
-mstl3_pack_init (MS3TraceList *mstl, int reclen, int8_t encoding,
-                 uint32_t flags, int8_t verbose, char *extra, uint32_t flush_idle_seconds)
+mstl3_pack_init (MS3TraceList *mstl, int reclen, int8_t encoding, uint32_t flags, int8_t verbose,
+                 char *extra, uint32_t flush_idle_seconds)
 {
   MS3TraceListPacker *packer = NULL;
 
@@ -2170,6 +2337,28 @@ mstl3_pack_init (MS3TraceList *mstl, int reclen, int8_t encoding,
  * will be adjusted as data are packed unless the ::MSF_MAINTAINMSTL flag is
  * specified in @p flags of mstl3_pack_init().
  *
+ * Data may be added to the trace list (e.g. with mstl3_addmsr()) between
+ * calls, i.e. after a return of 0, and packing may simply continue with
+ * the same packer.  Appending data to the segment currently being packed
+ * (between calls that return 1) is also safe.  Prepending data (adding
+ * coverage before a segment's start time) to a segment that is actively
+ * being packed is not supported and will return -1; in that case the
+ * trace list itself is left intact, but samples already emitted in the
+ * aborted session have not yet been trimmed from the segment, so a new
+ * packer would emit them again as duplicates.  Likewise, adding data that
+ * merges the segment currently being packed into a neighboring segment
+ * (autohealing a gap) is not supported and will also return -1.  Add data
+ * only between calls that return 0 to avoid these cases.
+ *
+ * With ::MSF_MAINTAINMSTL, since the trace list is not trimmed, each segment
+ * is packed completely the first time it is visited and ::MSF_FLUSHDATA is
+ * implied for that segment; a partial record is never deferred.  Scanning
+ * resumes after the last completed segment on each call, so a trace ID or
+ * segment added after that point is packed by a later call.  Data added to,
+ * or before, an already-completed segment is not packed by this packer; a
+ * merge that removes the last completed segment is not supported and will
+ * return -1.
+ *
  * @param[in] packer ::MS3TraceListPacker context
  * @param[in] flags Bit flags to control packing:
  * @parblock
@@ -2193,6 +2382,7 @@ mstl3_pack_next (MS3TraceListPacker *packer, uint32_t flags, char **record, int3
   size_t extralength;
   MS3TraceID *id = NULL;
   MS3TraceSeg *seg = NULL;
+  MS3TraceSeg *resume_seg = NULL;
 
   if (!packer || !record || !reclen)
   {
@@ -2200,13 +2390,58 @@ mstl3_pack_next (MS3TraceListPacker *packer, uint32_t flags, char **record, int3
     return -1;
   }
 
-  /* If packing is finished, return immediately */
-  if (packer->finished)
-    return 0;
-
   /* If we have an active segment packing state, try to get another record from it */
   if (packer->seg_packing_state)
   {
+    /* The segment buffer may have been reallocated (moved) or grown by
+     * mstl3_addmsr() since the last call.  Appends keep already-packed
+     * samples at the front, so re-syncing the live buffer is safe.  A
+     * prepend (earlier start time) shifts packed samples and cannot be
+     * reconciled with the in-progress record offset. */
+    if (packer->current_seg)
+    {
+      /* mstl3_addmsr() may have autohealed a gap by merging current_seg
+       * into a neighboring segment and freeing it, leaving the pointer
+       * dangling.  Confirm it is still linked before dereferencing it;
+       * check by identity only against the (still-valid) trace ID's
+       * segment list, never dereferencing a possibly-freed segment. */
+      MS3TraceSeg *checkseg = packer->current_id ? packer->current_id->first : NULL;
+
+      while (checkseg && checkseg != packer->current_seg)
+        checkseg = checkseg->next;
+
+      if (!checkseg)
+      {
+        int64_t seg_total_packed = 0;
+
+        ms_log (2,
+                "%s: Segment being packed was merged or removed during active packing; "
+                "add data only between records (after a return of 0)\n",
+                packer->current_id ? packer->current_id->sid : "");
+
+        /* Retain the aborted session's count so the total does not under-report */
+        msr3_pack_free (&packer->seg_packing_state, &seg_total_packed);
+        packer->totalpackedsamples += seg_total_packed;
+
+        packer->current_id = NULL;
+        packer->current_seg = NULL;
+        return -1;
+      }
+
+      if (packer->current_seg->starttime < packer->msr_template.starttime)
+      {
+        ms_log (2,
+                "%s: Segment start time moved earlier during active packing; "
+                "add data only between records (after a return of 0)\n",
+                packer->current_id ? packer->current_id->sid : "");
+        return -1;
+      }
+
+      packer->msr_template.datasamples = packer->current_seg->datasamples;
+      packer->msr_template.numsamples = packer->current_seg->numsamples;
+      packer->msr_template.samplecnt = packer->current_seg->samplecnt;
+    }
+
     /* Set flags from caller */
     if (flags & MSF_FLUSHDATA)
       packer->seg_packing_state->flags |= MSF_FLUSHDATA;
@@ -2229,25 +2464,26 @@ mstl3_pack_next (MS3TraceListPacker *packer, uint32_t flags, char **record, int3
       packer->totalpackedsamples += seg_total_packed;
 
       if (packer->verbose > 1 && packer->current_id)
-        ms_log (0, "%s: Packed %" PRId64 " samples from segment\n",
-                packer->current_id->sid, seg_total_packed);
+        ms_log (0, "%s: Packed %" PRId64 " samples from segment\n", packer->current_id->sid,
+                seg_total_packed);
 
       /* If MSF_MAINTAINMSTL not set, update segment data buffer: remove packed samples */
       if ((packer->flags & MSF_MAINTAINMSTL) == 0 && seg_total_packed > 0 && packer->current_seg)
       {
-        /* Calculate new start time */
-        if (seg_total_packed == packer->current_seg->numsamples)
-          packer->current_seg->starttime = packer->current_seg->endtime;
-        else
-          packer->current_seg->starttime = ms_sampletime (
-              packer->current_seg->starttime, seg_total_packed, packer->current_seg->samprate);
-
+        /* Determine sample size before modifying the segment to avoid a partial update */
         samplesize = ms_samplesize (packer->current_seg->sampletype);
         if (!samplesize)
         {
           ms_log (2, "Unknown sample size for sample type: %c\n", packer->current_seg->sampletype);
           return -1;
         }
+
+        /* Calculate new start time, shortcut when all samples have been packed */
+        if (seg_total_packed == packer->current_seg->numsamples)
+          packer->current_seg->starttime = packer->current_seg->endtime;
+        else
+          packer->current_seg->starttime =
+              lm_packed_starttime (packer->current_seg, seg_total_packed);
 
         packer->current_seg->samplecnt -= seg_total_packed;
         packer->current_seg->numsamples -= seg_total_packed;
@@ -2265,17 +2501,19 @@ mstl3_pack_next (MS3TraceListPacker *packer, uint32_t flags, char **record, int3
           /* Reallocate buffer for reduced size if not pre-allocating */
           if (libmseed_prealloc_block_size == 0)
           {
-            packer->current_seg->datasamples =
-                libmseed_memory.realloc (packer->current_seg->datasamples, bufsize);
+            void *resized = libmseed_memory.realloc (packer->current_seg->datasamples, bufsize);
 
-            if (!packer->current_seg->datasamples)
+            if (resized == NULL)
             {
               ms_log (2, "Cannot (re)allocate datasamples buffer\n");
               return -1;
             }
 
+            packer->current_seg->datasamples = resized;
             packer->current_seg->datasize = (uint64_t)bufsize;
           }
+
+          lm_update_id_extent (packer->current_id);
         }
         else
         {
@@ -2291,25 +2529,12 @@ mstl3_pack_next (MS3TraceListPacker *packer, uint32_t flags, char **record, int3
       }
       else if (packer->flags & MSF_MAINTAINMSTL)
       {
-        /* When maintaining the trace list, advance to next segment instead of resetting
-         * to avoid repacking the same segments */
-        if (packer->current_seg && packer->current_seg->next)
-        {
-          /* Move to next segment in current trace ID */
-          packer->current_seg = packer->current_seg->next;
-        }
-        else if (packer->current_id && packer->current_id->next[0])
-        {
-          /* Move to first segment of next trace ID */
-          packer->current_id = packer->current_id->next[0];
-          packer->current_seg = packer->current_id->first;
-        }
-        else
-        {
-          /* Reached the end of the trace list, mark as finished */
-          packer->finished = 1;
-          return 0;
-        }
+        /* Trace list is not trimmed, remember where to resume scanning */
+        packer->last_id = packer->current_id;
+        packer->last_seg = packer->current_seg;
+
+        packer->current_id = NULL;
+        packer->current_seg = NULL;
       }
 
       /* Fall through to scan for next segment to pack */
@@ -2326,11 +2551,38 @@ mstl3_pack_next (MS3TraceListPacker *packer, uint32_t flags, char **record, int3
   }
 
   /* Scan trace list to find a segment that can produce a record */
-  /* When MSF_MAINTAINMSTL is set and we have a current position, start from there;
-   * otherwise start from the beginning */
-  if ((packer->flags & MSF_MAINTAINMSTL) && packer->current_id)
+  /* When MSF_MAINTAINMSTL is set, the trace list is not trimmed, so resume
+   * scanning after the last completed segment instead of from the beginning */
+  if ((packer->flags & MSF_MAINTAINMSTL) && packer->last_seg)
   {
-    id = packer->current_id;
+    /* mstl3_addmsr() may have autohealed a gap by merging last_seg into a
+     * neighboring segment and freeing it, leaving the pointer dangling.
+     * Confirm it is still linked before dereferencing it; check by identity
+     * only against the (still-valid) trace ID's segment list, never
+     * dereferencing a possibly-freed segment. */
+    MS3TraceSeg *checkseg = packer->last_id ? packer->last_id->first : NULL;
+
+    while (checkseg && checkseg != packer->last_seg)
+      checkseg = checkseg->next;
+
+    if (!checkseg)
+    {
+      ms_log (2,
+              "%s: Last completed segment was merged or removed; "
+              "add data only between records (after a return of 0)\n",
+              packer->last_id ? packer->last_id->sid : "");
+      return -1;
+    }
+
+    if (packer->last_seg->next)
+    {
+      id = packer->last_id;
+      resume_seg = packer->last_seg->next;
+    }
+    else
+    {
+      id = packer->last_id->next[0];
+    }
   }
   else
   {
@@ -2340,14 +2592,8 @@ mstl3_pack_next (MS3TraceListPacker *packer, uint32_t flags, char **record, int3
   for (; id; id = id->next[0])
   {
     /* Determine starting segment for this trace ID */
-    if ((packer->flags & MSF_MAINTAINMSTL) && id == packer->current_id && packer->current_seg)
-    {
-      seg = packer->current_seg;
-    }
-    else
-    {
-      seg = id->first;
-    }
+    seg = (resume_seg) ? resume_seg : id->first;
+    resume_seg = NULL;
 
     for (; seg; seg = seg->next)
     {
@@ -2360,6 +2606,11 @@ mstl3_pack_next (MS3TraceListPacker *packer, uint32_t flags, char **record, int3
       packer->current_seg = seg;
 
       uint32_t segment_flags = packer->flags;
+
+      /* The trace list is not trimmed in maintain mode, so a partial record
+       * cannot be continued later; pack all samples from each segment */
+      if (packer->flags & MSF_MAINTAINMSTL)
+        segment_flags |= MSF_FLUSHDATA;
 
       /* If flush_idle_nanoseconds is set and the segment has a prvtptr with an
        * update time set during parsing with the ::MSF_PPUPDATETIME flag, check if
@@ -2376,10 +2627,13 @@ mstl3_pack_next (MS3TraceListPacker *packer, uint32_t flags, char **record, int3
           segment_flags |= MSF_FLUSHDATA;
 
           if (packer->verbose >= 2)
-            ms_log (0, "%s: Flushing idle segment (idle for %.1f seconds)\n",
-                    id->sid, (double)update_latency / NSTMODULUS);
+            ms_log (0, "%s: Flushing idle segment (idle for %.1f seconds)\n", id->sid,
+                    (double)update_latency / NSTMODULUS);
         }
       }
+
+      /* Clear borrowed extra headers pointer so msr3_init() does not free it */
+      packer->msr_template.extra = NULL;
 
       /* Initialize MS3Record template from segment */
       msr3_init (&packer->msr_template);
@@ -2428,7 +2682,8 @@ mstl3_pack_next (MS3TraceListPacker *packer, uint32_t flags, char **record, int3
       }
 
       /* Create segment packing state */
-      packer->seg_packing_state = msr3_pack_init (&packer->msr_template, segment_flags, packer->verbose);
+      packer->seg_packing_state =
+          msr3_pack_init (&packer->msr_template, segment_flags, packer->verbose);
 
       if (!packer->seg_packing_state)
       {
@@ -2458,8 +2713,8 @@ mstl3_pack_next (MS3TraceListPacker *packer, uint32_t flags, char **record, int3
         return -1;
       }
 
-      /* result == 0: Segment couldn't produce a record (not enough data without flush)
-       * Free the packing state and continue scanning for another segment */
+      /* result == 0: Segment couldn't produce a record (not enough data without flush).
+       * Free the packing state and continue scanning for another segment. */
       msr3_pack_free (&packer->seg_packing_state, NULL);
       packer->current_id = NULL;
       packer->current_seg = NULL;
@@ -2481,7 +2736,10 @@ mstl3_pack_next (MS3TraceListPacker *packer, uint32_t flags, char **record, int3
  * pointer to NULL.
  *
  * @param[in] packer Pointer to ::MS3TraceListPacker pointer
- * @param[out] packedsamples Total number of samples packed, returned to caller
+ * @param[out] packedsamples Total number of samples packed, returned to caller.
+ * This includes samples already emitted in records by a segment session that
+ * is still in progress. Such samples are not removed from the trace list,
+ * since that trimming normally happens only when a segment session finishes.
  *
  * @see mstl3_pack_init()
  * @see mstl3_pack_next()
@@ -2492,15 +2750,17 @@ mstl3_pack_free (MS3TraceListPacker **packer, int64_t *packedsamples)
   if (!packer || !*packer)
     return;
 
-  if (packedsamples)
-    *packedsamples = (*packer)->totalpackedsamples;
-
-  /* Free segment packer if still active */
+  /* Fold in samples from an active segment session before reporting */
   if ((*packer)->seg_packing_state)
   {
-    int64_t seg_samples;
+    int64_t seg_samples = 0;
+
     msr3_pack_free (&(*packer)->seg_packing_state, &seg_samples);
+    (*packer)->totalpackedsamples += seg_samples;
   }
+
+  if (packedsamples)
+    *packedsamples = (*packer)->totalpackedsamples;
 
   libmseed_memory.free (*packer);
   *packer = NULL;
@@ -2514,6 +2774,11 @@ mstl3_pack_free (MS3TraceListPacker **packer, int64_t *packedsamples)
  * ::MSF_MAINTAINMSTL flag is specified in @p flags. If
  * ::MSF_MAINTAINMSTL is specified a caller would also normally set
  * the ::MSF_FLUSHDATA flag to pack all data in the trace list.
+ *
+ * When packed data are removed from a segment, the new segment start
+ * time is projected using the apparent sample rate implied by the
+ * segment start and end times, falling back to the nominal rate when
+ * they are inconsistent.
  *
  * As each record is filled and finished they are passed to @p
  * record_handler() which should expect 1) a @c char* to the record,
@@ -2652,17 +2917,18 @@ mstl3_pack_segment (MS3TraceList *mstl, MS3TraceID *id, MS3TraceSeg *seg,
   /* If MSF_MAINTAINMSTL not set, modify or remove segment accordingly */
   if ((flags & MSF_MAINTAINMSTL) == 0 && segpackedsamples > 0)
   {
-    /* Calculate new start time, shortcut when all samples have been packed */
-    if (segpackedsamples == seg->numsamples)
-      seg->starttime = seg->endtime;
-    else
-      seg->starttime = ms_sampletime (seg->starttime, segpackedsamples, seg->samprate);
-
+    /* Determine sample size before modifying the segment to avoid a partial update */
     if (!(samplesize = ms_samplesize (seg->sampletype)))
     {
       ms_log (2, "Unknown sample size for sample type: %c\n", seg->sampletype);
       return -1;
     }
+
+    /* Calculate new start time, shortcut when all samples have been packed */
+    if (segpackedsamples == seg->numsamples)
+      seg->starttime = seg->endtime;
+    else
+      seg->starttime = lm_packed_starttime (seg, segpackedsamples);
 
     seg->samplecnt -= segpackedsamples;
     seg->numsamples -= segpackedsamples;
@@ -2678,17 +2944,20 @@ mstl3_pack_segment (MS3TraceList *mstl, MS3TraceID *id, MS3TraceSeg *seg,
       /* Reallocate buffer for reduced size needed, only if not pre-allocating */
       if (libmseed_prealloc_block_size == 0)
       {
-        seg->datasamples = libmseed_memory.realloc (seg->datasamples, bufsize);
+        void *resized = libmseed_memory.realloc (seg->datasamples, bufsize);
 
-        if (seg->datasamples == NULL)
+        if (resized == NULL)
         {
           ms_log (2, "Cannot (re)allocate datasamples buffer\n");
           return -1;
         }
 
+        seg->datasamples = resized;
         seg->datasize = (uint64_t)bufsize;
       }
     }
+
+    lm_update_id_extent (id);
   }
 
   totalpackedrecords += segpackedrecords;
@@ -2886,6 +3155,7 @@ mstl3_printsynclist (const MS3TraceList *mstl, const char *dccid, ms_subseconds_
   char loc[11] = {0};
   char chan[11] = {0};
   time_t now;
+  struct tm now_tm;
   struct tm *nt;
 
   if (!mstl)
@@ -2896,9 +3166,17 @@ mstl3_printsynclist (const MS3TraceList *mstl, const char *dccid, ms_subseconds_
   /* Generate current time stamp */
   now = time (NULL);
   nt = localtime (&now);
-  nt->tm_year += 1900;
-  nt->tm_yday += 1;
-  snprintf (yearday, sizeof (yearday), "%04d,%03d", nt->tm_year, nt->tm_yday);
+  if (nt == NULL)
+  {
+    ms_log (2, "Error converting current time to local time\n");
+    return;
+  }
+
+  /* Copy out of localtime()'s shared static buffer before modifying */
+  now_tm = *nt;
+  now_tm.tm_year += 1900;
+  now_tm.tm_yday += 1;
+  snprintf (yearday, sizeof (yearday), "%04d,%03d", now_tm.tm_year, now_tm.tm_yday);
 
   /* Print SYNC header line */
   ms_log (0, "%s|%s\n", (dccid) ? dccid : "DCC", yearday);
@@ -2971,7 +3249,7 @@ mstl3_printgaplist (const MS3TraceList *mstl, ms_timeformat_t timeformat, double
   while (id)
   {
     seg = id->first;
-    while (seg->next)
+    while (seg && seg->next)
     {
       /* Skip segments with no time coverage, usually from SOH records */
       if (!SEGMENT_HAS_TIME_COVERAGE (seg))
@@ -3143,7 +3421,8 @@ lm_remove_segment (MS3TraceList *mstl, MS3TraceID *id, MS3TraceSeg *seg, int8_t 
   /* Free all memory associated with the segment */
   lm_free_segment_memory (seg, freeprvtptr);
 
-  /* If this was the last segment, remove the TraceID from the trace list */
+  /* If this was the last segment, remove the TraceID from the trace list,
+   * otherwise refresh its earliest/latest extent from the remaining segments */
   if (id->numsegments == 0)
   {
     /* Find previous nodes at each level for this TraceID */
@@ -3192,8 +3471,33 @@ lm_remove_segment (MS3TraceList *mstl, MS3TraceID *id, MS3TraceSeg *seg, int8_t 
     /* Decrement trace count */
     mstl->numtraceids--;
   }
+  else
+  {
+    lm_update_id_extent (id);
+  }
 
   return 0;
+}
+
+/* Refresh a TraceID's earliest/latest fields from all of its segments */
+static void
+lm_update_id_extent (MS3TraceID *id)
+{
+  MS3TraceSeg *seg;
+
+  if (!id || !id->first)
+    return;
+
+  id->earliest = id->first->starttime;
+  id->latest = id->first->endtime;
+
+  for (seg = id->first->next; seg; seg = seg->next)
+  {
+    if (seg->starttime < id->earliest)
+      id->earliest = seg->starttime;
+    if (seg->endtime > id->latest)
+      id->latest = seg->endtime;
+  }
 }
 
 /* Pseudo random number generator, as a linear congruential generator (LCG):

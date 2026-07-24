@@ -67,6 +67,7 @@ EXPORTS
    ms3_readtracelist_timewin
    ms3_readtracelist_selection
    ms3_url_useragent
+   ms3_url_timeout
    ms3_url_userpassword
    ms3_url_addheader
    ms3_url_freeheaders

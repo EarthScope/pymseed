@@ -48,6 +48,8 @@ extern const char LIBMSEED_RELEASE[];
 #define MSF_RECORDLIST    0x0100
 #define MSF_MAINTAINMSTL  0x0200
 #define MSF_PPUPDATETIME  0x0400
+#define MSF_SPLITISVERSION 0x0800
+#define MSF_SKIPADJACENTDUPLICATES 0x1000
 
 // Data encodings
 #define DE_TEXT        0
@@ -197,6 +199,7 @@ typedef struct LMIO
   void *handle;
   void *handle2;
   int still_running;
+  int urlfail;
 } LMIO;
 
 typedef struct MS3FileParam
@@ -346,6 +349,7 @@ extern int ms3_readtracelist_timewin (MS3TraceList **ppmstl, const char *mspath,
 extern int ms3_readtracelist_selection (MS3TraceList **ppmstl, const char *mspath, const MS3Tolerance *tolerance,
                                         const MS3Selections *selections, int8_t splitversion, uint32_t flags, int8_t verbose);
 extern int ms3_url_useragent (const char *program, const char *version);
+extern int ms3_url_timeout (long connecttimeout, long stalltimeout);
 extern int ms3_url_userpassword (const char *userpassword);
 extern int ms3_url_addheader (const char *header);
 extern void ms3_url_freeheaders (void);

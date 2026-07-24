@@ -2,6 +2,7 @@
 
 # List of example programs
 set(EXAMPLE_PROGRAMS
+    lm_extraheaders
     lm_pack
     lm_pack_rollingbuffer
     lm_parse

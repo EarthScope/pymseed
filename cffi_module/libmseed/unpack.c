@@ -205,6 +205,12 @@ msr3_unpack_mseed3 (const char *record, int reclen, MS3Record **ppmsr, uint32_t 
   memcpy (&samprate, pMS3FSDH_SAMPLERATE (record), sizeof (double));
   msr->samprate = HO8f (samprate, msr->swapflag);
 
+  if (msr->samprate != 0.0 && !isnormal (msr->samprate))
+  {
+    ms_log (2, "%.*s: Invalid sample rate: %g\n", sidlength, pMS3FSDH_SID (record), msr->samprate);
+    return MS_GENERROR;
+  }
+
   uint32_t numsamples;
   memcpy (&numsamples, pMS3FSDH_NUMSAMPLES (record), sizeof (uint32_t));
   msr->samplecnt = HO4u (numsamples, msr->swapflag);
@@ -448,7 +454,7 @@ msr3_unpack_mseed2 (const char *record, int reclen, MS3Record **ppmsr, uint32_t 
   /* Traverse the blockettes */
   blkt_offset = HO2u (*pMS2FSDH_BLOCKETTEOFFSET (record), msr->swapflag);
 
-  while ((blkt_offset != 0) && (blkt_offset < reclen) && (blkt_offset < MAXRECLEN))
+  while ((blkt_offset != 0) && ((blkt_offset + 4) <= reclen) && (blkt_offset < MAXRECLEN))
   {
     /* Every blockette has a similar 4 byte header: type and next */
     memcpy (&blkt_type, record + blkt_offset, 2);
@@ -458,6 +464,15 @@ msr3_unpack_mseed2 (const char *record, int reclen, MS3Record **ppmsr, uint32_t 
     {
       ms_gswap2 (&blkt_type);
       ms_gswap2 (&next_blkt);
+    }
+
+    /* Blockette 2000 stores its length in a 2-byte field at offset 4, which
+     * must be within the record buffer before ms2_blktlen() reads it */
+    if (blkt_type == 2000 && (blkt_offset + 6) > reclen)
+    {
+      ms_log (2, "%s: Blockette 2000 length field extends beyond record size, truncated?\n",
+              msr->sid);
+      break;
     }
 
     /* Get blockette length */
@@ -480,7 +495,12 @@ msr3_unpack_mseed2 (const char *record, int reclen, MS3Record **ppmsr, uint32_t 
 
     if (blkt_type == 100)
     {
-      msr->samprate = HO4f (*pMS2B100_SAMPRATE (record + blkt_offset), msr->swapflag);
+      float b100rate = HO4f (*pMS2B100_SAMPRATE (record + blkt_offset), msr->swapflag);
+
+      if (b100rate < 0.0 || (b100rate != 0.0 && !isnormal (b100rate)))
+        ms_log (1, "%s: Ignoring invalid Blockette 100 sample rate: %g\n", msr->sid, b100rate);
+      else
+        msr->samprate = b100rate;
     }
 
     /* Blockette 200, generic event detection */
@@ -523,7 +543,7 @@ msr3_unpack_mseed2 (const char *record, int reclen, MS3Record **ppmsr, uint32_t 
       if (mseh_add_event_detection_r (msr, NULL, &eventdetection, &parsestate))
       {
         ms_log (2, "%s: Problem mapping Blockette 200 to extra headers\n", msr->sid);
-        return MS_GENERROR;
+        goto error_return;
       }
     }
 
@@ -557,7 +577,7 @@ msr3_unpack_mseed2 (const char *record, int reclen, MS3Record **ppmsr, uint32_t 
       if (mseh_add_event_detection_r (msr, NULL, &eventdetection, &parsestate))
       {
         ms_log (2, "%s: Problem mapping Blockette 201 to extra headers\n", msr->sid);
-        return MS_GENERROR;
+        goto error_return;
       }
     }
 
@@ -616,7 +636,7 @@ msr3_unpack_mseed2 (const char *record, int reclen, MS3Record **ppmsr, uint32_t 
       if (mseh_add_calibration_r (msr, NULL, &calibration, &parsestate))
       {
         ms_log (2, "%s: Problem mapping Blockette 300 to extra headers\n", msr->sid);
-        return MS_GENERROR;
+        goto error_return;
       }
     }
 
@@ -675,7 +695,7 @@ msr3_unpack_mseed2 (const char *record, int reclen, MS3Record **ppmsr, uint32_t 
       if (mseh_add_calibration_r (msr, NULL, &calibration, &parsestate))
       {
         ms_log (2, "%s: Problem mapping Blockette 310 to extra headers\n", msr->sid);
-        return MS_GENERROR;
+        goto error_return;
       }
     }
 
@@ -728,7 +748,7 @@ msr3_unpack_mseed2 (const char *record, int reclen, MS3Record **ppmsr, uint32_t 
       if (mseh_add_calibration_r (msr, NULL, &calibration, &parsestate))
       {
         ms_log (2, "%s: Problem mapping Blockette 320 to extra headers\n", msr->sid);
-        return MS_GENERROR;
+        goto error_return;
       }
     }
 
@@ -776,7 +796,7 @@ msr3_unpack_mseed2 (const char *record, int reclen, MS3Record **ppmsr, uint32_t 
       if (mseh_add_calibration_r (msr, NULL, &calibration, &parsestate))
       {
         ms_log (2, "%s: Problem mapping Blockette 390 to extra headers\n", msr->sid);
-        return MS_GENERROR;
+        goto error_return;
       }
     }
 
@@ -813,7 +833,7 @@ msr3_unpack_mseed2 (const char *record, int reclen, MS3Record **ppmsr, uint32_t 
       if (mseh_add_calibration_r (msr, NULL, &calibration, &parsestate))
       {
         ms_log (2, "%s: Problem mapping Blockette 395 to extra headers\n", msr->sid);
-        return MS_GENERROR;
+        goto error_return;
       }
     }
 
@@ -840,8 +860,9 @@ msr3_unpack_mseed2 (const char *record, int reclen, MS3Record **ppmsr, uint32_t 
       exception.time =
           ms_btime2nstime ((uint8_t *)pMS2B500_YEAR (record + blkt_offset), msr->swapflag);
 
-      /* Apply microsecond precision if non-zero */
-      if (*pMS2B500_MICROSECOND (record + blkt_offset) != 0)
+      /* Apply microsecond precision if non-zero, only to a valid decoded time */
+      if (*pMS2B500_MICROSECOND (record + blkt_offset) != 0 && exception.time != NSTUNSET &&
+          exception.time != NSTERROR)
       {
         exception.time +=
             (nstime_t)*pMS2B500_MICROSECOND (record + blkt_offset) * (NSTMODULUS / 1000000);
@@ -849,13 +870,15 @@ msr3_unpack_mseed2 (const char *record, int reclen, MS3Record **ppmsr, uint32_t 
 
       exception.receptionquality = *pMS2B500_RECEPTIONQUALITY (record + blkt_offset);
       exception.count = HO4u (*pMS2B500_EXCEPTIONCOUNT (record + blkt_offset), msr->swapflag);
-      ms_strncpcleantail (exception.type, pMS2B500_EXCEPTIONTYPE (record + blkt_offset), 16);
-      ms_strncpcleantail (exception.clockstatus, pMS2B500_CLOCKSTATUS (record + blkt_offset), 128);
+      ms_strncpopen (exception.type, pMS2B500_EXCEPTIONTYPE (record + blkt_offset),
+                     (int)sizeof (exception.type));
+      ms_strncpopen (exception.clockstatus, pMS2B500_CLOCKSTATUS (record + blkt_offset),
+                     (int)sizeof (exception.clockstatus));
 
       if (mseh_add_timing_exception_r (msr, NULL, &exception, &parsestate))
       {
         ms_log (2, "%s: Problem mapping Blockette 500 to extra headers\n", msr->sid);
-        return MS_GENERROR;
+        goto error_return;
       }
 
       /* Clock model maps to a single value at /FDSN/Clock/Model */
@@ -867,8 +890,27 @@ msr3_unpack_mseed2 (const char *record, int reclen, MS3Record **ppmsr, uint32_t 
     {
       B1000offset = blkt_offset;
 
-      /* Calculate record length in bytes as 2^(B1000->reclen) */
-      msr->reclen = (uint32_t)1 << *pMS2B1000_RECLEN (record + blkt_offset);
+      /* Calculate record length in bytes as 2^(B1000->reclen).  Reject an
+       * out-of-range exponent (which would be an undefined shift, and far
+       * exceeds MAXRECLEN) and keep the validated record length set above. */
+      if (*pMS2B1000_RECLEN (record + blkt_offset) < 31)
+      {
+        uint32_t b1000reclen = (uint32_t)1 << *pMS2B1000_RECLEN (record + blkt_offset);
+
+        /* Reject a record length larger than the supplied buffer, as the
+         * record cannot be fully contained whether unpacking or not. */
+        if (b1000reclen > (uint32_t)reclen)
+        {
+          ms_log (2, "%s: Record length in Blockette 1000 (%u) exceeds the buffer length (%d)\n",
+                  msr->sid, b1000reclen, reclen);
+          goto error_return;
+        }
+
+        msr->reclen = b1000reclen;
+      }
+      else if (verbose)
+        ms_log (1, "%s: Ignoring invalid record length exponent in Blockette 1000 (%u)\n", msr->sid,
+                *pMS2B1000_RECLEN (record + blkt_offset));
 
       /* Compare against the specified length */
       if (msr->reclen != reclen && verbose)
@@ -885,7 +927,7 @@ msr3_unpack_mseed2 (const char *record, int reclen, MS3Record **ppmsr, uint32_t 
       B1001offset = blkt_offset;
 
       /* Optimization: if no other extra headers yet, directly print this common value */
-      if (parsestate == NULL)
+      if (parsestate == NULL && msr->extra == NULL)
       {
         length = snprintf (sval, sizeof (sval), "{\"FDSN\":{\"Time\":{\"Quality\":%d}}}",
                            *pMS2B1001_TIMINGQUALITY (record + blkt_offset));
@@ -893,7 +935,7 @@ msr3_unpack_mseed2 (const char *record, int reclen, MS3Record **ppmsr, uint32_t 
         if (!(msr->extra = (char *)libmseed_memory.malloc (length + 1)))
         {
           ms_log (2, "%s: Cannot allocate memory for extra headers\n", msr->sid);
-          return MS_GENERROR;
+          goto error_return;
         }
         memcpy (msr->extra, sval, length + 1);
 
@@ -974,9 +1016,9 @@ msr3_unpack_mseed2 (const char *record, int reclen, MS3Record **ppmsr, uint32_t 
             msr->sid, *pMS2FSDH_NUMBLOCKETTES (record), blkt_count);
   }
 
-  /* Calculate start time */
+  /* Calculate start time, rejecting an unset (year 0) or invalid time */
   msr->starttime = ms_btime2nstime ((uint8_t *)pMS2FSDH_YEAR (record), msr->swapflag);
-  if (msr->starttime == NSTERROR)
+  if (msr->starttime == NSTERROR || msr->starttime == NSTUNSET)
   {
     ms_log (2, "%s: Cannot convert start time to internal time stamp\n", msr->sid);
     return MS_GENERROR;
@@ -999,8 +1041,10 @@ msr3_unpack_mseed2 (const char *record, int reclen, MS3Record **ppmsr, uint32_t 
   }
 
   msr->datalength = HO2u (*pMS2FSDH_DATAOFFSET (record), msr->swapflag);
-  if (msr->datalength > 0)
+  if (msr->datalength > 0 && msr->datalength < (uint32_t)msr->reclen)
     msr->datalength = msr->reclen - msr->datalength;
+  else
+    msr->datalength = 0;
 
   /* Determine byte order of the data and set the swapflag as needed;
      if no Blkt1000, assume the order is the same as the header */
@@ -1044,6 +1088,11 @@ msr3_unpack_mseed2 (const char *record, int reclen, MS3Record **ppmsr, uint32_t 
   }
 
   return MS_NOERROR;
+
+error_return:
+  if (parsestate)
+    mseh_free_parsestate (&parsestate);
+  return MS_GENERROR;
 } /* End of msr3_unpack_mseed2() */
 
 /** ************************************************************************
@@ -1087,12 +1136,21 @@ msr3_data_bounds (const MS3Record *msr, uint32_t *dataoffset, uint32_t *datasize
   /* Determine offset to data */
   if (msr->formatversion == 3)
   {
-    *dataoffset = MS3FSDH_LENGTH + (uint32_t)strlen (msr->sid) + msr->extralength;
+    *dataoffset = MS3FSDH_LENGTH + *pMS3FSDH_SIDLENGTH (msr->record) + msr->extralength;
     *datasize = msr->datalength;
   }
   else if (msr->formatversion == 2)
   {
     *dataoffset = HO2u (*pMS2FSDH_DATAOFFSET (msr->record), msr->swapflag & MSSWAP_HEADER);
+
+    /* Validate data offset is within the record to avoid unsigned underflow */
+    if (*dataoffset >= (uint32_t)msr->reclen)
+    {
+      ms_log (2, "%s: Data offset (%u) is beyond record length (%d)\n", msr->sid, *dataoffset,
+              msr->reclen);
+      return MS_GENERROR;
+    }
+
     *datasize = msr->reclen - *dataoffset;
   }
   else
@@ -1123,17 +1181,25 @@ msr3_data_bounds (const MS3Record *msr, uint32_t *dataoffset, uint32_t *datasize
       break;
     }
 
-    rawsize = msr->samplecnt * samplebytes;
+    /* Limit datasize to the bytes the sample count would occupy when smaller and
+     * guard against a negative samplecnt and compute without overflow.
+     * The product is only relevant when it could be below *datasize (a
+     * uint32), which the divide-based test below guarantees. */
+    if (msr->samplecnt >= 0 && (uint64_t)msr->samplecnt <= (uint64_t)*datasize / samplebytes)
+    {
+      rawsize = (uint64_t)msr->samplecnt * samplebytes;
 
-    if (rawsize < *datasize)
-      *datasize = (uint16_t)rawsize;
+      if (rawsize < *datasize)
+        *datasize = (uint32_t)rawsize;
+    }
   }
 
   /* If datasize is a multiple of 64-bytes and a Steim encoding, test for
    * trailing, zeroed (empty) frames and subtract them from the size. */
   if (*datasize % 64 == 0 && (msr->encoding == DE_STEIM1 || msr->encoding == DE_STEIM2))
   {
-    while (*datasize > 0 && memcmp (msr->record + (*datasize - 64), nullframe, 64) == 0)
+    while (*datasize > 0 &&
+           memcmp (msr->record + *dataoffset + (*datasize - 64), nullframe, 64) == 0)
     {
       *datasize -= 64;
     }
@@ -1257,26 +1323,33 @@ msr3_unpack_data (MS3Record *msr, int8_t verbose)
   /* (Re)Allocate space for the unpacked data */
   if (unpacksize > 0)
   {
+    void *resized;
+
     if (libmseed_prealloc_block_size)
     {
       size_t current_size = msr->datasize;
-      msr->datasamples = libmseed_memory_prealloc (msr->datasamples, unpacksize, &current_size);
-      msr->datasize = current_size;
+      resized = libmseed_memory_prealloc (msr->datasamples, unpacksize, &current_size);
+
+      if (resized != NULL)
+        msr->datasize = current_size;
     }
     else
     {
-      msr->datasamples = libmseed_memory.realloc (msr->datasamples, unpacksize);
-      msr->datasize = unpacksize;
+      resized = libmseed_memory.realloc (msr->datasamples, unpacksize);
+
+      if (resized != NULL)
+        msr->datasize = unpacksize;
     }
 
-    if (msr->datasamples == NULL)
+    if (resized == NULL)
     {
       ms_log (2, "%s: Cannot (re)allocate memory\n", msr->sid);
-      msr->datasize = 0;
       if (encoded_allocated)
         libmseed_memory.free (encoded_allocated);
       return MS_GENERROR;
     }
+
+    msr->datasamples = resized;
   }
   else
   {
@@ -1326,9 +1399,10 @@ ms_decode_data (const void *input, uint64_t inputsize, uint8_t encoding, uint64_
                 void *output, uint64_t outputsize, char *sampletype, int8_t swapflag,
                 const char *sid, int8_t verbose)
 {
-  uint64_t decodedsize;   /* byte size of decodeded samples */
-  int64_t nsamples;       /* number of samples unpacked */
-  uint8_t samplesize = 0; /* size of the data samples in bytes */
+  uint64_t decodedsize;         /* byte size of decodeded samples */
+  int64_t nsamples;             /* number of samples unpacked */
+  uint8_t samplesize = 0;       /* size of the decoded data samples in bytes */
+  uint8_t inputsamplebytes = 0; /* size of an encoded input sample in bytes */
 
   if (!input || !output || !sampletype)
   {
@@ -1351,6 +1425,50 @@ ms_decode_data (const void *input, uint64_t inputsize, uint8_t encoding, uint64_
             "%s: Output buffer (%" PRIu64 " bytes) is not large enought for decoded data (%" PRIu64
             " bytes)\n",
             (sid) ? sid : "", decodedsize, outputsize);
+    return MS_GENERROR;
+  }
+
+  /* For encodings with a fixed number of input bytes per sample, verify that
+   * the input buffer is large enough to hold 'samplecount' encoded samples.
+   * This guards against a header that claims more samples than the encoded
+   * payload contains, which would otherwise over-read the input buffer.
+   * The Steim encodings perform their own input-length bounding (via the
+   * 'inputsize' argument) and so use an input sample size of zero here. */
+  switch (encoding)
+  {
+  case DE_TEXT:
+    inputsamplebytes = 1;
+    break;
+  case DE_INT16:
+  case DE_GEOSCOPE163:
+  case DE_GEOSCOPE164:
+  case DE_CDSN:
+  case DE_SRO:
+  case DE_DWWSSN:
+    inputsamplebytes = 2;
+    break;
+  case DE_GEOSCOPE24:
+    inputsamplebytes = 3;
+    break;
+  case DE_INT32:
+  case DE_FLOAT32:
+    inputsamplebytes = 4;
+    break;
+  case DE_FLOAT64:
+    inputsamplebytes = 8;
+    break;
+  default:
+    inputsamplebytes = 0;
+    break;
+  }
+
+  /* Compare without overflow: samplecount * inputsamplebytes > inputsize */
+  if (inputsamplebytes && (inputsize / inputsamplebytes) < samplecount)
+  {
+    ms_log (2,
+            "%s: Input buffer (%" PRIu64 " bytes) is not large enough for %" PRIu64
+            " samples of encoding %u\n",
+            (sid) ? sid : "", inputsize, samplecount, encoding);
     return MS_GENERROR;
   }
 
@@ -1627,19 +1745,19 @@ ms2_blktlen (uint16_t blkttype, const char *blkt, int8_t swapflag)
     blktlen = 12;
     break;
   case 200: /* Generic Event Detection */
-    blktlen = 28;
+    blktlen = 52;
     break;
   case 201: /* Murdock Event Detection */
-    blktlen = 36;
+    blktlen = 60;
     break;
   case 300: /* Step Calibration */
-    blktlen = 32;
+    blktlen = 60;
     break;
   case 310: /* Sine Calibration */
-    blktlen = 32;
+    blktlen = 60;
     break;
   case 320: /* Pseudo-random Calibration */
-    blktlen = 28;
+    blktlen = 64;
     break;
   case 390: /* Generic Calibration */
     blktlen = 28;
@@ -1651,7 +1769,7 @@ ms2_blktlen (uint16_t blkttype, const char *blkt, int8_t swapflag)
     blktlen = 16;
     break;
   case 500: /* Timing */
-    blktlen = 8;
+    blktlen = 200;
     break;
   case 1000: /* Data Only SEED */
     blktlen = 8;

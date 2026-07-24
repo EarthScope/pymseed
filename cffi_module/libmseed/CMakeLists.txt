@@ -99,6 +99,13 @@ if(BUILD_SHARED_LIBS)
             )
         endif()
     elseif(WIN32)
+        # Force the "lib" prefix on the DLL and its import library so the
+        # output is libmseed.dll/libmseed.lib, consistent with the make and
+        # nmake builds (CMake omits the prefix for MSVC by default).
+        set_target_properties(mseed_shared PROPERTIES
+            PREFIX "lib"
+            IMPORT_PREFIX "lib"
+        )
         # Use module definition file for symbol exports on Windows
         if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/libmseed.def")
             target_sources(mseed_shared PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/libmseed.def")
@@ -139,9 +146,15 @@ if(BUILD_STATIC_LIBS)
         PUBLIC_HEADER "${PUBLIC_HEADERS}"
     )
 
-    # On Windows, avoid naming conflict between static and shared lib
-    if(WIN32 AND BUILD_SHARED_LIBS)
-        set_target_properties(mseed_static PROPERTIES OUTPUT_NAME mseed_static)
+    # On Windows, force the "lib" prefix for consistency with the make and
+    # nmake builds (CMake omits it for MSVC by default) so the output is
+    # libmseed.lib.  When the shared library is also built, rename the static
+    # library to avoid colliding with the shared library's import library.
+    if(WIN32)
+        set_target_properties(mseed_static PROPERTIES PREFIX "lib")
+        if(BUILD_SHARED_LIBS)
+            set_target_properties(mseed_static PROPERTIES OUTPUT_NAME mseed_static)
+        endif()
     endif()
 
     # Link libraries
