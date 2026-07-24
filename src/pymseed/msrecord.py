@@ -1511,7 +1511,10 @@ class MS3Record:
             >>> def file_handler(record: bytes, file_handle: Any):
             ...     file_handle.write(record)
 
-            >>> msr = MS3Record() # doctest: +SKIP
+            >>> msr = MS3Record()
+            >>> msr.sourceid = "FDSN:XX_TEST__L_H_Z"
+            >>> msr.set_starttime_str("2024-01-01T00:00:00Z")
+            >>> msr.samprate = 1
             >>> with open('output.mseed', 'wb') as f: # doctest: +SKIP
             ...     with warnings.catch_warnings():
             ...         warnings.simplefilter("ignore", DeprecationWarning)
@@ -1527,6 +1530,9 @@ class MS3Record:
             ...     container.append(record)
 
             >>> msr = MS3Record()
+            >>> msr.sourceid = "FDSN:XX_TEST__L_H_Z"
+            >>> msr.set_starttime_str("2024-01-01T00:00:00Z")
+            >>> msr.samprate = 1
             >>> msr.encoding = DataEncoding.FLOAT32
             >>> with warnings.catch_warnings():
             ...     warnings.simplefilter("ignore", DeprecationWarning)
