@@ -290,8 +290,8 @@ def test_tracelist_sampletype_returns_none_when_unset():
 
 
 def test_tracelist_add_data_rejects_ambiguous_time_arguments():
-    """add_data() documents the three start_time_* parameters as mutually
-    exclusive; previously the implementation just let start_time_str win
+    """add_data() documents the three starttime_* parameters as mutually
+    exclusive; previously the implementation just let starttime_str win
     silently when multiple were passed. Enforce the exclusivity and keep
     the existing 'none-passed' error too."""
     traces = MS3TraceList()
@@ -310,26 +310,82 @@ def test_tracelist_add_data_rejects_ambiguous_time_arguments():
     with pytest.raises(ValueError, match="exactly one of"):
         traces.add_data(
             **common,
-            start_time_str="2023-01-01T00:00:00.000Z",
-            start_time=1672531200_000000000,
+            starttime_str="2023-01-01T00:00:00.000Z",
+            starttime=1672531200_000000000,
         )
 
     # All three passed: also rejected.
     with pytest.raises(ValueError, match="exactly one of"):
         traces.add_data(
             **common,
-            start_time_str="2023-01-01T00:00:00.000Z",
+            starttime_str="2023-01-01T00:00:00.000Z",
+            starttime=1672531200_000000000,
+            starttime_seconds=1672531200.0,
+        )
+
+    # A canonical name plus its own deprecated alias is ambiguous, not a
+    # silent override.
+    for canonical, alias in (
+        ({"starttime_str": "2023-01-01T00:00:00.000Z"}, {"start_time_str": "2023-01-02T00:00:00Z"}),
+        ({"starttime": 1672531200_000000000}, {"start_time": 1672617600_000000000}),
+        ({"starttime_seconds": 1672531200.0}, {"start_time_seconds": 1672617600.0}),
+    ):
+        with pytest.raises(ValueError, match="exactly one of"):
+            MS3TraceList().add_data(**common, **canonical, **alias)
+
+    # Mixing a canonical name with a *different* slot's alias is also rejected.
+    with pytest.raises(ValueError, match="exactly one of"):
+        MS3TraceList().add_data(
+            **common,
+            starttime_str="2023-01-01T00:00:00.000Z",
             start_time=1672531200_000000000,
-            start_time_seconds=1672531200.0,
         )
 
     # Exactly one passed: each form still works.
     for tkw in (
-        {"start_time_str": "2023-01-01T00:00:00.000Z"},
-        {"start_time": 1672531200_000000000},
-        {"start_time_seconds": 1672531200.0},
+        {"starttime_str": "2023-01-01T00:00:00.000Z"},
+        {"starttime": 1672531200_000000000},
+        {"starttime_seconds": 1672531200.0},
     ):
         MS3TraceList().add_data(**common, **tkw)
+
+
+def test_tracelist_add_data_start_time_deprecated_aliases():
+    """`start_time_str`/`start_time`/`start_time_seconds` are deprecated aliases
+    for `starttime_str`/`starttime`/`starttime_seconds`. Keep accepting them for
+    backward compatibility, emit a DeprecationWarning naming the replacement, and
+    produce results identical to the canonical spelling."""
+    common = {
+        "sourceid": "FDSN:XX_STA__B_H_Z",
+        "data_samples": [1, 2, 3],
+        "sample_type": "i",
+        "sample_rate": 20.0,
+    }
+    pairs = (
+        ("starttime_str", "start_time_str", "2023-01-01T00:00:00.000Z"),
+        ("starttime", "start_time", 1672531200_000000000),
+        ("starttime_seconds", "start_time_seconds", 1672531200.0),
+    )
+
+    for canonical, alias, value in pairs:
+        # Canonical spelling: silent.
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", DeprecationWarning)
+            new_list = MS3TraceList()
+            new_list.add_data(**common, **{canonical: value})
+
+        # Deprecated spelling: warns, and names both the alias and replacement.
+        with pytest.warns(DeprecationWarning, match=f"'{alias}' is a deprecated alias") as record:
+            old_list = MS3TraceList()
+            old_list.add_data(**common, **{alias: value})
+        assert f"use '{canonical}'" in str(record[0].message)
+
+        # Same resulting data either way.
+        new_seg = next(iter(new_list))[0]
+        old_seg = next(iter(old_list))[0]
+        assert new_seg.starttime == old_seg.starttime
+        assert new_seg.samplecnt == old_seg.samplecnt
+        assert new_seg.has_same_data(old_seg)
 
 
 def test_tracelist_unpack_recordlist_rejects_non_buffer():
@@ -370,7 +426,7 @@ def test_tracelist_generate_removed_packed_deprecated_alias():
             [1, 2, 3, 4, 5],
             "i",
             100.0,
-            start_time_str="2023-01-01T00:00:00.000Z",
+            starttime_str="2023-01-01T00:00:00.000Z",
         )
         return traces
 
@@ -737,7 +793,7 @@ def test_mstracelist_pack():
     total_samples = 0
     total_records = 0
     sample_rate = 40.0
-    start_time = timestr2nstime("2024-01-01T15:13:55.123456789Z")
+    starttime = timestr2nstime("2024-01-01T15:13:55.123456789Z")
     format_version = 3
     max_record_length = 512
 
@@ -747,10 +803,10 @@ def test_mstracelist_pack():
             data_samples=new_data,
             sample_type="i",
             sample_rate=sample_rate,
-            start_time=start_time,
+            starttime=starttime,
         )
 
-        start_time = sample_time(start_time, len(new_data), sample_rate)
+        starttime = sample_time(starttime, len(new_data), sample_rate)
 
         (packed_samples, packed_records) = traces.pack(
             record_handler,
@@ -790,7 +846,7 @@ def test_mstracelist_generate_rollingbuffer():
     traces = MS3TraceList()
 
     sample_rate = 40.0
-    start_time = timestr2nstime("2024-01-01T15:13:55.123456789Z")
+    starttime = timestr2nstime("2024-01-01T15:13:55.123456789Z")
     format_version = 3
     max_record_length = 512
 
@@ -806,10 +862,10 @@ def test_mstracelist_generate_rollingbuffer():
             data_samples=new_data,
             sample_type="i",
             sample_rate=sample_rate,
-            start_time=start_time,
+            starttime=starttime,
         )
 
-        start_time = sample_time(start_time, len(new_data), sample_rate)
+        starttime = sample_time(starttime, len(new_data), sample_rate)
 
         # Generate filled records during regular data flow
         for record in traces.generate(
@@ -860,7 +916,7 @@ def test_mstracelist_generate():
     traces = MS3TraceList()
 
     sample_rate = 40.0
-    start_time = timestr2nstime("2024-01-01T15:13:55.123456789Z")
+    starttime = timestr2nstime("2024-01-01T15:13:55.123456789Z")
     max_record_length = 512
 
     # Add 3 traces to the list
@@ -869,21 +925,21 @@ def test_mstracelist_generate():
         data_samples=sine_500,
         sample_type="i",
         sample_rate=sample_rate,
-        start_time=start_time,
+        starttime=starttime,
     )
     traces.add_data(
         sourceid="FDSN:XX_TEST__B_S_2",
         data_samples=sine_500,
         sample_type="i",
         sample_rate=sample_rate,
-        start_time=start_time,
+        starttime=starttime,
     )
     traces.add_data(
         sourceid="FDSN:XX_TEST__B_S_3",
         data_samples=sine_500,
         sample_type="i",
         sample_rate=sample_rate,
-        start_time=start_time,
+        starttime=starttime,
     )
 
     # Test creation of a miniSEED v3 records
@@ -931,7 +987,7 @@ def test_mstracelist_to_file(tmp_path):
     traces = MS3TraceList()
 
     sample_rate = 40.0
-    start_time = timestr2nstime("2024-01-01T15:13:55.123456789Z")
+    starttime = timestr2nstime("2024-01-01T15:13:55.123456789Z")
 
     for new_data in sine_generator(yield_count=100, total=2000):
         traces.add_data(
@@ -939,10 +995,10 @@ def test_mstracelist_to_file(tmp_path):
             data_samples=new_data,
             sample_type="i",
             sample_rate=sample_rate,
-            start_time=start_time,
+            starttime=starttime,
         )
 
-        start_time = sample_time(start_time, len(new_data), sample_rate)
+        starttime = sample_time(starttime, len(new_data), sample_rate)
 
     # Use pytest's tmp_path fixture to create a temporary file
     temp_file = tmp_path / "test_output.mseed3"

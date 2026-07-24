@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- libmseed updated to v3.5.0
+- For `MS3TraceList.add_data()` deprecate the `start_time` kwargs in favor of
+  `starttime` for uniformity with the rest of the package.
+
 ## [0.9.0] - 2026-05-17
 
 ### Added

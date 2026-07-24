@@ -72,7 +72,7 @@ traces = MS3TraceList()
 
 total_records = 0
 sample_rate = 40.0
-start_time = timestr2nstime("2024-01-01T15:13:55.123456789Z")
+starttime = timestr2nstime("2024-01-01T15:13:55.123456789Z")
 format_version = 2
 max_record_length = 512
 
@@ -87,7 +87,7 @@ for _ in range(10):
         data_samples=next(sine0),
         sample_type="i",
         sample_rate=sample_rate,
-        start_time=start_time,
+        starttime=starttime,
     )
 
     traces.add_data(
@@ -95,7 +95,7 @@ for _ in range(10):
         data_samples=next(sine1),
         sample_type="i",
         sample_rate=sample_rate,
-        start_time=start_time,
+        starttime=starttime,
     )
 
     traces.add_data(
@@ -103,11 +103,11 @@ for _ in range(10):
         data_samples=next(sine2),
         sample_type="i",
         sample_rate=sample_rate,
-        start_time=start_time,
+        starttime=starttime,
     )
 
     # Update the start time for the next iteration of synthetic data
-    start_time = sample_time(start_time, generate_yield_count, sample_rate)
+    starttime = sample_time(starttime, generate_yield_count, sample_rate)
 
     # Generate full records and do not flush the data buffers
     for record in traces.generate(

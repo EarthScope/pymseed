@@ -1636,10 +1636,13 @@ class MS3TraceList:
         data_samples: Sequence[Any],
         sample_type: str,
         sample_rate: float,
+        starttime_str: str | None = None,
+        starttime: int | None = None,
+        starttime_seconds: float | None = None,
+        publication_version: int = 0,
         start_time_str: str | None = None,
         start_time: int | None = None,
         start_time_seconds: float | None = None,
-        publication_version: int = 0,
     ) -> None:
         """Add data samples to the trace list
 
@@ -1662,14 +1665,14 @@ class MS3TraceList:
             sample_rate: Sample rate in samples per second (Hz) or period (seconds).
                 Use positive values for samples/second, and negative values for sample period in seconds.
 
-            start_time_str: Start time as formatted string (e.g., "2023-01-01T12:00:00.000Z").
-                Mutually exclusive with start_time and start_time_seconds.
+            starttime_str: Start time as formatted string (e.g., "2023-01-01T12:00:00.000Z").
+                Mutually exclusive with starttime and starttime_seconds.
 
-            start_time: Start time as nanoseconds since Unix epoch.
-                Mutually exclusive with start_time_str and start_time_seconds.
+            starttime: Start time as nanoseconds since Unix epoch.
+                Mutually exclusive with starttime_str and starttime_seconds.
 
-            start_time_seconds: Start time as seconds since Unix epoch (float).
-                Mutually exclusive with start_time_str and start_time.
+            starttime_seconds: Start time as seconds since Unix epoch (float).
+                Mutually exclusive with starttime_str and starttime.
 
             publication_version: Publication version number for the trace. Default: 0
 
@@ -1700,7 +1703,7 @@ class MS3TraceList:
             ...     data_samples=data_series,
             ...     sample_type="i",
             ...     sample_rate=20.0,
-            ...     start_time_str="2023-01-01T00:00:00.000Z"
+            ...     starttime_str="2023-01-01T00:00:00.000Z"
             ... )
             >>> len(traces)
             1
@@ -1711,9 +1714,9 @@ class MS3TraceList:
 
             >>> traces = MS3TraceList()
             >>> traces.add_data("FDSN:XX_STA__B_H_1", [1, 2, 3], "i", 10.0,
-            ...                 start_time_str="2023-01-01T00:00:00.000Z")
+            ...                 starttime_str="2023-01-01T00:00:00.000Z")
             >>> traces.add_data("FDSN:XX_STA__B_H_1", [4, 5, 6], "i", 10.0,
-            ...                 start_time_str="2023-01-01T00:00:00.300Z")
+            ...                 starttime_str="2023-01-01T00:00:00.300Z")
             >>> len(traces) # One traceID
             1
             >>> len(traces[0]) # One trace segment
@@ -1726,19 +1729,44 @@ class MS3TraceList:
         msr.samprate = sample_rate
         msr.pubversion = publication_version
 
-        # Ensure that start time definitions are mutually exclusive.
-        provided = sum(x is not None for x in (start_time_str, start_time, start_time_seconds))
-        if provided != 1:
+        # Ensure that start time definitions are mutually exclusive, counting the
+        # deprecated aliases so that e.g. starttime= plus start_time= is rejected
+        # instead of one silently winning.
+        provided = [
+            (name, value)
+            for name, value in (
+                ("starttime_str", starttime_str),
+                ("starttime", starttime),
+                ("starttime_seconds", starttime_seconds),
+                ("start_time_str", start_time_str),
+                ("start_time", start_time),
+                ("start_time_seconds", start_time_seconds),
+            )
+            if value is not None
+        ]
+        if len(provided) != 1:
             raise ValueError(
-                "Specify exactly one of start_time_str, start_time, or start_time_seconds"
+                "Specify exactly one of starttime_str, starttime, or starttime_seconds"
             )
 
-        if start_time_str is not None:
-            msr.set_starttime_str(start_time_str)
-        elif start_time is not None:
-            msr.starttime = start_time
-        elif start_time_seconds is not None:
-            msr.starttime_seconds = start_time_seconds
+        name, value = provided[0]
+
+        if name.startswith("start_time"):
+            canonical = name.replace("start_time", "starttime", 1)
+            warnings.warn(
+                f"'{name}' is a deprecated alias and will be removed in a future "
+                f"release; use '{canonical}' instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            name = canonical
+
+        if name == "starttime_str":
+            msr.set_starttime_str(value)
+        elif name == "starttime":
+            msr.starttime = value
+        else:
+            msr.starttime_seconds = value
 
         # Request storing time of update in the trace list segment
         # This stores the update time as an nstime_t in the segment's private pointer (seg.prvtptr)
@@ -1846,7 +1874,7 @@ class MS3TraceList:
 
             >>> # Create a trace list with some data
             >>> traces = MS3TraceList()
-            >>> traces.add_data("FDSN:XX_STA__B_H_Z", [1, 2, 3, 4, 5], "i", 100.0, start_time_str="2023-01-01T00:00:00.000Z")
+            >>> traces.add_data("FDSN:XX_STA__B_H_Z", [1, 2, 3, 4, 5], "i", 100.0, starttime_str="2023-01-01T00:00:00.000Z")
 
             >>> # Pack to file using a simple handler
             >>> def write_to_file(record_bytes, file_handle):
@@ -2008,9 +2036,9 @@ class MS3TraceList:
 
             >>> # Create a trace list with some data
             >>> traces = MS3TraceList()
-            >>> traces.add_data("FDSN:XX_STA__H_H_Z", [1, 2, 3, 4, 5], "i", 100.0, start_time_str="2023-01-01T00:00:00.000Z")
-            >>> traces.add_data("FDSN:XX_STA__H_H_1", [6, 7, 8, 9, 9], "i", 100.0, start_time_str="2023-01-01T00:00:00.000Z")
-            >>> traces.add_data("FDSN:XX_STA__H_H_2", [9, 9, 8, 7, 6], "i", 100.0, start_time_str="2023-01-01T00:00:00.000Z")
+            >>> traces.add_data("FDSN:XX_STA__H_H_Z", [1, 2, 3, 4, 5], "i", 100.0, starttime_str="2023-01-01T00:00:00.000Z")
+            >>> traces.add_data("FDSN:XX_STA__H_H_1", [6, 7, 8, 9, 9], "i", 100.0, starttime_str="2023-01-01T00:00:00.000Z")
+            >>> traces.add_data("FDSN:XX_STA__H_H_2", [9, 9, 8, 7, 6], "i", 100.0, starttime_str="2023-01-01T00:00:00.000Z")
 
             >>> record_count = 0
             >>> for record in traces.generate():
@@ -2195,7 +2223,7 @@ class MS3TraceList:
 
             >>> # Create a trace list with some data
             >>> traces = MS3TraceList()
-            >>> traces.add_data("FDSN:XX_STA__B_H_Z", [1, 2, 3, 4, 5], "i", 100.0, start_time_str="2023-01-01T00:00:00Z")
+            >>> traces.add_data("FDSN:XX_STA__B_H_Z", [1, 2, 3, 4, 5], "i", 100.0, starttime_str="2023-01-01T00:00:00Z")
 
             >>> # Write to file (basic usage)
             >>> records_written = traces.to_file("output.mseed") # doctest: +SKIP

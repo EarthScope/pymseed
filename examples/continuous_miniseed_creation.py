@@ -164,11 +164,11 @@ def create_continuous_miniseed(
         while not shutdown_requested:
             try:
                 # Get new data from generators, could be an arbitrary source
-                new_data1, start_time1 = next(sinusoid1)
+                new_data1, starttime1 = next(sinusoid1)
 
                 # Only generate data for sourceid_2 every 5th loop (every 5 seconds)
                 if loop_count % 5 == 0:
-                    new_data2, start_time2 = next(sinusoid2)
+                    new_data2, starttime2 = next(sinusoid2)
                 else:
                     new_data2 = []
 
@@ -179,7 +179,7 @@ def create_continuous_miniseed(
                         data_samples=new_data1,
                         sample_type=sample_type,
                         sample_rate=sample_rate1,
-                        start_time=start_time1,
+                        starttime=starttime1,
                     )
                     if verbose > 1:
                         print(f"Added {len(new_data1)} samples to {sourceid_1}")
@@ -191,7 +191,7 @@ def create_continuous_miniseed(
                         data_samples=new_data2,
                         sample_type=sample_type,
                         sample_rate=sample_rate2,
-                        start_time=start_time2,
+                        starttime=starttime2,
                     )
                     if verbose > 1:
                         print(f"Added {len(new_data2)} samples to {sourceid_2}")

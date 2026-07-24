@@ -71,22 +71,22 @@ traces = MS3TraceList()
 
 output_file = "output.mseed"
 sample_rate = 40.0
-start_time = timestr2nstime("2024-01-01T15:13:55.123456789Z")
+starttime = timestr2nstime("2024-01-01T15:13:55.123456789Z")
 format_version = 2
 max_record_length = 512
 
 # Add generated data to the trace list
 traces.add_data(sourceid="FDSN:XX_TEST__B_S_1",
                 data_samples=data0, sample_type='i',
-                sample_rate=sample_rate, start_time=start_time)
+                sample_rate=sample_rate, starttime=starttime)
 
 traces.add_data(sourceid="FDSN:XX_TEST__B_S_2",
                 data_samples=data1, sample_type='i',
-                sample_rate=sample_rate, start_time=start_time)
+                sample_rate=sample_rate, starttime=starttime)
 
 traces.add_data(sourceid="FDSN:XX_TEST__B_S_3",
                 data_samples=data2, sample_type='i',
-                sample_rate=sample_rate, start_time=start_time)
+                sample_rate=sample_rate, starttime=starttime)
 
 traces.to_file(output_file,
                format_version=format_version,
