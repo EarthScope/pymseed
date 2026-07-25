@@ -3,12 +3,21 @@ import gc
 import io
 import math
 import os
+import time
 import warnings
 import weakref
 
 import pytest
 
-from pymseed import MiniSEEDError, MS3TraceList, sample_time, timestr2nstime
+from pymseed import (
+    NSTMODULUS,
+    MiniSEEDError,
+    MS3RecordValidator,
+    MS3TraceList,
+    sample_time,
+    system_time,
+    timestr2nstime,
+)
 
 test_dir = os.path.abspath(os.path.dirname(__file__))
 test_path3 = os.path.join(test_dir, "data", "testdata-COLA-signal.mseed3")
@@ -89,6 +98,50 @@ def test_tracelist_read():
         -152810,
         -149774,
     ]
+
+
+def test_tracelist_segment_update_time():
+    """update_time exposes the value flush_idle_seconds is measured against, so
+    a rolling buffer can see how long a segment has been idle."""
+    traces = MS3TraceList()
+    traces.add_data(
+        sourceid="FDSN:XX_STA__B_H_Z",
+        data_samples=[1, 2, 3],
+        sample_type="i",
+        sample_rate=100.0,
+        starttime_str="2023-01-01T00:00:00Z",
+    )
+    segment = traces[0][0]
+
+    first_update = segment.update_time
+    assert first_update is not None
+    assert abs(system_time() - first_update) < 5 * NSTMODULUS
+    assert segment.update_time_seconds == pytest.approx(first_update / NSTMODULUS)
+
+    # The update time tracks the segment, not the data times it holds
+    assert first_update > segment.endtime
+
+    time.sleep(0.01)
+    traces.add_data(
+        sourceid="FDSN:XX_STA__B_H_Z",
+        data_samples=[4, 5, 6],
+        sample_type="i",
+        sample_rate=100.0,
+        starttime_str="2023-01-01T00:00:00.03Z",
+    )
+    assert traces[0][0].update_time > first_update
+
+
+def test_tracelist_segment_update_time_unrecorded():
+    """Segments built without an update time report None rather than reading
+    whatever else a private pointer might hold."""
+    with open(test_path3, "rb") as f:
+        errors, traces = MS3RecordValidator.from_buffer(f.read()).validate()
+
+    assert errors == []
+    segment = traces[0][0]
+    assert segment.update_time is None
+    assert segment.update_time_seconds is None
 
 
 def test_tracelist_read_buffer_itemsize_views():
@@ -1174,6 +1227,34 @@ def test_mstracelist_generate_raises_on_pack_error():
     # miniSEED v2 record lengths must be a power of 2
     with pytest.raises(MiniSEEDError, match="power of 2"):
         list(traces.generate(format_version=2, max_record_length=1000))
+
+
+def test_mstracelist_generate_flush_idle_reclaims_idle_sources():
+    """A rolling buffer whose source IDs come and go relies on
+    flush_idle_seconds to drain them; without it partial segments accumulate for
+    the life of the trace list."""
+    traces = MS3TraceList()
+    for i in range(20):
+        traces.add_data(
+            sourceid=f"FDSN:XX_ST{i:03d}__B_H_Z",
+            data_samples=[1, 2, 3, 4, 5],
+            sample_type="i",
+            sample_rate=100.0,
+            starttime_str="2023-01-01T00:00:00Z",
+        )
+    assert len(traces) == 20
+
+    # Partial records are not packable, and no source is idle yet
+    assert list(traces.generate(flush_data=False, remove_packed=True)) == []
+    assert len(traces) == 20
+
+    # Idle segments flush, and each empty segment takes its trace ID with it
+    time.sleep(1.1)
+    records = list(
+        traces.generate(flush_data=False, flush_idle_seconds=1, remove_packed=True)
+    )
+    assert len(records) == 20
+    assert len(traces) == 0
 
 
 def test_mstracelist_generate_abandoned_keeps_yielded_samples():

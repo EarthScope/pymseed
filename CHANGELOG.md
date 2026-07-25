@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `sourceid`, `starttime`, and `endtime` filtering kwargs on `MS3Record.from_file()`
   (i.e. `MS3RecordReader`), `MS3Record.from_buffer()`, `MS3Record.from_filelike()`,
   and therefore `MS3Record.iter_records()`.
+- `MS3TraceSeg.update_time` and `update_time_seconds` report when a segment was last
+  updated, the value `MS3TraceList.generate(flush_idle_seconds=N)` measures against.
+  `None` for a segment carrying no update time.
 
 ### Changed
 - libmseed updated to v3.5.0
@@ -22,6 +25,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `MS3TraceList.generate()`: document that abandoning the generator with
   `remove_packed=True` keeps the samples of the records already yielded, which a
   later call creates records for again.
+- `MS3TraceList.generate()`: document that `flush_idle_seconds` is what drains a
+  source that stops delivering data, and that the default of 0 holds its samples
+  and trace ID for the life of the trace list.
 
 ### Fixed
 - `MS3TraceList.add_file(record_list=True)` retains one file name buffer per distinct

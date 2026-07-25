@@ -292,6 +292,33 @@ class MS3TraceSeg:
         return self._seg.samplecnt
 
     @property
+    def update_time(self) -> int | None:
+        """Return time of last update as nanoseconds since Unix/POSIX epoch,
+        or None if no update time is recorded for this segment.
+
+        libmseed records this for segments added through :class:`MS3TraceList`,
+        and :meth:`MS3TraceList.generate` compares it against the system clock
+        to decide which segments ``flush_idle_seconds`` flushes.  Compare with
+        :func:`pymseed.system_time` to measure how long a segment has been
+        idle, e.g. in a rolling buffer.
+        """
+        if self._seg.prvtptr == ffi.NULL:
+            return None
+
+        return int(ffi.cast("nstime_t *", self._seg.prvtptr)[0])
+
+    @property
+    def update_time_seconds(self) -> float | None:
+        """Return time of last update as seconds since Unix/POSIX epoch, or
+        None if no update time is recorded for this segment.
+
+        See :attr:`update_time`.
+        """
+        update_time = self.update_time
+
+        return None if update_time is None else update_time / clibmseed.NSTMODULUS
+
+    @property
     def recordlist(self) -> MS3RecordList | None:
         """Return the record list structure"""
         if self._seg.recordlist:
@@ -1992,7 +2019,8 @@ class MS3TraceList:
 
             flush_idle_seconds: If > 0, forces flushing of data segments that
                 have not been updated within the specified number of seconds.
-                Default is 0 (disabled).
+                Default is 0 (disabled), which holds idle data in the trace
+                list until a call with `flush_data=True`.
 
             remove_packed: If True, data samples packed into records will be
                 removed from the trace list.  See "Rolling buffer" section below
@@ -2051,6 +2079,23 @@ class MS3TraceList:
             To flush the all data from the buffer on termination:
             * `flush_data=True` to flush all data from the trace list
             * `remove_packed=True` to remove packed data from the trace list
+
+            With `flush_data=False`, a source that stops delivering data keeps
+            its remaining samples in the trace list until `flush_idle_seconds`
+            elapses, or until a later call sets `flush_data=True`.  Set
+            `flush_idle_seconds=N` whenever the set of source IDs can change
+            over the life of the buffer: at the default of 0 those samples, and
+            the trace ID holding them, are retained for as long as the trace
+            list lives.
+
+            Choose N larger than the time it takes the slowest source to fill a
+            record, otherwise idle flushing creates partial records where full
+            ones are still possible: 1 sample/second fills a 4096-byte STEIM2
+            record in about 110 minutes, a 512-byte one in about 12 minutes.
+            Choose a smaller N when bounding output latency matters more than
+            filling records.  :attr:`MS3TraceSeg.update_time` reports the time
+            a segment was last updated, which is the value N is compared
+            against.
 
         .. warning::
             With `remove_packed=True`, samples are removed from the trace list
