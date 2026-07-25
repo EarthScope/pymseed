@@ -19,7 +19,12 @@ class PymseedError(RuntimeError):
 
 
 class MiniSEEDError(PymseedError):
-    """Exception for libmseed return values."""
+    """Exception for libmseed return values.
+
+    ``status_code`` is the raw libmseed return value. Negative values are error
+    codes; the meaning of a positive value depends on the function that
+    produced it, so callers passing one supply their own ``message``.
+    """
 
     status_code: int
     message: str | None
@@ -49,10 +54,17 @@ class MiniSEEDError(PymseedError):
         # For generic errors, use captured error messages if available
         if self.status_code == clibmseed.MS_GENERROR and self.error_messages:
             library_message = "; ".join(self.error_messages)
+        elif self.status_code < 0:
+            library_message = error_string(self.status_code)
         else:
-            library_message = (
-                error_string(self.status_code) or f"Unknown error code: {self.status_code}"
-            )
+            # Only negative values are error codes. What a non-negative status
+            # means depends on the function that returned it — MS_ENDOFFILE and
+            # msr3_parse()'s "one more byte needed" are both 1 — so look up no
+            # string for it and let the caller's message describe it.
+            library_message = None
+
+        if library_message is None:
+            return self.message or f"Unknown status code: {self.status_code}"
 
         if self.message:
             return f"{library_message} :: {self.message}"

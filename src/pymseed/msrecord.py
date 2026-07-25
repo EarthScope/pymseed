@@ -32,6 +32,19 @@ from .selections import build_selections
 from .util import encoding_string, nstime2timestr, timestr2nstime
 
 
+def _parse_error_message(status: int) -> str:
+    """Describe a failing ``msr3_parse()`` status.
+
+    A positive status is not an error code: it is the number of additional bytes
+    ``msr3_parse()`` needs to complete the record.
+    """
+    if status > 0:
+        plural = "" if status == 1 else "s"
+        return f"Incomplete miniSEED record, {status} more byte{plural} needed"
+
+    return "Error parsing miniSEED record"
+
+
 class _SharedRecordStruct:
     """Owns the C record struct shared by a record iterator and the records it yields.
 
@@ -2372,8 +2385,8 @@ class MS3Record:
             # msr->record points into `buffer` rather than a copy of it, so the
             # record must keep the buffer alive to stay self-contained.
             return cls(recordptr=msr_ptr[0], owns=True, owner=buf_ptr)
-        else:
-            raise MiniSEEDError(status, "Error parsing miniSEED record")
+
+        raise MiniSEEDError(status, _parse_error_message(status))
 
     def parse_into(
         self,
@@ -2471,6 +2484,6 @@ class MS3Record:
         self._owner = buf_ptr
 
         if status != clibmseed.MS_NOERROR:
-            raise MiniSEEDError(status, "Error parsing miniSEED record")
+            raise MiniSEEDError(status, _parse_error_message(status))
 
         return self

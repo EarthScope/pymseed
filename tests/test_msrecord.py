@@ -609,6 +609,26 @@ def test_msrecord_to_file(tmp_path):
 class TestMS3RecordParse:
     """Tests for MS3Record.parse() — single-record buffer parsing."""
 
+    def test_parse_truncated_reports_bytes_needed(self):
+        """A truncated buffer makes msr3_parse() return a positive byte-count
+        hint rather than an error code; it must not be reported as an error
+        code ("Unknown error code: 414")."""
+        with open(test_pack3, "rb") as f:
+            record = f.read(512)
+
+        for call in (
+            lambda buf: MS3Record.parse(buf),
+            lambda buf: MS3Record().parse_into(buf),
+        ):
+            with pytest.raises(MiniSEEDError) as excinfo:
+                call(record[:64])
+
+            assert excinfo.value.status_code > 0
+            assert "Unknown error code" not in str(excinfo.value)
+            assert str(excinfo.value) == (
+                f"Incomplete miniSEED record, {excinfo.value.status_code} more bytes needed"
+            )
+
     def test_parse_v3_metadata(self):
         """Parse a v3 record and verify all header fields."""
         with open(test_pack3, "rb") as f:

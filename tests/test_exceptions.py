@@ -133,6 +133,32 @@ class TestMiniSEEDError:
         exc = MiniSEEDError(-1, "boom")
         assert str(exc).endswith(" :: boom")
 
+    def test_positive_status_defers_to_the_callers_message(self) -> None:
+        """Only negative values are error codes. A positive one means whatever
+        the producing function says it means — MS_ENDOFFILE and msr3_parse()'s
+        "one more byte needed" are both 1 — so no error string may be looked up
+        for it. Previously error_string(414) returned nothing and the caller's
+        description was buried under a bogus "Unknown error code: 414"."""
+        exc = MiniSEEDError(414, "Incomplete miniSEED record, 414 more bytes needed")
+
+        assert exc.status_code == 414
+        assert str(exc) == "Incomplete miniSEED record, 414 more bytes needed"
+
+        # 1 collides with MS_ENDOFFILE; the caller's meaning must still win.
+        assert str(MiniSEEDError(1, "Incomplete miniSEED record, 1 more byte needed")) == (
+            "Incomplete miniSEED record, 1 more byte needed"
+        )
+
+        # With no message there is nothing better to report than the raw value.
+        assert str(MiniSEEDError(414)) == "Unknown status code: 414"
+
+    def test_negative_status_still_renders_error_string(self) -> None:
+        """Codes libmseed does have a string for are unaffected."""
+        assert str(MiniSEEDError(clibmseed.MS_INVALIDCRC)) == "Invalid CRC detected"
+        assert str(MiniSEEDError(clibmseed.MS_NOTSEED, "ctx")) == (
+            "No miniSEED data detected :: ctx"
+        )
+
     @pytest.mark.parametrize(
         "args",
         [
