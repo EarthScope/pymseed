@@ -80,6 +80,12 @@ class _BufferSource:
     def __init__(self, buffer: Any) -> None:
         self._buffer = buffer
 
+    def __repr__(self) -> str:
+        return f"_BufferSource({type(self._buffer).__name__})"
+
+    def __str__(self) -> str:
+        return f"buffer ({type(self._buffer).__name__})"
+
     def __iter__(self) -> Iterator[_RecordTuple]:
         buf_ptr = buffer_pointer(self._buffer)
         buf_size = len(buf_ptr)
@@ -115,6 +121,12 @@ class _FileLikeSource:
     def __init__(self, fh: Any, chunk_size: int = 10_485_760) -> None:
         self._fh = fh
         self._chunk_size = chunk_size
+
+    def __repr__(self) -> str:
+        return f"_FileLikeSource({type(self._fh).__name__}, chunk_size={self._chunk_size})"
+
+    def __str__(self) -> str:
+        return f"stream ({type(self._fh).__name__})"
 
     def __iter__(self) -> Iterator[_RecordTuple]:
         format_version = ffi.new("uint8_t *")
@@ -214,6 +226,12 @@ class _FileSource:
     def __init__(self, filename: str | os.PathLike[str], chunk_size: int = 10_485_760) -> None:
         self._filename = filename
         self._chunk_size = chunk_size
+
+    def __repr__(self) -> str:
+        return f"_FileSource({self._filename!r}, chunk_size={self._chunk_size})"
+
+    def __str__(self) -> str:
+        return str(self._filename)
 
     def __iter__(self) -> Iterator[_RecordTuple]:
         with open(self._filename, "rb") as f:
@@ -325,6 +343,27 @@ class MS3RecordValidator:
         self._parse_flags = 0
         if validate_crc:
             self._parse_flags |= clibmseed.MSF_VALIDATECRC
+
+    def __repr__(self) -> str:
+        return (
+            f"MS3RecordValidator(source: {self._source!r}\n"
+            f"              unpack_data: {self._unpack_data}\n"
+            f"             validate_crc: {self._validate_crc}\n"
+            f"   validate_extra_headers: {self._validate_extra_headers}\n"
+            f"     extra_headers_schema: {self._extra_headers_schema!r}\n"
+            f"    future_data_tolerance: {self._future_data_tolerance}\n"
+            f"        return_trace_list: {self._return_trace_list}\n"
+            f"                  verbose: {self._verbose}"
+            ")"
+        )
+
+    def __str__(self) -> str:
+        return (
+            f"{self._source}, "
+            f"unpack_data: {self._unpack_data}, "
+            f"validate_crc: {self._validate_crc}, "
+            f"validate_extra_headers: {self._validate_extra_headers}"
+        )
 
     @classmethod
     def from_buffer(cls, buffer: Any, **kwargs: Any) -> MS3RecordValidator:

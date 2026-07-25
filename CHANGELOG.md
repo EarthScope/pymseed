@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `__repr__()` and `__str__()` for `MS3RecordReader` and `MS3RecordValidator`,
+  the two public classes that still printed as a bare object address.
+
 ### Changed
 - `MS3Record.to_file()` accepts `os.PathLike` filenames and encodes them with
   `os.fsencode()`, matching the rest of the package.

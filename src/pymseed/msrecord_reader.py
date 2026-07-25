@@ -270,6 +270,26 @@ class MS3RecordReader:
 
             self.stream_name = ffi.new("char[]", encoded_path)
 
+    def __repr__(self) -> str:
+        return (
+            f"MS3RecordReader(source: {self._source_str()}\n"
+            f"                  open: {self._msfp_ptr[0] != ffi.NULL}\n"
+            f"            selections: {self._selections != ffi.NULL}\n"
+            f"           parse_flags: 0x{self.parse_flags:02x}\n"
+            f"               verbose: {self.verbose}"
+            ")"
+        )
+
+    def __str__(self) -> str:
+        state = "open" if self._msfp_ptr[0] != ffi.NULL else "closed"
+        return f"{self._source_str()}, {state}"
+
+    def _source_str(self) -> str:
+        """The stream name as text, for repr() and str()"""
+        if self.stream_name == ffi.NULL:
+            return "unset"
+        return os.fsdecode(ffi.string(self.stream_name))
+
     def __enter__(self) -> "MS3RecordReader":
         """Context manager entry point - returns self for use in 'with' statements."""
         return self

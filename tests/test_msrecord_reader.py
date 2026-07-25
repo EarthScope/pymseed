@@ -341,6 +341,43 @@ def test_msrecord_reader_rejects_invalid_byte_offsets():
         assert r is not None
 
 
+def test_msrecord_reader_repr_and_str():
+    """Both name the source and report whether the reader is still open, rather
+    than falling back to the default object repr."""
+    from pymseed import MS3RecordReader
+
+    reader = MS3RecordReader(test_path3, sourceid="FDSN:IU_COLA_00_B_H_Z")
+    try:
+        representation = repr(reader)
+        assert representation.startswith("MS3RecordReader(source: ")
+        assert test_path3 in representation
+        assert "open: True" in representation
+        assert "selections: True" in representation
+
+        assert str(reader) == f"{test_path3}, open"
+    finally:
+        reader.close()
+
+    assert str(reader) == f"{test_path3}, closed"
+    assert "open: False" in repr(reader)
+
+
+def test_msrecord_reader_repr_with_file_descriptor():
+    """A descriptor source is named as libmseed names it, not printed as cdata."""
+    from pymseed import MS3RecordReader
+
+    fd = os.open(test_path3, os.O_RDONLY)
+    try:
+        reader = MS3RecordReader(fd)
+        try:
+            assert f"File Descriptor {fd}" in repr(reader)
+            assert str(reader) == f"File Descriptor {fd}, open"
+        finally:
+            reader.close()
+    finally:
+        os.close(fd)
+
+
 def test_msrecord_reader_input_kwarg_is_deprecated_alias():
     # Passing the legacy `input=` keyword must still work but emit a
     # DeprecationWarning pointing users at the new `source=` name.

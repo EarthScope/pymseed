@@ -781,6 +781,24 @@ class TestMS3RecordValidatorFromFilelike:
         with pytest.raises(ValueError):
             MS3RecordValidator.from_filelike(fh, chunk_size=1_073_741_825)
 
+    def test_repr_and_str_describe_the_source_and_options(self) -> None:
+        """Both report the source and the checks in force, rather than falling
+        back to the default object repr."""
+        import io
+
+        validator = MS3RecordValidator.from_file(TEST_MSEED3_FILE, validate_crc=False)
+        representation = repr(validator)
+        assert representation.startswith("MS3RecordValidator(source: _FileSource(")
+        assert TEST_MSEED3_FILE in representation
+        assert "validate_crc: False" in representation
+        assert str(validator).startswith(f"{TEST_MSEED3_FILE}, ")
+
+        # Sources without a name are described by kind, not by class name
+        assert str(MS3RecordValidator.from_buffer(b"abc")).startswith("buffer (bytes), ")
+        assert str(MS3RecordValidator.from_filelike(io.BytesIO(b""))).startswith(
+            "stream (BytesIO), "
+        )
+
     def test_from_file_rejects_invalid_filename_types(self) -> None:
         """Bad filename types fail at the factory with the same TypeError the
         other path-accepting entry points raise, not later from open()."""
