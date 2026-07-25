@@ -15,6 +15,8 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from jsonschema_rs import ValidationError as JsonSchemaValidationError
 
+    from .msrecord_reader import MS3RecordReader
+
 from pymseed._json import json_dumps_minified, json_loads
 
 from ._extra_headers_jsonschema import (
@@ -1924,7 +1926,11 @@ class MS3Record:
         return packed_records
 
     @classmethod
-    def from_file(cls, filename, **kwargs):
+    def from_file(
+        cls,
+        filename: str | os.PathLike[str] | int,
+        **kwargs: Any,
+    ) -> MS3RecordReader:
         """Create a record reader for miniSEED files.
 
         This convenience method returns an MS3RecordReader that can iterate over
@@ -2406,7 +2412,7 @@ class MS3Record:
                 free_selections()
 
     @classmethod
-    def iter_records(cls, source, **kwargs) -> Iterator[MS3Record]:
+    def iter_records(cls, source: Any, **kwargs: Any) -> Iterator[MS3Record]:
         """Iterate over miniSEED records from any source.
 
         This convenience method is a wrapper around the main record

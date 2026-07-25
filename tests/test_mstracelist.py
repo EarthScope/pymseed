@@ -1516,9 +1516,7 @@ def test_mstracelist_generate_flush_idle_reclaims_idle_sources():
 
     # Idle segments flush, and each empty segment takes its trace ID with it
     time.sleep(1.1)
-    records = list(
-        traces.generate(flush_data=False, flush_idle_seconds=1, remove_packed=True)
-    )
+    records = list(traces.generate(flush_data=False, flush_idle_seconds=1, remove_packed=True))
     assert len(records) == 20
     assert len(traces) == 0
 

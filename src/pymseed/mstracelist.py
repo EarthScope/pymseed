@@ -712,7 +712,7 @@ class MS3TraceID:
         """Return number of segments"""
         return self._id.numsegments
 
-    def __iter__(self) -> Any:
+    def __iter__(self) -> Iterator[MS3TraceSeg]:
         """Return iterator over segments"""
         current_segment = self._id.first
         while current_segment != ffi.NULL:
@@ -1019,7 +1019,7 @@ class MS3TraceList:
             return 0
         return int(self._mstl.numtraceids)
 
-    def __iter__(self) -> Any:
+    def __iter__(self) -> Iterator[MS3TraceID]:
         """Return iterator over trace IDs"""
         current_traceid = self._mstl.traces.next[0]
         while current_traceid != ffi.NULL:
@@ -1078,7 +1078,7 @@ class MS3TraceList:
 
         return MS3TraceID(traceid_ptr, self)
 
-    def sourceids(self) -> Any:
+    def sourceids(self) -> Iterator[str]:
         """Return source IDs via a generator iterator"""
         for traceid in self:
             yield traceid.sourceid
@@ -2388,17 +2388,21 @@ class MS3TraceList:
         return packed_records
 
     @classmethod
-    def from_file(cls, filename, **kwargs):
+    def from_file(
+        cls,
+        filename: str | os.PathLike[str],
+        **kwargs: Any,
+    ) -> MS3TraceList:
         """Create MS3TraceList from a specified miniSEED file"""
         return cls(file_name=filename, **kwargs)
 
     @classmethod
-    def from_buffer(cls, buffer: Any, **kwargs):
+    def from_buffer(cls, buffer: Any, **kwargs: Any) -> MS3TraceList:
         """Create an MS3TraceList from miniSEED data in a memory buffer"""
         return cls(buffer=buffer, **kwargs)
 
     @classmethod
-    def from_filelike(cls, fh: Any, **kwargs):
+    def from_filelike(cls, fh: Any, **kwargs: Any) -> MS3TraceList:
         """Create an MS3TraceList from a miniSEED file-like stream.
 
         See :meth:`add_filelike` for the full parameter list, supported

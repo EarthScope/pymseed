@@ -14,9 +14,7 @@ libmseed_path = cffi_module_path / "libmseed"
 
 # --- CFFI Setup ---
 # Import the CFFI definitions from the separate definitions file
-spec = importlib.util.spec_from_file_location(
-    "cffi_defs", cffi_module_path / "cffi_defs.py"
-)
+spec = importlib.util.spec_from_file_location("cffi_defs", cffi_module_path / "cffi_defs.py")
 cffi_defs = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(cffi_defs)
 

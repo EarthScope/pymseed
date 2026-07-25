@@ -111,7 +111,11 @@ def data_source(
 
 
 def create_continuous_miniseed(
-    output_file: str, flush_idle_seconds: int, record_length: int, encoding: DataEncoding, verbose: int = 0
+    output_file: str,
+    flush_idle_seconds: int,
+    record_length: int,
+    encoding: DataEncoding,
+    verbose: int = 0,
 ) -> None:
     """
     Create a miniSEED file from a continuous stream of data.
@@ -142,7 +146,10 @@ def create_continuous_miniseed(
         degree_offset=0, sample_rate=sample_rate1, amplitude=100, integer_samples=sample_type == "i"
     )
     sinusoid2 = data_source(
-        degree_offset=45, sample_rate=sample_rate2, amplitude=100, integer_samples=sample_type == "i"
+        degree_offset=45,
+        sample_rate=sample_rate2,
+        amplitude=100,
+        integer_samples=sample_type == "i",
     )
 
     # Create a trace buffer to function as a temporary data buffer
@@ -237,9 +244,7 @@ def create_continuous_miniseed(
             output_handle.write(record)
             packed_records += 1
 
-        print(
-            f"Final flush: wrote {packed_records} records"
-        )
+        print(f"Final flush: wrote {packed_records} records")
 
         print(f"miniSEED creation complete. Output written to {output_file}")
 
@@ -250,26 +255,30 @@ def main():
     )
     parser.add_argument("output_file", help="The file to write the miniSEED output to")
     parser.add_argument(
-        "-f", "--flush_idle_seconds",
+        "-f",
+        "--flush_idle_seconds",
         type=int,
         default=10,
         help="The number of seconds of idle time before flushing the data",
     )
     parser.add_argument(
-        "-r", "--record_length",
+        "-r",
+        "--record_length",
         type=int,
         default=512,
         help="Record length in bytes for miniSEED output (default: 512)",
     )
     parser.add_argument(
-        "-e", "--encoding",
+        "-e",
+        "--encoding",
         type=str,
         choices=["STEIM1", "STEIM2", "FLOAT32", "FLOAT64", "INT16", "INT32"],
         default="STEIM1",
         help="Data encoding format for miniSEED output (default: STEIM1)",
     )
     parser.add_argument(
-        "-v", "--verbose",
+        "-v",
+        "--verbose",
         action="count",
         default=0,
         help="Increase verbosity level (can be used multiple times: -v, -vv, -vvv)",

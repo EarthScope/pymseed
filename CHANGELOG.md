@@ -10,6 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - `__repr__()` and `__str__()` for `MS3RecordReader` and `MS3RecordValidator`,
   the two public classes that still printed as a bare object address.
+- Type annotations for `MS3Record.from_file()` and `iter_records()`, and
+  `MS3TraceList.from_file()`, `from_buffer()`, and `from_filelike()`, which
+  returned an unchecked `Any` to callers.  `MS3TraceList.__iter__()`,
+  `MS3TraceID.__iter__()`, and `MS3TraceList.sourceids()` state what they
+  yield.
 
 ### Changed
 - `MS3Record.to_file()` accepts `os.PathLike` filenames and encodes them with
