@@ -14,6 +14,9 @@ from typing import Any
 import pytest
 
 from pymseed import (
+    MiniSEEDError,
+    MS3Record,
+    MS3RecordValidator,
     MS3TraceList,
     clear_error_messages,
     configure_logging,
@@ -45,10 +48,26 @@ def get_test_files(count: int = 20) -> list[str]:
     return files[:count]
 
 
+def get_payload_corrupted_buffer() -> bytes:
+    """Get a miniSEED v3 buffer whose first record has a corrupted data payload.
+
+    Corrupting the payload rather than the header makes msr3_unpack_data() emit a
+    Steim2 integrity *warning* while still reporting success.  That warning-only
+    path is the one that produced no validation errors at all when the message
+    registry was unconfigured.
+    """
+    with open(TEST_MSEED3_FILE, "rb") as f:
+        buf = bytearray(f.read())
+
+    reclen = MS3Record.parse(bytes(buf)).reclen
+    for i in range(reclen - 100, reclen - 60):
+        buf[i] ^= 0xFF
+
+    return bytes(buf)
+
+
 def get_corrupted_record() -> bytes:
     """Get a corrupted miniSEED record that will trigger a CRC error."""
-    from pymseed import MS3Record
-
     for msr in MS3Record.from_file(TEST_MSEED3_FILE):
         valid_data = bytearray(msr.record)
         # Corrupt some bytes to trigger CRC validation error
@@ -432,6 +451,94 @@ class TestLoggingIsolation:
         # Thread 0 cleared its messages, Thread 1 should still have them
         assert len(results[0]) == 0, "Thread 0 should have no messages after clear"
         assert len(results[1]) >= 1, "Thread 1 should still have its error messages"
+
+
+class TestUnconfiguredThreadLogging:
+    """Threads that never call configure_logging() must still capture messages.
+
+    libmseed's message registry is thread-local.  A thread that was never
+    configured printed diagnostics straight to stderr instead of storing them, so
+    get_error_messages() returned nothing on that thread.
+    """
+
+    def setup_method(self) -> None:
+        """Clear any existing log messages before each test."""
+        clear_error_messages()
+
+    def test_messages_captured_on_unconfigured_thread(self) -> None:
+        """A worker that never configures logging still gets its messages."""
+        corrupted = get_corrupted_record()
+        captured: dict[str, Any] = {}
+
+        def worker() -> None:
+            # Deliberately does NOT call configure_logging()
+            try:
+                MS3Record.parse(corrupted, validate_crc=True)
+            except MiniSEEDError:
+                pass
+            captured["messages"] = get_error_messages()
+
+        thread = threading.Thread(target=worker)
+        thread.start()
+        thread.join()
+
+        assert captured["messages"], "unconfigured thread captured no messages"
+        assert "CRC" in " ".join(captured["messages"])
+
+    def test_validator_finds_corruption_on_unconfigured_thread(self) -> None:
+        """MS3RecordValidator must not report corrupt data as clean off the main thread.
+
+        Every per-record message the validator reports comes from the registry,
+        so an unconfigured thread reported zero errors for a corrupt payload.
+        """
+        buffer = get_payload_corrupted_buffer()
+
+        def validate() -> list[Any]:
+            errors, _ = MS3RecordValidator.from_buffer(
+                buffer, unpack_data=True, validate_crc=False
+            ).validate()
+            return errors
+
+        expected = validate()
+        assert expected, "precondition: main thread must report the decode warning"
+
+        captured: dict[str, list[Any]] = {}
+
+        def worker() -> None:
+            captured["errors"] = validate()
+
+        thread = threading.Thread(target=worker)
+        thread.start()
+        thread.join()
+
+        # Same findings, for the same records, at the same offsets.  Message text
+        # is matched on content rather than compared verbatim: the message prefix
+        # is per-thread state owned by configure_logging().
+        assert [(e.offset, e.sourceid) for e in captured["errors"]] == [
+            (e.offset, e.sourceid) for e in expected
+        ]
+        assert all("Steim2" in e.message for e in captured["errors"])
+
+    def test_error_carries_context_on_unconfigured_thread(self) -> None:
+        """MiniSEEDError raised on an unconfigured thread still has libmseed detail."""
+        corrupted = get_corrupted_record()
+        captured: dict[str, str] = {}
+
+        def worker() -> None:
+            try:
+                MS3RecordValidator.from_buffer(corrupted).validate()
+            except MiniSEEDError:  # pragma: no cover - validator accumulates instead
+                pass
+            errors, _ = MS3RecordValidator.from_buffer(corrupted).validate()
+            captured["message"] = " ".join(e.message for e in errors)
+
+        thread = threading.Thread(target=worker)
+        thread.start()
+        thread.join()
+
+        # Without a registry this degraded to the bare "Parse error: -7"
+        assert "CRC" in captured["message"]
+        assert "Parse error" not in captured["message"]
 
 
 if __name__ == "__main__":

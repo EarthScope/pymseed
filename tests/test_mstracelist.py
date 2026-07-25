@@ -902,6 +902,27 @@ test_pack3_x3 = os.path.join(test_dir, "data", "packtest_sine500x3.mseed3")
 test_pack2_x3 = os.path.join(test_dir, "data", "packtest_sine500x3.mseed2")
 
 
+def test_mstracelist_generate_raises_on_pack_error():
+    """A packing failure must raise, not end the generator silently.
+
+    mstl3_pack_next() returns 1 for a record, 0 when finished and a negative
+    value on error; treating the error as completion would yield no records and
+    let the caller write an empty file believing packing succeeded.
+    """
+    traces = MS3TraceList()
+    traces.add_data(
+        sourceid="FDSN:XX_STA__B_H_Z",
+        data_samples=[1, 2, 3, 4, 5],
+        sample_type="i",
+        sample_rate=100.0,
+        starttime_str="2023-01-01T00:00:00Z",
+    )
+
+    # miniSEED v2 record lengths must be a power of 2
+    with pytest.raises(MiniSEEDError, match="power of 2"):
+        list(traces.generate(format_version=2, max_record_length=1000))
+
+
 def test_mstracelist_generate():
     """Test creation of miniSEED v3 and v2 records from a trace list.
 

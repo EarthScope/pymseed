@@ -1,3 +1,4 @@
+import gc
 import json
 import math
 import os
@@ -5,7 +6,7 @@ import os
 import pytest
 
 from pymseed import DataEncoding, MiniSEEDError, MS3Record
-from pymseed.clib import clibmseed
+from pymseed.clib import clibmseed, ffi
 
 test_dir = os.path.abspath(os.path.dirname(__file__))
 test_pack3 = os.path.join(test_dir, "data", "packtest_sine500.mseed3")
@@ -179,6 +180,37 @@ def test_generate_rejects_partial_sample_args():
     # but the invalid call raises before any iteration begins. Holding the
     # would-be generator without iterating still triggered the error above,
     # confirming the wrapper validates synchronously.
+
+
+def test_generate_raises_on_pack_error():
+    """A packing failure must raise, not end the generator silently.
+
+    msr3_pack_next() returns 1 for a record, 0 when finished and a negative
+    value on error; treating the error as completion would yield no records and
+    let the caller write an empty file believing packing succeeded.
+    """
+    msr = MS3Record()
+    msr.sourceid = "FDSN:XX_TEST__B_H_Z"
+    msr.set_starttime_str("2024-01-01T00:00:00Z")
+    msr.samprate = 100.0
+    msr.encoding = DataEncoding.STEIM2  # integer-only encoding
+
+    # Float samples cannot be Steim2 encoded
+    with pytest.raises(MiniSEEDError, match="Steim2"):
+        list(msr.generate(data_samples=[1.5, 2.5, 3.5], sample_type="f"))
+
+
+def test_generate_raises_on_pack_error_without_data_samples():
+    """The no-data_samples branch of generate() checks the status too."""
+    msr = MS3Record()
+    msr.sourceid = "FDSN:XX_TEST__B_H_Z"
+    msr.set_starttime_str("2024-01-01T00:00:00Z")
+    msr.samprate = 100.0
+    msr.encoding = DataEncoding.STEIM2
+
+    with msr.with_datasamples([1.5, 2.5, 3.5], "f"):
+        with pytest.raises(MiniSEEDError, match="Steim2"):
+            list(msr.generate())
 
 
 @pytest.mark.filterwarnings("ignore::DeprecationWarning")
@@ -678,6 +710,68 @@ class TestMS3RecordParse:
         assert reparsed.samprate == original_samprate
         assert reparsed.samplecnt == original_samplecnt
         assert list(reparsed.datasamples) == original_samples
+
+    @staticmethod
+    def _bad_crc_record() -> bytes:
+        """A v3 record whose payload has been altered so its CRC no longer matches."""
+        with open(test_repack3_output, "rb") as f:
+            buf = f.read()
+
+        reclen = MS3Record.parse(buf).reclen
+        corrupted = bytearray(buf[:reclen])
+        corrupted[100] ^= 0xFF
+        return bytes(corrupted)
+
+    def test_parse_into_error_leaves_record_usable(self):
+        """A post-header parse failure must not leave a freed record behind.
+
+        msr3_parse() frees the supplied record and NULLs the pointer when it
+        fails after the header stage (e.g. bad CRC).  Keeping the stale pointer
+        meant subsequent property access read freed memory and finalization
+        freed it a second time.
+        """
+        msr = MS3Record()
+
+        with pytest.raises(MiniSEEDError, match="CRC"):
+            msr.parse_into(self._bad_crc_record())
+
+        # The wrapper still owns a valid, freshly initialized record
+        assert msr._msr_allocated is True
+        assert msr._msr != ffi.NULL
+        assert msr.reclen == -1
+        assert msr.sourceid == ""
+
+        # ... and remains usable for a subsequent parse
+        with open(test_pack3, "rb") as f:
+            msr.parse_into(f.read())
+        assert msr.sourceid == "FDSN:XX_TEST__B_S_X"
+        assert msr.samplecnt == 500
+
+    def test_parse_into_error_survives_finalization(self):
+        """Repeated failed parses then teardown must not double free."""
+        bad = self._bad_crc_record()
+
+        msr = MS3Record()
+        for _ in range(50):
+            with pytest.raises(MiniSEEDError):
+                msr.parse_into(bad)
+
+        # Dropping the wrapper runs __del__ -> msr3_free(); a stale pointer here
+        # aborted the process under the malloc guard.
+        del msr
+        gc.collect()
+
+    def test_parse_into_detection_error_keeps_record(self):
+        """A detection-stage failure does not free the record; it stays usable."""
+        msr = MS3Record()
+
+        with pytest.raises(MiniSEEDError):
+            msr.parse_into(b"\x00" * 512)
+
+        assert msr._msr != ffi.NULL
+        with open(test_pack3, "rb") as f:
+            msr.parse_into(f.read())
+        assert msr.sourceid == "FDSN:XX_TEST__B_S_X"
 
     def test_parse_error_truncated_buffer(self):
         """Raise MiniSEEDError when buffer is too small to contain a record."""
