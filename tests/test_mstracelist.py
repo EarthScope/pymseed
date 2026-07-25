@@ -1109,6 +1109,88 @@ def test_mstracelist_pack_reraises_handler_exception():
     assert len(calls) == 1
 
 
+def test_datasamples_view_holds_the_trace_list():
+    """A sample view must keep the trace list alive, not dangle when it is freed.
+
+    The view is built from a cast pointer, which owns nothing, so without an
+    explicit pin the trace list is freed while the view still refers to it.
+    """
+    samples = list(range(1000))
+
+    def _view():
+        traces = MS3TraceList()
+        traces.add_data(
+            sourceid="FDSN:XX_TEST__B_S_X",
+            data_samples=samples,
+            sample_type="i",
+            sample_rate=100.0,
+            starttime_str="2024-01-01T00:00:00Z",
+        )
+        return traces[0][0].datasamples, weakref.ref(traces)
+
+    view, reference = _view()
+    gc.collect()
+    assert reference() is not None
+
+    # Churn the heap so a freed buffer would read back as recycled memory
+    _churn = [bytearray(8192) for _ in range(2000)]
+    assert view.tolist() == samples
+
+    # Dropping the view releases the trace list again
+    del view
+    gc.collect()
+    assert reference() is None
+
+
+def test_datasamples_view_holds_the_trace_list_for_every_sample_type():
+    """The pin must apply to each sample type the property supports."""
+    for sample_type, data, expected in (
+        ("f", [1.5, 2.5, 3.5], [1.5, 2.5, 3.5]),
+        ("d", [1.5, 2.5, 3.5], [1.5, 2.5, 3.5]),
+        ("t", "hello", list(b"hello")),
+    ):
+        traces = MS3TraceList()
+        traces.add_data(
+            sourceid="FDSN:XX_TEST__B_S_X",
+            data_samples=data,
+            sample_type=sample_type,
+            sample_rate=100.0,
+            starttime_str="2024-01-01T00:00:00Z",
+        )
+        view = traces[0][0].datasamples
+        reference = weakref.ref(traces)
+
+        del traces
+        gc.collect()
+        assert reference() is not None
+        assert view.tolist() == expected
+
+
+def test_np_datasamples_view_holds_the_trace_list():
+    """The numpy view is built on datasamples, so it inherits the same pin."""
+    np = pytest.importorskip("numpy")
+
+    samples = list(range(1000))
+
+    def _view():
+        traces = MS3TraceList()
+        traces.add_data(
+            sourceid="FDSN:XX_TEST__B_S_X",
+            data_samples=samples,
+            sample_type="i",
+            sample_rate=100.0,
+            starttime_str="2024-01-01T00:00:00Z",
+        )
+        return traces[0][0].np_datasamples, weakref.ref(traces)
+
+    view, reference = _view()
+    gc.collect()
+    assert reference() is not None
+
+    _churn = [bytearray(8192) for _ in range(2000)]
+    assert np.array_equal(view, np.array(samples, dtype=np.int32))
+
+
 @pytest.mark.filterwarnings("ignore::DeprecationWarning")
 def test_mstracelist_pack_leaves_no_reference_cycle():
     """pack() must not tie the trace list into a reference cycle.

@@ -11,7 +11,7 @@ import warnings
 from collections.abc import Callable, Iterator, Sequence
 from typing import Any
 
-from .clib import cdata_to_string, clibmseed, ffi
+from .clib import cdata_to_string, clibmseed, ffi, owned_memoryview
 from .definitions import DataEncoding, SubSecond, TimeFormat
 from .exceptions import MiniSEEDError
 from .logging import ensure_thread_logging
@@ -330,9 +330,12 @@ class MS3TraceSeg:
     def datasamples(self) -> memoryview:
         """Return data samples as a memoryview (no copy)
 
-        A view of the data samples in an internal buffer owned by this MS3Record
-        instance is returned.  If the data are needed beyond the lifetime of this
-        instance, a copy must be made.
+        A view of the data samples in a buffer owned by the trace list is
+        returned.  The view holds the trace list, so it cannot be freed while the
+        view exists, but the samples are only valid until the trace list is next
+        changed: adding data can move a segment's buffer, and packing with
+        ``remove_packed=True`` releases it.  Copy the samples to keep them across
+        such calls.
 
         The returned view can be used directly with slicing and indexing
         from `0` to `MS3TraceSeg.numsamples - 1`.
@@ -348,20 +351,19 @@ class MS3TraceSeg:
 
         if sampletype == "i":
             ptr = ffi.cast("int32_t *", self._seg.datasamples)
-            buffer = ffi.buffer(ptr, self._seg.numsamples * ffi.sizeof("int32_t"))
-            return memoryview(buffer).cast("i")
+            nbytes = self._seg.numsamples * ffi.sizeof("int32_t")
+            return owned_memoryview(ptr, nbytes, "i", self)
         elif sampletype == "f":
             ptr = ffi.cast("float *", self._seg.datasamples)
-            buffer = ffi.buffer(ptr, self._seg.numsamples * ffi.sizeof("float"))
-            return memoryview(buffer).cast("f")
+            nbytes = self._seg.numsamples * ffi.sizeof("float")
+            return owned_memoryview(ptr, nbytes, "f", self)
         elif sampletype == "d":
             ptr = ffi.cast("double *", self._seg.datasamples)
-            buffer = ffi.buffer(ptr, self._seg.numsamples * ffi.sizeof("double"))
-            return memoryview(buffer).cast("d")
+            nbytes = self._seg.numsamples * ffi.sizeof("double")
+            return owned_memoryview(ptr, nbytes, "d", self)
         elif sampletype == "t":
             ptr = ffi.cast("char *", self._seg.datasamples)
-            buffer = ffi.buffer(ptr, self._seg.numsamples)
-            return memoryview(buffer).cast("B")
+            return owned_memoryview(ptr, self._seg.numsamples, "B", self)
         else:
             raise ValueError(f"Unknown sample type: {sampletype}")
 
@@ -404,9 +406,10 @@ class MS3TraceSeg:
     def np_datasamples(self) -> Any:
         """Return data samples as a numpy array (no copy)
 
-        A view of the data samples in an internal buffer owned by this MS3TraceSeg
-        instance is returned. If the data are needed beyond the lifetime of this
-        instance, a copy must be made.
+        A view of the data samples in a buffer owned by the trace list is
+        returned, with the same lifetime as :attr:`datasamples`: the trace list
+        is held by the view, but the samples are only valid until the trace list
+        is next changed.
         """
         try:
             import numpy as np
