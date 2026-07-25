@@ -9,6 +9,7 @@ parse when possible.
 from __future__ import annotations
 
 import functools
+import math
 import os
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -19,6 +20,7 @@ from ._json import json_loads
 from .clib import clibmseed, ffi
 from .logging import clear_error_messages, get_error_messages
 from .mstracelist import MS3TraceList
+from .util import nstime2timestr, system_time
 
 # (buf_ptr, absolute_offset, record_length) — or (None, offset, error_code) for detection failure
 _RecordTuple = tuple[Any, int, int]
@@ -27,6 +29,20 @@ _RecordTuple = tuple[Any, int, int]
 _KNOWN_SCHEMAS: dict[str, str] = {
     "FDSN-v1.0": "ExtraHeaders-FDSN-v1.0.schema-2020-12.json",
 }
+
+
+def _timestr(nstime: int) -> str:
+    """Format ``nstime`` for an error message, tolerating unformattable values.
+
+    A wildly out-of-range timestamp is exactly the sort of value that trips
+    the future-data check, and :func:`nstime2timestr` raises for values
+    libmseed cannot format. Fall back to the raw nanosecond value so a bad
+    record never turns into an exception out of :meth:`validate`.
+    """
+    try:
+        return nstime2timestr(nstime)
+    except ValueError:
+        return f"{nstime} ns"
 
 
 @functools.cache
@@ -215,13 +231,14 @@ class _FileSource:
 class MS3RecordValidator:
     """Validate miniSEED records with comprehensive error detection.
 
-    Processes records from a buffer or file using a 5-step process:
+    Processes records from a buffer or file using a 6-step process:
 
     1. Determine record length (handled by the record source)
     2. Parse record metadata without unpacking data
-    3. Optionally validate extra headers
-    4. Optionally add record to a trace coverage list (with no data samples)
-    5. Optionally decompress data samples and test for decoding errors
+    3. Optionally check that the record does not contain future data
+    4. Optionally validate extra headers
+    5. Optionally add record to a trace coverage list (with no data samples)
+    6. Optionally decompress data samples and test for decoding errors
 
     This approach ensures maximum information recovery — all records with
     parseable headers are added to the trace list, with complete error tracking.
@@ -240,6 +257,15 @@ class MS3RecordValidator:
         validate_crc: If True, validate CRC checksums (miniSEED v3 only).
         validate_extra_headers: If True, validate extra headers against a schema.
         extra_headers_schema: Schema ID for extra headers validation.
+        future_data_tolerance: Maximum number of seconds a record's end time may
+            exceed the system time before it is reported as containing future
+            data. Defaults to 5 seconds, which absorbs ordinary clock skew
+            between the acquisition system and the validating host. Use ``0``
+            to report any data past the system time, or ``None`` to disable the
+            check. Must be a non-negative, finite number of seconds.
+            The system time is read once per :meth:`validate` call, and re-read
+            only when a record appears to violate it, so a long-running
+            validation is not measured against a stale clock reading.
         verbose: Verbosity level for libmseed operations.
 
     Examples:
@@ -277,6 +303,7 @@ class MS3RecordValidator:
         validate_crc: bool = True,
         validate_extra_headers: bool = True,
         extra_headers_schema: str = "FDSN-v1.0",
+        future_data_tolerance: float | None = 5.0,
         verbose: int = 0,
     ) -> None:
         self._source = source
@@ -285,7 +312,23 @@ class MS3RecordValidator:
         self._validate_crc = validate_crc
         self._validate_extra_headers = validate_extra_headers
         self._extra_headers_schema = extra_headers_schema
+        self._future_data_tolerance = future_data_tolerance
         self._verbose = verbose
+
+        # Normalize the tolerance to nanoseconds once, so the per-record check
+        # is a plain integer comparison.  None disables the check entirely.
+        self._future_tolerance_ns: int | None
+        if future_data_tolerance is None:
+            self._future_tolerance_ns = None
+        else:
+            # math.isfinite() raises TypeError for non-numbers, which is the
+            # right signal for a non-numeric tolerance.
+            if not math.isfinite(future_data_tolerance) or future_data_tolerance < 0:
+                raise ValueError(
+                    "future_data_tolerance must be a non-negative, finite number "
+                    "of seconds, or None to disable the check"
+                )
+            self._future_tolerance_ns = int(future_data_tolerance * clibmseed.NSTMODULUS)
 
         self._parse_flags = 0
         if validate_crc:
@@ -429,6 +472,11 @@ class MS3RecordValidator:
 
         msr_ptr = ffi.new("MS3Record **")
 
+        # Latest record end time considered acceptable.  Unused (and the check
+        # skipped) when tolerance_ns is None.
+        tolerance_ns = self._future_tolerance_ns
+        future_cutoff = 0 if tolerance_ns is None else system_time() + tolerance_ns
+
         # Resolve the extra-headers JSON schema validator (cached at module level)
         _eh_validator: Any = None
         _eh_load_error: str | None = None
@@ -508,7 +556,33 @@ class MS3RecordValidator:
                             )
                         )
 
-                # Step 3: Optionally validate extra headers
+                # Step 3: Optionally check for data beyond the system time
+                if tolerance_ns is not None:
+                    endtime = clibmseed.msr3_endtime(msr)
+                    # NSTERROR and NSTUNSET are large negative sentinels, so they
+                    # can never exceed the cutoff and need no explicit test.
+                    if endtime > future_cutoff:
+                        # Re-read the clock and re-test before reporting: on a
+                        # long validation run the cached cutoff may simply be
+                        # stale, which would flag legitimately recent data.
+                        future_cutoff = system_time() + tolerance_ns
+                        if endtime > future_cutoff:
+                            errors.append(
+                                ValidationError(
+                                    offset=offset,
+                                    message=(
+                                        "Record contains future data: end time "
+                                        f"{_timestr(endtime)} is beyond the system time "
+                                        "by more than the tolerance of "
+                                        f"{self._future_data_tolerance} seconds"
+                                    ),
+                                    sourceid=sourceid,
+                                    starttime=msr.starttime,
+                                    reclen=record_length,
+                                )
+                            )
+
+                # Step 4: Optionally validate extra headers
                 if self._validate_extra_headers and msr.extralength > 0:
                     if _eh_load_error is not None:
                         # Emit the schema-load warning at most once per
@@ -559,7 +633,7 @@ class MS3RecordValidator:
                                 )
                             )
 
-                # Step 4: Add record to trace list
+                # Step 5: Add record to trace list
                 if tracelist is not None:
                     segptr = clibmseed.mstl3_addmsr_recordptr(
                         tracelist._mstl,
@@ -583,7 +657,7 @@ class MS3RecordValidator:
                         )
                         continue
 
-                # Step 5: Optionally decompress data samples to detect decoding errors
+                # Step 6: Optionally decompress data samples to detect decoding errors
                 if self._unpack_data:
                     clear_error_messages()
                     status = clibmseed.msr3_unpack_data(msr, self._verbose)

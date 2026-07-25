@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `MS3RecordValidator` now checks that each record does not contain future data
+  based on the system clock.  The new `future_data_tolerance` option sets the
+  allowed excess in seconds (default 5, `None` disables the check).
 - `sourceid`, `starttime`, and `endtime` filtering kwargs on `MS3Record.from_file()`
   (i.e. `MS3RecordReader`), `MS3Record.from_buffer()`, `MS3Record.from_filelike()`,
   and therefore `MS3Record.iter_records()`.

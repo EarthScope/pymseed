@@ -706,5 +706,199 @@ class TestMS3RecordValidatorFromFilelike:
         assert len(traces) > 0
 
 
+class TestMS3RecordValidatorFutureData:
+    """Tests for the future-data check and the future_data_tolerance option.
+
+    The bundled test data is from 2010, so it is never "future" against a real
+    clock.  Most of these tests therefore patch ``msrecord_validator.system_time``
+    to move "now" relative to the data instead of fabricating future records.
+    """
+
+    _FUTURE_MSG = "future data"
+
+    def _first_record(self) -> tuple[bytes, int]:
+        """Return (record_bytes, endtime_ns) for the first v3 test record.
+
+        Both values are read inside the reader's iteration, since a yielded
+        MS3Record is only valid while the reader is alive.
+        """
+        from pymseed import MS3Record
+
+        for msr in MS3Record.from_file(TEST_MSEED3_FILE):
+            return msr.record, msr.endtime
+
+        raise AssertionError(f"no records in {TEST_MSEED3_FILE}")
+
+    def test_clean_historical_data_has_no_future_errors(self) -> None:
+        """Data from the past passes the check with the default tolerance."""
+        for path in (TEST_MSEED3_FILE, TEST_MSEED2_FILE):
+            errors, _ = MS3RecordValidator.from_buffer(get_test_buffer(path)).validate()
+            assert errors == []
+
+    def test_default_tolerance_is_five_seconds(self) -> None:
+        """The documented default is 5 seconds."""
+        validator = MS3RecordValidator.from_buffer(b"")
+        assert validator._future_data_tolerance == 5.0
+        assert validator._future_tolerance_ns == 5_000_000_000
+
+    def test_every_future_record_is_reported(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """With "now" set before the data, every record is flagged."""
+        from pymseed import msrecord_validator as mv
+        from pymseed.util import timestr2nstime
+
+        past = timestr2nstime("2009-01-01T00:00:00Z")
+        monkeypatch.setattr(mv, "system_time", lambda: past)
+
+        records = get_test_records(TEST_MSEED3_FILE)
+        errors, traces = MS3RecordValidator.from_buffer(
+            get_test_buffer(TEST_MSEED3_FILE)
+        ).validate()
+
+        assert len(errors) == len(records)
+        assert all(self._FUTURE_MSG in e.message for e in errors)
+        # Flagged records are still parsed into the trace list.
+        assert len(traces) == 3
+
+    def test_tolerance_none_disables_check(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """future_data_tolerance=None skips the check entirely."""
+        from pymseed import msrecord_validator as mv
+        from pymseed.util import timestr2nstime
+
+        past = timestr2nstime("2009-01-01T00:00:00Z")
+        monkeypatch.setattr(mv, "system_time", lambda: past)
+
+        errors, _ = MS3RecordValidator.from_buffer(
+            get_test_buffer(TEST_MSEED3_FILE), future_data_tolerance=None
+        ).validate()
+
+        assert errors == []
+
+    @pytest.mark.parametrize(
+        "tolerance,expected_errors",
+        [
+            (5.0, 0),  # 3 s ahead is within the default tolerance
+            (3.5, 0),  # just inside
+            (1.0, 1),  # outside
+            (0, 1),  # any data past "now" is reported
+        ],
+    )
+    def test_tolerance_boundary(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tolerance: float,
+        expected_errors: int,
+    ) -> None:
+        """A record ending 3 s past "now" is reported only when the tolerance
+        is smaller than the excess."""
+        from pymseed import msrecord_validator as mv
+
+        record, endtime = self._first_record()
+        now = endtime - 3 * 1_000_000_000
+        monkeypatch.setattr(mv, "system_time", lambda: now)
+
+        errors, _ = MS3RecordValidator.from_buffer(
+            record, future_data_tolerance=tolerance
+        ).validate()
+
+        assert len(errors) == expected_errors
+
+    def test_stale_cutoff_is_refreshed_before_reporting(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A record that only looks future against a stale clock reading is
+        cleared by the re-read, not reported."""
+        from pymseed import msrecord_validator as mv
+        from pymseed.util import system_time as real_system_time
+        from pymseed.util import timestr2nstime
+
+        calls: list[int] = []
+        past = timestr2nstime("2009-01-01T00:00:00Z")
+
+        def creeping_clock() -> int:
+            calls.append(1)
+            # First reading (the pre-loop snapshot) is stale; the re-read on a
+            # suspected violation returns the true current time.
+            return past if len(calls) == 1 else real_system_time()
+
+        monkeypatch.setattr(mv, "system_time", creeping_clock)
+
+        record, _ = self._first_record()
+        errors, _ = MS3RecordValidator.from_buffer(record).validate()
+
+        assert errors == []
+        assert len(calls) == 2
+
+    def test_real_future_record_is_detected(self) -> None:
+        """A record actually stamped an hour ahead is caught against the real
+        system clock, with no clock patching."""
+        from pymseed import MS3Record
+        from pymseed.util import system_time
+
+        msr = MS3Record()
+        msr.sourceid = "FDSN:XX_TEST__L_H_Z"
+        msr.samprate = 1
+        msr.starttime = system_time() + 3600 * 1_000_000_000
+        buffer = b"".join(msr.generate(data_samples=[1, 2, 3, 4, 5], sample_type="i"))
+
+        errors, _ = MS3RecordValidator.from_buffer(buffer).validate()
+        assert len(errors) == 1
+        assert self._FUTURE_MSG in errors[0].message
+
+        # A tolerance wider than the offset accepts the same record.
+        tolerated, _ = MS3RecordValidator.from_buffer(buffer, future_data_tolerance=7200).validate()
+        assert tolerated == []
+
+    def test_future_error_fields_populated(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The future-data ValidationError carries the record context."""
+        from pymseed import msrecord_validator as mv
+        from pymseed.util import timestr2nstime
+
+        past = timestr2nstime("2009-01-01T00:00:00Z")
+        monkeypatch.setattr(mv, "system_time", lambda: past)
+
+        record, _ = self._first_record()
+        # Two copies, so the second error must report a non-zero offset.
+        errors, _ = MS3RecordValidator.from_buffer(record + record).validate()
+
+        assert len(errors) == 2
+        for error, expected_offset in zip(errors, (0, len(record)), strict=True):
+            assert error.offset == expected_offset
+            assert error.reclen == len(record)
+            assert error.sourceid == "FDSN:IU_COLA_00_B_H_1"
+            assert error.starttime is not None and error.starttime > 0
+            # The end time and the tolerance both appear in the message.
+            assert "2010" in error.message
+            assert "5.0 seconds" in error.message
+
+    @pytest.mark.parametrize("tolerance", [-1, -0.001, float("inf"), float("nan")])
+    def test_invalid_tolerance_rejected(self, tolerance: float) -> None:
+        """Negative, infinite and NaN tolerances are rejected at construction."""
+        with pytest.raises(ValueError, match="future_data_tolerance"):
+            MS3RecordValidator.from_buffer(b"", future_data_tolerance=tolerance)
+
+    def test_non_numeric_tolerance_rejected(self) -> None:
+        """A non-numeric tolerance raises TypeError."""
+        with pytest.raises(TypeError):
+            MS3RecordValidator.from_buffer(b"", future_data_tolerance="5")  # type: ignore[arg-type]
+
+    def test_unformattable_end_time_does_not_raise(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """An end time libmseed cannot format still yields an error message
+        rather than propagating ValueError out of validate()."""
+        from pymseed import msrecord_validator as mv
+
+        def unformattable(_nstime: int) -> str:
+            raise ValueError("simulated conversion failure")
+
+        monkeypatch.setattr(mv, "nstime2timestr", unformattable)
+
+        record, endtime = self._first_record()
+        monkeypatch.setattr(mv, "system_time", lambda: endtime - 3600 * 1_000_000_000)
+
+        errors, _ = MS3RecordValidator.from_buffer(record).validate()
+
+        assert len(errors) == 1
+        assert f"{endtime} ns" in errors[0].message
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
