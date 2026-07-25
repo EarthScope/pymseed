@@ -641,6 +641,43 @@ def test_tracelist_generate_removed_packed_deprecated_alias():
     assert records_old == records_new
 
 
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")
+def test_tracelist_deprecated_aliases_are_mutually_exclusive(tmp_path):
+    """An alias still works and warns, but supplying it alongside the name that
+    replaced it is an error rather than one of the two silently winning."""
+    traces = MS3TraceList(file_name=test_path3, unpack_data=True)
+
+    with pytest.raises(TypeError, match="got both 'max_record_length' and its deprecated alias"):
+        traces.generate(max_record_length=512, record_length=512)
+
+    with pytest.raises(TypeError, match="got both 'remove_packed' and its deprecated alias"):
+        traces.generate(remove_packed=True, removed_packed=True)
+
+    with pytest.raises(TypeError, match="got both 'max_record_length' and its deprecated alias"):
+        traces.to_file(tmp_path / "out.mseed", max_record_length=512, max_reclen=512)
+
+    with pytest.raises(TypeError, match="got both 'max_record_length' and its deprecated alias"):
+        traces.pack(lambda *args: None, max_record_length=512, record_length=512)
+
+    # Rejected before anything is written
+    assert not (tmp_path / "out.mseed").exists()
+
+
+def test_tracelist_deprecated_aliases_still_work_alone():
+    """Each alias on its own warns and produces what the canonical name does."""
+    traces = MS3TraceList(file_name=test_path3, unpack_data=True)
+
+    canonical = list(traces.generate(max_record_length=512, remove_packed=False))
+    with pytest.warns(DeprecationWarning, match="'record_length' is a deprecated alias"):
+        aliased = list(traces.generate(record_length=512, remove_packed=False))
+    assert aliased == canonical
+
+    # Omitting both keeps the documented 4096 default
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        assert list(traces.generate()) == list(traces.generate(max_record_length=4096))
+
+
 def test_tracelist_add_file_accepts_pathlike():
     # pathlib.Path (and any os.PathLike) must be accepted by add_file/__init__,
     # not crash on .encode() like raw bytes/None used to.

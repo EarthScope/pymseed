@@ -19,6 +19,40 @@ from .msrecord import MS3Record
 from .selections import build_selections
 from .util import check_encoding, check_str, encoding_sizetype, nstime2timestr
 
+# Marks a parameter with a deprecated alias as not supplied, so that passing
+# both the parameter and its alias can be told from passing only the alias.
+_UNSET: Any = object()
+
+
+def _resolve_alias(
+    name: str,
+    value: Any,
+    alias_name: str,
+    alias_value: Any,
+    default: Any,
+) -> Any:
+    """Resolve a deprecated alias against the parameter that replaced it.
+
+    The alias still works but warns, and supplying both is an error rather
+    than one silently winning.
+    """
+    if alias_value is None:
+        return default if value is _UNSET else value
+
+    if value is not _UNSET:
+        raise TypeError(
+            f"got both '{name}' and its deprecated alias '{alias_name}'; pass only '{name}'"
+        )
+
+    warnings.warn(
+        f"'{alias_name}' is a deprecated alias and will be removed in a future "
+        f"release; use '{name}' instead.",
+        DeprecationWarning,
+        stacklevel=3,
+    )
+
+    return alias_value
+
 
 class MS3RecordPtr:
     """Wrapper around CFFI MS3RecordPtr structure"""
@@ -1812,7 +1846,7 @@ class MS3TraceList:
         handlerdata: Any = None,
         flush_data: bool = True,
         flush_idle_seconds: int = 0,
-        max_record_length: int = 4096,
+        max_record_length: int = _UNSET,
         record_length: int | None = None,
         encoding: DataEncoding = DataEncoding.STEIM1,
         format_version: int | None = None,
@@ -1853,10 +1887,10 @@ class MS3TraceList:
 
             record_length: Deprecated alias for ``max_record_length``;
                 accepted for backward compatibility and forwarded to
-                ``max_record_length`` (overriding any explicit
-                ``max_record_length`` value passed in the same call).
-                Passing it emits a ``DeprecationWarning``. This alias will
-                be removed in a future release.
+                ``max_record_length``, which it is mutually exclusive with;
+                passing both raises :class:`TypeError`.  Passing it emits a
+                ``DeprecationWarning``. This alias will be removed in a
+                future release.
 
             encoding: Data encoding format for compression. Options include:
                 - DataEncoding.STEIM1: Steim-1 compression (default, good general purpose for 32-bit ints)
@@ -1922,14 +1956,9 @@ class MS3TraceList:
             stacklevel=2,
         )
 
-        if record_length is not None:
-            warnings.warn(
-                "'record_length' is a deprecated alias and will be removed in "
-                "a future release; use 'max_record_length' instead.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-            max_record_length = record_length
+        max_record_length = _resolve_alias(
+            "max_record_length", max_record_length, "record_length", record_length, 4096
+        )
 
         check_encoding(encoding)
 
@@ -1994,14 +2023,14 @@ class MS3TraceList:
 
     def generate(
         self,
-        max_record_length: int = 4096,
+        max_record_length: int = _UNSET,
         record_length: int | None = None,
         encoding: DataEncoding = DataEncoding.STEIM1,
         format_version: int | None = None,
         extra_headers: str | None = None,
         flush_data: bool = True,
         flush_idle_seconds: int = 0,
-        remove_packed: bool = False,
+        remove_packed: bool = _UNSET,
         removed_packed: bool | None = None,
         verbose: int = 0,
     ) -> Iterator[bytes]:
@@ -2020,10 +2049,10 @@ class MS3TraceList:
 
             record_length: Deprecated alias for ``max_record_length``;
                 accepted for backward compatibility and forwarded to
-                ``max_record_length`` (overriding any explicit
-                ``max_record_length`` value passed in the same call).
-                Passing it emits a ``DeprecationWarning``. This alias will
-                be removed in a future release.
+                ``max_record_length``, which it is mutually exclusive with;
+                passing both raises :class:`TypeError`.  Passing it emits a
+                ``DeprecationWarning``. This alias will be removed in a
+                future release.
 
             encoding: Data encoding format for compression. Options include:
                 - DataEncoding.STEIM1: Steim-1 compression (default, good
@@ -2059,8 +2088,8 @@ class MS3TraceList:
 
             removed_packed: Deprecated misspelling of ``remove_packed``;
                 accepted for backward compatibility and forwarded to
-                ``remove_packed`` (overriding any explicit ``remove_packed``
-                value passed in the same call). Passing it emits a
+                ``remove_packed``, which it is mutually exclusive with;
+                passing both raises :class:`TypeError`.  Passing it emits a
                 ``DeprecationWarning``. This alias will be removed in a
                 future release.
 
@@ -2144,22 +2173,12 @@ class MS3TraceList:
         See also:
             - to_file()
         """
-        if removed_packed is not None:
-            warnings.warn(
-                "'removed_packed' is a deprecated misspelling and will be "
-                "removed in a future release; use 'remove_packed' instead.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-            remove_packed = removed_packed
-        if record_length is not None:
-            warnings.warn(
-                "'record_length' is a deprecated alias and will be removed in "
-                "a future release; use 'max_record_length' instead.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-            max_record_length = record_length
+        remove_packed = _resolve_alias(
+            "remove_packed", remove_packed, "removed_packed", removed_packed, False
+        )
+        max_record_length = _resolve_alias(
+            "max_record_length", max_record_length, "record_length", record_length, 4096
+        )
 
         if format_version is not None and format_version not in (2, 3):
             raise ValueError(f"Invalid miniSEED format version: {format_version}")
@@ -2242,7 +2261,7 @@ class MS3TraceList:
         self,
         filename: str | os.PathLike[str],
         overwrite: bool = False,
-        max_record_length: int = 4096,
+        max_record_length: int = _UNSET,
         max_reclen: int | None = None,
         encoding: DataEncoding = DataEncoding.STEIM1,
         format_version: int | None = None,
@@ -2273,10 +2292,10 @@ class MS3TraceList:
 
             max_reclen: Deprecated alias for ``max_record_length``;
                 accepted for backward compatibility and forwarded to
-                ``max_record_length`` (overriding any explicit
-                ``max_record_length`` value passed in the same call).
-                Passing it emits a ``DeprecationWarning``. This alias will
-                be removed in a future release.
+                ``max_record_length``, which it is mutually exclusive with;
+                passing both raises :class:`TypeError`.  Passing it emits a
+                ``DeprecationWarning``. This alias will be removed in a
+                future release.
 
             encoding: Data encoding format for compression. Options include:
                 - DataEncoding.STEIM1: Steim-1 compression (default, good
@@ -2343,14 +2362,9 @@ class MS3TraceList:
             - add_data(): Add time series data to the trace list
             - from_file(): Read miniSEED data from file
         """
-        if max_reclen is not None:
-            warnings.warn(
-                "'max_reclen' is a deprecated alias and will be removed in a "
-                "future release; use 'max_record_length' instead.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-            max_record_length = max_reclen
+        max_record_length = _resolve_alias(
+            "max_record_length", max_record_length, "max_reclen", max_reclen, 4096
+        )
 
         if isinstance(filename, os.PathLike):
             filename = os.fspath(filename)

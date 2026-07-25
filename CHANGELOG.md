@@ -39,6 +39,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in the error for an ambiguous start time.
 - Deprecation notices share one wording; `MS3RecordReader`'s `input` alias and
   the `pack()` methods no longer differ from the rest.
+- A deprecated alias is mutually exclusive with the parameter that replaced it
+  everywhere, raising `TypeError` when both are passed as `MS3RecordReader()`
+  already did.  `MS3TraceList.pack()`, `generate()`, and `to_file()` let
+  `record_length`, `removed_packed`, and `max_reclen` silently override.
 
 ### Fixed
 - `MS3Record.from_filelike()` and `MS3TraceList.add_filelike()` reject a
