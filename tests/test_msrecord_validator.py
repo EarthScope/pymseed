@@ -147,16 +147,21 @@ class TestMS3RecordValidatorBasic:
         assert "No miniSEED detected" in errors[0].message
 
     def test_validate_incomplete_record(self) -> None:
-        """Test that a truncated record (header parseable, body missing) stops silently."""
+        """A truncated record (header parseable, body missing) must be reported.
+        Stopping silently made "no errors" mean "valid file" for input whose
+        records were never actually checked."""
         records = get_test_records(TEST_MSEED3_FILE)
         # 60 bytes: enough for ms3_detect to read the header and return a record
-        # length, but far less than the actual record — should stop without error.
+        # length, but far less than the actual record.
         truncated = records[0][:60]
 
         errors, traces = MS3RecordValidator.from_buffer(truncated).validate()
 
         assert len(traces) == 0
-        assert len(errors) == 0
+        assert len(errors) == 1
+        assert errors[0].offset == 0
+        assert "Incomplete record at end of source" in errors[0].message
+        assert f"{len(records[0])} bytes needed, 60 available" in errors[0].message
 
 
 class TestMS3RecordValidatorCRCValidation:
@@ -389,7 +394,8 @@ class TestMS3RecordValidatorPartialData:
     """Tests for handling partial/incomplete data."""
 
     def test_partial_record_at_end(self) -> None:
-        """Test handling of incomplete record at end of buffer."""
+        """An incomplete record at the end of a buffer is reported while every
+        complete record before it is still validated and returned."""
         buffer = get_test_buffer(TEST_MSEED3_FILE)
 
         full_errors, full_traces = MS3RecordValidator.from_buffer(buffer).validate()
@@ -405,7 +411,67 @@ class TestMS3RecordValidatorPartialData:
 
         assert len(traces) > 0
         assert trunc_samples < full_samples
-        assert len(errors) == 0
+
+        # The shortfall must be reported, not swallowed: "no errors" has to keep
+        # meaning "every record in the source was checked".
+        assert len(errors) == 1
+        assert "Incomplete record at end of source" in errors[0].message
+        assert errors[0].offset < len(truncated)
+
+    def test_partial_record_at_end_of_stream(self) -> None:
+        """The stream source must report the same shortfall as the buffer source,
+        at the same offset."""
+        import io
+
+        truncated = get_test_buffer(TEST_MSEED3_FILE)[:-100]
+
+        buffer_errors, _ = MS3RecordValidator.from_buffer(truncated).validate()
+        stream_errors, _ = MS3RecordValidator.from_filelike(io.BytesIO(truncated)).validate()
+
+        assert len(buffer_errors) == 1
+        assert [(e.offset, e.message) for e in stream_errors] == [
+            (e.offset, e.message) for e in buffer_errors
+        ]
+
+    def test_undeterminable_record_length_reported(self) -> None:
+        """A v2 record whose length cannot be determined (no B1000 blockette and
+        no following header to scan to) leaves its payload unchecked, so it must
+        be reported rather than ending iteration silently."""
+        import io
+        import struct
+
+        rec = bytearray(get_test_buffer(TEST_MSEED2_FILE)[:512])
+
+        # Retype the B1000 blockette so the record length is undeterminable.
+        blkt_offset = struct.unpack_from(">H", rec, 46)[0]
+        assert struct.unpack_from(">H", rec, blkt_offset)[0] == 1000
+        struct.pack_into(">H", rec, blkt_offset, 1001)
+        rec = bytes(rec)
+
+        for errors, _ in (
+            MS3RecordValidator.from_buffer(rec).validate(),
+            MS3RecordValidator.from_filelike(io.BytesIO(rec)).validate(),
+        ):
+            assert len(errors) == 1
+            assert errors[0].offset == 0
+            assert errors[0].message == "Record length could not be determined"
+
+    def test_complete_source_reports_no_shortfall(self) -> None:
+        """Guard against over-reporting: a source ending exactly on a record
+        boundary must stay clean, for both sources and both format versions."""
+        import io
+
+        for path in (TEST_MSEED3_FILE, TEST_MSEED2_FILE):
+            buffer = get_test_buffer(path)
+
+            errors, _ = MS3RecordValidator.from_buffer(buffer).validate()
+            assert errors == [], f"{path} reported {errors}"
+
+            errors, _ = MS3RecordValidator.from_filelike(io.BytesIO(buffer)).validate()
+            assert errors == [], f"{path} (stream) reported {errors}"
+
+            # An empty source has no records to be incomplete.
+            assert MS3RecordValidator.from_buffer(b"").validate()[0] == []
 
 
 class TestMS3RecordValidatorErrorAccumulation:

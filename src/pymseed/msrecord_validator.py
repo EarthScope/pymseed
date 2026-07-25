@@ -21,8 +21,24 @@ from .logging import clear_error_messages, ensure_thread_logging, get_error_mess
 from .mstracelist import MS3TraceList
 from .util import nstime2timestr, system_time
 
-# (buf_ptr, absolute_offset, record_length) — or (None, offset, error_code) for detection failure
-_RecordTuple = tuple[Any, int, int]
+# (buf_ptr, absolute_offset, record_length) for a detected record, or
+# (None, absolute_offset, reason) describing why a source stopped early
+_RecordTuple = tuple[Any, int, int] | tuple[None, int, str]
+
+
+def _detection_failure(reclen: int, available: int) -> str:
+    """Describe why record detection stopped, given ``ms3_detect()``'s return
+    value and the bytes still available in the source."""
+    if reclen < 0:
+        return "No miniSEED detected"
+
+    if reclen == 0:
+        return "Record length could not be determined"
+
+    if reclen > clibmseed.MAXRECLEN:
+        return f"Record length {reclen} exceeds the maximum supported ({clibmseed.MAXRECLEN})"
+
+    return f"Incomplete record at end of source: {reclen} bytes needed, {available} available"
 
 
 def _timestr(nstime: int) -> str:
@@ -71,16 +87,20 @@ class _BufferSource:
         offset = 0
 
         while offset < buf_size:
+            remaining = buf_size - offset
+
             reclen = clibmseed.ms3_detect(
                 buf_ptr + offset,
-                buf_size - offset,
+                remaining,
                 format_version,
             )
-            if reclen < 0 or reclen > clibmseed.MAXRECLEN:
-                yield (None, offset, reclen)
+
+            # Undetectable, over-long, or truncated: all leave records unchecked,
+            # so report rather than ending iteration silently.
+            if reclen <= 0 or reclen > remaining or reclen > clibmseed.MAXRECLEN:
+                yield (None, offset, _detection_failure(reclen, remaining))
                 return
-            if reclen == 0 or offset + reclen > buf_size:
-                return
+
             yield (buf_ptr + offset, offset, reclen)
             offset += reclen
 
@@ -162,7 +182,7 @@ class _FileLikeSource:
                     # bytes; at or above that the failure is conclusive, so
                     # report it rather than reading the rest of the stream.
                     if eof or remaining >= clibmseed.MINRECLEN:
-                        yield (None, file_offset, reclen)
+                        yield (None, file_offset, _detection_failure(reclen, remaining))
                         return
                     break
 
@@ -172,11 +192,14 @@ class _FileLikeSource:
                 if reclen > clibmseed.MAXRECLEN or (
                     reclen == 0 and remaining > clibmseed.MAXRECLEN
                 ):
-                    yield (None, file_offset, reclen)
+                    yield (None, file_offset, _detection_failure(reclen, remaining))
                     return
 
                 if reclen == 0 or reclen > remaining:
+                    # At EOF the shortfall can never be filled: the trailing
+                    # record is truncated and its contents go unchecked.
                     if eof:
+                        yield (None, file_offset, _detection_failure(reclen, remaining))
                         return
                     break
 
@@ -461,27 +484,19 @@ class MS3RecordValidator:
             _eh_validator, _eh_load_error = load_extra_headers_validator(self._extra_headers_schema)
 
         try:
-            for buf_ptr, offset, record_length in self._source:
-                # Detection failure — source signals this with buf_ptr=None
+            for buf_ptr, offset, info in self._source:
+                # The source signals a failure to detect a whole record with
+                # buf_ptr=None and a description of why it stopped.
                 if buf_ptr is None:
-                    if record_length == -1:
-                        reason = "No miniSEED detected"
-                    elif record_length == 0:
-                        reason = "Record length could not be determined"
-                    elif record_length > clibmseed.MAXRECLEN:
-                        reason = (
-                            f"Record length {record_length} exceeds the maximum "
-                            f"supported ({clibmseed.MAXRECLEN})"
-                        )
-                    else:
-                        reason = f"Record detection failed: {record_length}"
                     errors.append(
                         ValidationError(
                             offset=offset,
-                            message=reason,
+                            message=info,
                         )
                     )
                     break
+
+                record_length = info
 
                 clear_error_messages()
 

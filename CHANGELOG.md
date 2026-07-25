@@ -57,6 +57,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `MS3TraceSeg.unpack_recordlist()` raises `BufferError` for a read-only or
   non-contiguous destination buffer instead of letting libmseed write into it, which
   silently corrupted immutable objects such as `bytes`.
+- `MS3RecordValidator` now reports an incomplete record at the end of the source, and
+  a record length it cannot determine, instead of ending validation silently. A
+  truncated file no longer validates with zero errors.
 
 ## [0.9.0] - 2026-05-17
 
