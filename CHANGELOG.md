@@ -28,6 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `MS3TraceList.generate()`: document that `flush_idle_seconds` is what drains a
   source that stops delivering data, and that the default of 0 holds its samples
   and trace ID for the life of the trace list.
+- `util.sample_size()` raises `ValueError` for an unrecognized sample type instead
+  of returning a size of 0.
 
 ### Fixed
 - `MS3Record.from_file()`, `from_buffer()`, and `from_filelike()` raise `MiniSEEDError`

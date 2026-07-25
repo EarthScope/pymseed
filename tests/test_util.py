@@ -218,9 +218,15 @@ class TestEncodingFunctions:
             sample_size(b"ii")
 
     def test_sample_size_unknown_type(self):
-        """sample_size returns 0 for sample types the C library doesn't know"""
-        assert sample_size(b"x") == 0
-        assert sample_size("x") == 0
+        """sample_size rejects sample types the library does not recognize"""
+        with pytest.raises(ValueError, match="Unknown sample type"):
+            sample_size(b"x")
+        with pytest.raises(ValueError, match="Unknown sample type"):
+            sample_size("x")
+
+        # The unset sample type has no size either
+        with pytest.raises(ValueError, match="Unknown sample type"):
+            sample_size(b"\x00")
 
     def test_encoding_sizetype_basic(self):
         """Test getting encoding size and type information"""

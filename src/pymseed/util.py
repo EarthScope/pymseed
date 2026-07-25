@@ -131,7 +131,12 @@ def error_string(error_code: int) -> str | None:
 
 
 def sample_size(sample_type: bytes | str) -> int:
-    """Get sample size in bytes for given sample type"""
+    """Get sample size in bytes for given sample type.
+
+    Raises:
+        ValueError: If ``sample_type`` is not a single character, or is not a
+            recognized sample type code.
+    """
 
     if isinstance(sample_type, str):
         sample_type = sample_type.encode("ascii")
@@ -140,7 +145,13 @@ def sample_size(sample_type: bytes | str) -> int:
     if len(sample_type) != 1:
         raise ValueError(f"Invalid sample type: {sample_type!r}. Must be a single character.")
 
-    return clibmseed.ms_samplesize(sample_type)
+    size = clibmseed.ms_samplesize(sample_type)
+
+    # A size of zero is libmseed's unrecognized-type return
+    if size == 0:
+        raise ValueError(f"Unknown sample type: {sample_type!r}")
+
+    return size
 
 
 def encoding_sizetype(encoding: int) -> tuple[int, str]:
