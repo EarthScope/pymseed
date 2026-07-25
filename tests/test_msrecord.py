@@ -3,6 +3,7 @@ import gc
 import json
 import math
 import os
+import weakref
 
 import pytest
 
@@ -339,6 +340,67 @@ def test_pack_rejects_partial_sample_args():
 
     with pytest.raises(ValueError, match="together"):
         msr.pack(_noop, None, sample_type="i")
+
+
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")
+def test_pack_leaves_no_reference_cycle():
+    """pack() must not tie the record into a reference cycle.
+
+    A cycle leaves msr3_free() waiting for the cyclic collector.  MS3Record
+    uses __slots__ and is not weakref-able, so a canary in the handler closure
+    stands in for the record's own finalization.
+    """
+    collected = []
+
+    class Canary:
+        def __del__(self):
+            collected.append(True)
+
+    def _pack_once():
+        canary = Canary()
+        msr = MS3Record()
+        msr.sourceid = "FDSN:XX_TEST__L_H_Z"
+        msr.set_starttime_str("2024-01-01T00:00:00Z")
+        msr.samprate = 1
+        msr.pack(
+            lambda record, data, _canary=canary: None,
+            None,
+            data_samples=[1, 2, 3],
+            sample_type="i",
+        )
+
+    # Reference counting alone must release the handler, with the cyclic
+    # collector off
+    gc.collect()
+    gc.disable()
+    try:
+        _pack_once()
+        assert collected == [True]
+    finally:
+        gc.enable()
+
+
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")
+def test_pack_does_not_retain_handler_data():
+    """pack() must not keep the handler or handler data alive after returning."""
+
+    class HandlerData:
+        pass
+
+    msr = MS3Record()
+    msr.sourceid = "FDSN:XX_TEST__L_H_Z"
+    msr.set_starttime_str("2024-01-01T00:00:00Z")
+    msr.samprate = 1
+
+    handler_data = HandlerData()
+    reference = weakref.ref(handler_data)
+
+    msr.pack(lambda record, data: None, handler_data, data_samples=[1, 2, 3], sample_type="i")
+
+    del handler_data
+    gc.collect()
+
+    assert reference() is None
 
 
 def test_msrecord_encoding_setter():

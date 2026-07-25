@@ -21,6 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `starttime` for uniformity with the rest of the package.
 
 ### Fixed
+- `MS3Record.pack()` and `MS3TraceList.pack()` release their C memory by reference
+  counting rather than waiting for the cyclic garbage collector, and drop the
+  handler and handler data (commonly an open file) on return.
 - `MS3Record.generate()` and `MS3TraceList.generate()` now raise `MiniSEEDError` on
   a packing error instead of silently yielding no records.
 - `MS3Record.parse_into()` no longer leaves a freed record pointer behind when

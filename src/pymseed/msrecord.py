@@ -144,9 +144,6 @@ class MS3Record:
         "_msr",
         "_msr_allocated",
         "_owner",
-        "_record_handler",
-        "_record_handler_data",
-        "_record_handler_callback",
     )
 
     def __init__(
@@ -214,9 +211,6 @@ class MS3Record:
                 self._msr.encoding = encoding
 
         self._owner = owner
-        self._record_handler = None
-        self._record_handler_data = None
-        self._record_handler_callback = None
 
     def __del__(self) -> None:
         if sys.is_finalizing():
@@ -1530,12 +1524,6 @@ class MS3Record:
             self._msr.numsamples = orig_numsamples
             self._msr.sampletype = orig_sampletype
 
-    def _record_handler_wrapper(self, record: Any, record_length: int, handlerdata: Any) -> None:
-        """Callback function for msr3_pack()"""
-        # Convert CFFI buffer to bytes for the handler
-        record_bytes = ffi.buffer(record, record_length)[:]
-        self._record_handler(record_bytes, self._record_handler_data)
-
     def pack(
         self,
         handler: Callable[[bytes, Any], None],
@@ -1640,15 +1628,15 @@ class MS3Record:
 
         ensure_thread_logging()
 
-        # Set handler function as CFFI callback function
-        self._record_handler = handler
-        self._record_handler_data = handler_data
+        def record_handler_wrapper(record: Any, record_length: int, _handlerdata: Any) -> None:
+            """Callback function for msr3_pack()"""
+            # Convert CFFI buffer to bytes for the handler
+            handler(ffi.buffer(record, record_length)[:], handler_data)
 
-        # Pin the CFFI callback to self so it stays alive for the lifetime
-        # of the MS3Record as a defensive measure.
-        self._record_handler_callback = ffi.callback(
-            "void(char *, int, void *)", self._record_handler_wrapper
-        )
+        # Held by this frame alone, which covers the synchronous msr3_pack()
+        # call below.  Pinning the callback to self cycles through the bound
+        # method it wraps, leaving self collectable only by the cyclic GC.
+        callback = ffi.callback("void(char *, int, void *)", record_handler_wrapper)
 
         packed_samples = ffi.new("int64_t *")
         flags = clibmseed.MSF_FLUSHDATA  # Always flush data when packing
@@ -1657,7 +1645,7 @@ class MS3Record:
             with self.with_datasamples(data_samples, sample_type):
                 packed_records = clibmseed.msr3_pack(
                     self._msr,
-                    self._record_handler_callback,
+                    callback,
                     ffi.NULL,
                     packed_samples,
                     flags,
@@ -1666,7 +1654,7 @@ class MS3Record:
         else:
             packed_records = clibmseed.msr3_pack(
                 self._msr,
-                self._record_handler_callback,
+                callback,
                 ffi.NULL,
                 packed_samples,
                 flags,

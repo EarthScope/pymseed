@@ -4,6 +4,7 @@ import io
 import math
 import os
 import warnings
+import weakref
 
 import pytest
 
@@ -1009,6 +1010,66 @@ def test_mstracelist_pack():
     with open(test_pack3, "rb") as f:
         data_v3 = f.read()
         assert record_buffer == data_v3
+
+
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")
+def test_mstracelist_pack_leaves_no_reference_cycle():
+    """pack() must not tie the trace list into a reference cycle.
+
+    A cycle leaves mstl3_free() waiting for the cyclic collector, which in a
+    long-running rolling buffer defers every release.
+    """
+    traces = MS3TraceList()
+    traces.add_data(
+        sourceid="FDSN:XX_TEST__B_S_X",
+        data_samples=[1, 2, 3, 4, 5],
+        sample_type="i",
+        sample_rate=100.0,
+        starttime_str="2024-01-01T00:00:00Z",
+    )
+    traces.pack(lambda record, handler_data: None)
+
+    reference = weakref.ref(traces)
+
+    # Reference counting alone must release it, with the cyclic collector off
+    gc.collect()
+    gc.disable()
+    try:
+        del traces
+        assert reference() is None
+    finally:
+        gc.enable()
+
+
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")
+def test_mstracelist_pack_does_not_retain_handler_data():
+    """pack() must not keep the handler or handler data alive after returning.
+
+    Handler data is typically the output file handle, which would then stay
+    open for as long as the trace list lives.
+    """
+
+    class HandlerData:
+        pass
+
+    traces = MS3TraceList()
+    traces.add_data(
+        sourceid="FDSN:XX_TEST__B_S_X",
+        data_samples=[1, 2, 3, 4, 5],
+        sample_type="i",
+        sample_rate=100.0,
+        starttime_str="2024-01-01T00:00:00Z",
+    )
+
+    handler_data = HandlerData()
+    reference = weakref.ref(handler_data)
+
+    traces.pack(lambda record, data: None, handler_data)
+
+    del handler_data
+    gc.collect()
+
+    assert reference() is None
 
 
 def test_mstracelist_generate_rollingbuffer():

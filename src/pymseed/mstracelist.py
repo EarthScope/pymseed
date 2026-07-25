@@ -1760,12 +1760,6 @@ class MS3TraceList:
         if segptr == ffi.NULL:
             raise MiniSEEDError(clibmseed.MS_GENERROR, "Error adding data samples")
 
-    def _record_handler_wrapper(self, record: Any, record_length: int, handlerdata: Any) -> None:
-        """Callback function for mstl3_pack()"""
-        # Convert CFFI buffer to bytes for the handler
-        record_bytes = ffi.buffer(record, record_length)[:]
-        self._record_handler(record_bytes, self._record_handler_data)
-
     def pack(
         self,
         handler: Callable[[bytes, Any], None],
@@ -1889,12 +1883,16 @@ class MS3TraceList:
 
         ensure_thread_logging()
 
-        # Set handler function as CFFI callback function
-        self._record_handler = handler
-        self._record_handler_data = handlerdata
-        self._record_handler_callback = ffi.callback(
-            "void(char *, int, void *)", self._record_handler_wrapper
-        )
+        def record_handler_wrapper(record: Any, record_length: int, _handlerdata: Any) -> None:
+            """Callback function for mstl3_pack()"""
+            # Convert CFFI buffer to bytes for the handler
+            handler(ffi.buffer(record, record_length)[:], handlerdata)
+
+        # Held by this frame alone, which covers the synchronous
+        # mstl3_pack_ppupdate_flushidle() call below.  Pinning the callback to
+        # self cycles through the bound method it wraps, leaving the trace list
+        # collectable only by the cyclic GC.
+        callback = ffi.callback("void(char *, int, void *)", record_handler_wrapper)
 
         pack_flags = 0
         if flush_data:
@@ -1912,7 +1910,7 @@ class MS3TraceList:
 
         packed_records = clibmseed.mstl3_pack_ppupdate_flushidle(
             self._mstl,
-            self._record_handler_callback,
+            callback,
             ffi.NULL,
             max_record_length,
             encoding,
