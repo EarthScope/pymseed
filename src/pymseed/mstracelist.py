@@ -930,6 +930,17 @@ class MS3TraceList:
     1963
 
     ```
+
+    The trace list, its samples, and the sources held for any record lists are
+    released when it is garbage collected.  Call :meth:`close`, or use the
+    trace list as a context manager, to release them at a known point instead:
+
+    ```
+    >>> with MS3TraceList.from_file("examples/example_data.mseed") as traces:
+    ...     print(len(traces))
+    3
+
+    ```
     """
 
     def __init__(
@@ -990,24 +1001,63 @@ class MS3TraceList:
                 verbose=verbose,
             )
 
+    def __enter__(self) -> MS3TraceList:
+        """Context manager entry point - returns self for use in 'with' statements."""
+        return self
+
+    def __exit__(self, exc_type: Any, exc_value: Any, traceback: Any) -> None:
+        """Context manager exit point - ensures proper cleanup by calling close()."""
+        self.close()
+
     def __del__(self):
         """Destructor to ensure proper cleanup"""
         if sys.is_finalizing():
             return
-        if self._mstl:
-            try:
-                mstl_ptr = ffi.new("MS3TraceList **")
-                mstl_ptr[0] = self._mstl
-                clibmseed.mstl3_free(mstl_ptr, 1)
-            except (AttributeError, TypeError):
-                # Module-teardown race: clibmseed/ffi/cdata fields may have
-                # been nulled out by Python before sys.is_finalizing() flipped.
-                # Nothing actionable; let any other exception propagate via
-                # Python's "Exception ignored in" mechanism so real bugs
-                # surface.
-                pass
+        try:
+            self.close()
+        except (AttributeError, TypeError):
+            # Module-teardown race: clibmseed/ffi/cdata fields may have
+            # been nulled out by Python before sys.is_finalizing() flipped.
+            # Nothing actionable; let any other exception propagate via
+            # Python's "Exception ignored in" mechanism so real bugs
+            # surface.
+            pass
+
+    def close(self) -> None:
+        """Free the trace list and release the sources held for it.
+
+        Waiting for garbage collection is otherwise the only way to release
+        the samples, the file name buffers, and the source buffers that record
+        lists point into.
+
+        Idempotent: safe to call multiple times.
+
+        .. warning::
+            Every :class:`MS3TraceID`, :class:`MS3TraceSeg`, record list, and
+            data sample view obtained from this trace list is invalidated.
+            Reading one after this call reads freed memory.  The trace list
+            itself reports the closure, raising :class:`ValueError` for any
+            further operation on it.
+        """
+        if self._mstl != ffi.NULL:
+            mstl_ptr = ffi.new("MS3TraceList **")
+            mstl_ptr[0] = self._mstl
+            clibmseed.mstl3_free(mstl_ptr, 1)
+            self._mstl = ffi.NULL
+
+        # Nothing refers to the file names or source buffers now
+        self._c_file_names.clear()
+        self._buffer_refs.clear()
+
+    def _check_open(self) -> None:
+        """Raise if the trace list has been closed"""
+        if self._mstl == ffi.NULL:
+            raise ValueError("operation on closed MS3TraceList")
 
     def __repr__(self) -> str:
+        if self._mstl == ffi.NULL:
+            return "MS3TraceList(closed)"
+
         def indent_repr(thing):
             """Add two-space indentation to each line of repr(thing)"""
             return "\n".join("  " + line for line in repr(thing).split("\n"))
@@ -1028,6 +1078,9 @@ class MS3TraceList:
         return f"MS3TraceList(numtraceids: {len(self)}\n{newline.join(formatted_lines)}\n)"
 
     def __str__(self) -> str:
+        if self._mstl == ffi.NULL:
+            return "Closed trace list"
+
         def indent_str(thing):
             """Add two-space indentation to each line of str(thing)"""
             return "\n".join("  " + line for line in str(thing).split("\n"))
@@ -1055,6 +1108,8 @@ class MS3TraceList:
 
     def __iter__(self) -> Iterator[MS3TraceID]:
         """Return iterator over trace IDs"""
+        self._check_open()
+
         current_traceid = self._mstl.traces.next[0]
         while current_traceid != ffi.NULL:
             yield MS3TraceID(current_traceid, self)
@@ -1102,6 +1157,7 @@ class MS3TraceList:
             TypeError: If sourceid is not a str
         """
         check_str("sourceid", sourceid)
+        self._check_open()
 
         c_sourceid = ffi.new("char[]", sourceid.encode("utf-8"))
 
@@ -1125,6 +1181,8 @@ class MS3TraceList:
         timeformat: TimeFormat = TimeFormat.ISOMONTHDAY_Z,
     ) -> None:
         """Print trace list details"""
+        self._check_open()
+
         clibmseed.mstl3_printtracelist(self._mstl, timeformat, details, gaps, versions)
 
     def add_file(
@@ -1286,6 +1344,7 @@ class MS3TraceList:
             flags |= clibmseed.MSF_VALIDATECRC
 
         # Create a reference to the current trace list pointer
+        self._check_open()
         mstl_ptr = ffi.new("MS3TraceList **")
         mstl_ptr[0] = self._mstl
 
@@ -1460,6 +1519,7 @@ class MS3TraceList:
             flags |= clibmseed.MSF_VALIDATECRC
 
         # Create a reference to the current trace list pointer
+        self._check_open()
         mstl_ptr = ffi.new("MS3TraceList **")
         mstl_ptr[0] = self._mstl
 
@@ -1628,6 +1688,8 @@ class MS3TraceList:
         elif chunk_size > 1_073_741_824:
             raise ValueError("chunk_size must be less than 1 GiB")
 
+        self._check_open()
+
         flags = clibmseed.MSF_PPUPDATETIME
         if skip_not_data:
             flags |= clibmseed.MSF_SKIPNOTDATA
@@ -1776,6 +1838,8 @@ class MS3TraceList:
             >>> len(traces[0]) # One trace segment
             1
         """
+
+        self._check_open()
 
         ensure_thread_logging()
 
@@ -1961,6 +2025,7 @@ class MS3TraceList:
         )
 
         check_encoding(encoding)
+        self._check_open()
 
         ensure_thread_logging()
 
@@ -2184,6 +2249,7 @@ class MS3TraceList:
             raise ValueError(f"Invalid miniSEED format version: {format_version}")
 
         check_encoding(encoding)
+        self._check_open()
 
         return self._generate(
             max_record_length=max_record_length,
@@ -2372,6 +2438,7 @@ class MS3TraceList:
             raise TypeError(f"filename must be str or os.PathLike; got {type(filename).__name__}")
 
         check_encoding(encoding)
+        self._check_open()
 
         ensure_thread_logging()
 

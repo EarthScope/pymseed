@@ -678,6 +678,73 @@ def test_tracelist_deprecated_aliases_still_work_alone():
         assert list(traces.generate()) == list(traces.generate(max_record_length=4096))
 
 
+def test_tracelist_close_releases_and_rejects_further_use():
+    """close() frees the C trace list and the sources pinned for it, without
+    waiting for garbage collection, and is idempotent."""
+    traces = MS3TraceList()
+    traces.add_file(test_path3, record_list=True)
+    with open(test_path3, "rb") as f:
+        traces.add_buffer(f.read(), record_list=True)
+
+    assert len(traces) > 0
+    assert traces._c_file_names and traces._buffer_refs
+
+    traces.close()
+
+    assert not traces._c_file_names
+    assert not traces._buffer_refs
+    assert len(traces) == 0
+    assert repr(traces) == "MS3TraceList(closed)"
+    assert str(traces) == "Closed trace list"
+
+    # Idempotent, and the destructor must not free a second time
+    traces.close()
+    traces.close()
+
+
+def test_tracelist_rejects_use_after_close(tmp_path):
+    """Every operation on a closed trace list reports the closure instead of
+    dereferencing the freed pointer."""
+    with open(test_path3, "rb") as f:
+        buffer = f.read()
+
+    traces = MS3TraceList(file_name=test_path3)
+    traces.close()
+
+    for call in (
+        lambda: list(traces),
+        lambda: traces.get_traceid("FDSN:IU_COLA_00_B_H_Z"),
+        lambda: traces.print(),
+        lambda: traces.add_file(test_path3),
+        lambda: traces.add_buffer(buffer),
+        lambda: traces.add_filelike(io.BytesIO(buffer)),
+        lambda: traces.add_data(
+            "FDSN:XX_STA__B_H_Z", [1, 2, 3], "i", 100.0, starttime_str="2023-01-01T00:00:00Z"
+        ),
+        lambda: traces.generate(),
+        lambda: traces.to_file(tmp_path / "out.mseed"),
+    ):
+        with pytest.raises(ValueError, match="closed MS3TraceList"):
+            call()
+
+    assert not (tmp_path / "out.mseed").exists()
+
+
+def test_tracelist_context_manager():
+    """A with block closes the trace list on exit, including on an exception."""
+    with MS3TraceList(file_name=test_path3, unpack_data=True) as traces:
+        assert len(traces) == 3
+
+    assert repr(traces) == "MS3TraceList(closed)"
+
+    outer = MS3TraceList(file_name=test_path3)
+    with pytest.raises(RuntimeError):
+        with outer:
+            raise RuntimeError("boom")
+
+    assert len(outer) == 0
+
+
 def test_tracelist_add_file_accepts_pathlike():
     # pathlib.Path (and any os.PathLike) must be accepted by add_file/__init__,
     # not crash on .encode() like raw bytes/None used to.

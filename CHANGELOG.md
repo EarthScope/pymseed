@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `MS3TraceList.close()`, `__enter__()`, and `__exit__()`, as `MS3RecordReader`
+  has, to release the trace list, its samples, and the sources held for record
+  lists without waiting for garbage collection.  Operating on a closed trace
+  list raises `ValueError`.
 - `__repr__()` and `__str__()` for `MS3RecordReader` and `MS3RecordValidator`,
   the two public classes that still printed as a bare object address.
 - Type annotations for `MS3Record.from_file()` and `iter_records()`, and
