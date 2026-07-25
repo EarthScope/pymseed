@@ -2374,8 +2374,15 @@ class MS3Record:
             verbose,
         )
 
+        # msr3_parse() frees the supplied record and NULLs the pointer when it
+        # fails after the header stage (e.g. bad CRC), so always adopt what it
+        # leaves behind, replacing a freed record with a fresh one.
+        if msr_ptr[0] != ffi.NULL:
+            self._msr = msr_ptr[0]
+        else:
+            self._msr = clibmseed.msr3_init(ffi.NULL)
+
         if status != clibmseed.MS_NOERROR:
             raise MiniSEEDError(status, "Error parsing miniSEED record")
 
-        self._msr = msr_ptr[0]
         return self
