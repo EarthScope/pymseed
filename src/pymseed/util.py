@@ -109,12 +109,16 @@ def nslc2sourceid(net: str, sta: str, loc: str, chan: str) -> str:
 def encoding_string(encoding: int) -> str:
     """Get descriptive string for encoding format.
 
-    Returns libmseed's default unknown value, e.g. ``"Unknown"``, for
-    unrecognized encoding values.
+    Returns ``"Unset"`` for -1, the unset value, and libmseed's default unknown
+    value, e.g. ``"Unknown"``, for unrecognized encoding values.
 
     Raises:
-        ValueError: If ``encoding`` is outside the ``uint8_t`` range (0-255).
+        ValueError: If ``encoding`` is outside the ``uint8_t`` range (0-255)
+            and is not -1.
     """
+    if encoding == -1:
+        return "Unset"
+
     if not 0 <= encoding <= 255:
         raise ValueError(f"Encoding must be in 0..255, got {encoding}")
 

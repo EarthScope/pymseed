@@ -179,6 +179,18 @@ class TestEncodingFunctions:
         result = encoding_string(int(DataEncoding.STEIM2))
         assert "steim" in result.lower() and "2" in result
 
+    def test_encoding_string_unset(self):
+        """-1 is the unset encoding, not an out-of-range error"""
+        assert encoding_string(-1) == "Unset"
+
+    def test_encoding_string_out_of_range(self):
+        """Values other than -1 outside 0..255 are rejected"""
+        with pytest.raises(ValueError):
+            encoding_string(-2)
+
+        with pytest.raises(ValueError):
+            encoding_string(256)
+
     def test_sample_size_basic(self):
         """Test getting sample sizes for different sample types"""
         # ms_samplesize expects a char sampletype, not encoding number

@@ -38,6 +38,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - An `MS3Record` obtained from `MS3RecordReader`, `MS3Record.from_buffer()`,
   `from_filelike()`, or a record list now keeps its owner alive, so a record that
   outlives the reader or generator no longer reads freed memory.
+- `MS3Record.encoding_str()` and `util.encoding_string()` return `"Unset"` for the
+  unset encoding (-1) instead of raising, so `repr()` works on an unpopulated record.
 
 ## [0.9.0] - 2026-05-17
 

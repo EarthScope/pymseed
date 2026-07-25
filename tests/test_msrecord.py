@@ -52,6 +52,19 @@ def test_msrecord_time_str_sentinels():
     assert msr.endtime_str() == "ERROR"
 
 
+def test_msrecord_unset_encoding_str():
+    """A fresh MS3Record has encoding -1; encoding_str() must report that as
+    "Unset" so repr() works on an unpopulated record."""
+    msr = MS3Record()
+
+    assert msr.encoding == -1
+    assert msr.encoding_str() == "Unset"
+    assert "encoding: -1 => Unset" in repr(msr)
+
+    msr.encoding = DataEncoding.STEIM2
+    assert msr.encoding_str() == "STEIM-2 integer compression"
+
+
 def test_msrecord_setters():
     """Test the setters for an MS3Record object."""
 

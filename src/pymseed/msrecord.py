@@ -1294,8 +1294,9 @@ class MS3Record:
 
         Returns:
             str: Descriptive string like "STEIM-2 integer compression",
-                "32-bit float (IEEE single)", or ``"Unknown"`` if libmseed
-                does not recognize the encoding code.
+                "32-bit float (IEEE single)", ``"Unset"`` if the encoding is
+                not set, or ``"Unknown"`` if libmseed does not recognize the
+                encoding code.
 
         See Also:
             encoding: Numeric encoding code
