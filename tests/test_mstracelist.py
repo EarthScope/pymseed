@@ -1068,6 +1068,32 @@ def test_tracelist_slicing():
     assert len(traces[0:1][0]) == 1
 
 
+def test_tracelist_contains():
+    traces = MS3TraceList(test_path3)
+
+    assert "FDSN:IU_COLA_00_B_H_Z" in traces
+    assert "FDSN:XX_TEST__B_H_Z" not in traces
+
+    # Every trace ID yielded by iteration is in the list it came from
+    for traceid in traces:
+        assert traceid in traces
+
+    # A trace ID is matched by source ID and publication version
+    traceid = traces[0]
+    assert traces.get_traceid(traceid.sourceid, traceid.pubversion) is not None
+    assert traces.get_traceid(traceid.sourceid, traceid.pubversion + 1) is None
+    assert traceid not in MS3TraceList()
+
+    # Types that cannot name a trace ID are simply not present
+    for bad in (None, 3.14, b"FDSN:IU_COLA_00_B_H_Z", ["FDSN:IU_COLA_00_B_H_Z"]):
+        assert bad not in traces
+
+    traces.close()
+
+    with pytest.raises(ValueError, match="closed MS3TraceList"):
+        "FDSN:IU_COLA_00_B_H_Z" in traces  # noqa: B015
+
+
 def test_tracelist_numpy():
     np = pytest.importorskip("numpy")
 

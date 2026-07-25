@@ -890,6 +890,7 @@ class MS3TraceList:
     - `traces[0]` returns the first TraceID
     - `traces[1:3]` returns a slice of the TraceIDs
     - `for traceid in traces:` iterates over all TraceIDs
+    - `sourceid in traces` tests for a source ID, see `get_traceid()`
 
     Trace Segments can be accessed via indexing and slicing:
     - `traceid[0]` returns the first Trace Segment
@@ -1114,6 +1115,19 @@ class MS3TraceList:
         while current_traceid != ffi.NULL:
             yield MS3TraceID(current_traceid, self)
             current_traceid = current_traceid.next[0]
+
+    def __contains__(self, item: object) -> bool:
+        """Test for a source ID, as a str or MS3TraceID, in the list
+
+        A str matches any publication version, an MS3TraceID matches only its own.
+        Any other type is not in the list.
+        """
+        if isinstance(item, MS3TraceID):
+            return self.get_traceid(item.sourceid, item.pubversion) is not None
+        elif isinstance(item, str):
+            return self.get_traceid(item) is not None
+
+        return False
 
     def __getitem__(self, key: int | slice) -> Any:
         """Enable indexing and slicing access to trace IDs"""

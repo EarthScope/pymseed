@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `MS3TraceList.__contains__()`, so `sourceid in traces` reports whether the
+  source ID is in the list.  Iterating and comparing the yielded `MS3TraceID`
+  values was previously the only test, and it never matched.  An `MS3TraceID`
+  is matched by both source ID and publication version.
 - `MS3TraceList.close()`, `__enter__()`, and `__exit__()`, as `MS3RecordReader`
   has, to release the trace list, its samples, and the sources held for record
   lists without waiting for garbage collection.  Operating on a closed trace
