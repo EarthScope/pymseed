@@ -55,7 +55,14 @@ def _resolve_alias(
 
 
 class MS3RecordPtr:
-    """Wrapper around CFFI MS3RecordPtr structure"""
+    """A record that contributed samples to a trace segment
+
+    Entries of an :class:`MS3RecordList`, present only when the trace list was
+    read with ``record_list=True``.  Each locates its record in the source it
+    was read from, by :attr:`filename` and :attr:`fileoffset` for a file or by
+    an internal pointer for a buffer, and exposes the parsed header as
+    :attr:`record` without decoding the data samples.
+    """
 
     def __init__(self, cffi_ptr: Any, parent_tracelist: Any = None) -> None:
         self._ptr = cffi_ptr
@@ -221,7 +228,13 @@ class MS3RecordList:
 
 
 class MS3TraceSeg:
-    """Wrapper around CFFI MS3TraceSeg structure"""
+    """A continuous span of samples for a single trace ID
+
+    Segments of an :class:`MS3TraceID`, one per run of contiguous data; a time
+    gap or overlap, or a change of sample rate, starts a new segment.  Data
+    samples are available as :attr:`datasamples` when the trace list was read
+    with ``unpack_data=True``, or after :meth:`unpack_recordlist`.
+    """
 
     def __init__(
         self, cffi_ptr: Any, parent_id_ptr: Any = None, parent_tracelist: Any = None
@@ -1194,7 +1207,32 @@ class MS3TraceList:
         versions: bool = False,
         timeformat: TimeFormat = TimeFormat.ISOMONTHDAY_Z,
     ) -> None:
-        """Print trace list details"""
+        """Print a summary of the trace list, one line per segment
+
+        Each line has the source ID, start time, and end time.  The summary is
+        written to standard output by the C library, so it is not captured by
+        redirecting :data:`sys.stdout` and does not interleave with the output
+        of Python's :func:`print`.
+
+        Args:
+            details: If greater than 0, add the sample rate and sample count
+                to each line, and a total trace and segment count.
+                Default: 0
+
+            gaps: If True, add the gap or overlap between each segment and the
+                previous segment of the same source ID and sample rate.
+                Default: False
+
+            versions: If True, append the publication version to each source
+                ID as ``"#<version>"``. Default: False
+
+            timeformat: Format of the start and end times, a
+                :class:`TimeFormat` value.
+                Default: TimeFormat.ISOMONTHDAY_Z
+
+        Raises:
+            ValueError: If the trace list has been closed.
+        """
         self._check_open()
 
         clibmseed.mstl3_printtracelist(self._mstl, timeformat, details, gaps, versions)
