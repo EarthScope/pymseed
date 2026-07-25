@@ -1685,36 +1685,35 @@ class MS3Record:
         record_pp = ffi.new("char **")
         reclen_p = ffi.new("int32_t *")
 
-        def _free_packer(pkr):
-            pkr_pp = ffi.new("MS3RecordPacker **")
-            pkr_pp[0] = pkr
-            clibmseed.msr3_pack_free(pkr_pp, ffi.NULL)
-
-        # Pack miniSEED records using data samples and type if provided
-        if data_samples is not None and sample_type is not None:
-            with self.with_datasamples(data_samples, sample_type):
-                packer = clibmseed.msr3_pack_init(self._msr, flags, verbose)
-
-                if not packer:
-                    raise MiniSEEDError(-1, "Error initializing packer")
-
-                try:
-                    while clibmseed.msr3_pack_next(packer, record_pp, reclen_p) == 1:
-                        yield ffi.buffer(record_pp[0], reclen_p[0])[:]
-                finally:
-                    _free_packer(packer)
-        # Otherwise, pack miniSEED records using the record's existing data
-        else:
+        def _pack() -> Iterator[bytes]:
             packer = clibmseed.msr3_pack_init(self._msr, flags, verbose)
 
             if not packer:
                 raise MiniSEEDError(-1, "Error initializing packer")
 
             try:
-                while clibmseed.msr3_pack_next(packer, record_pp, reclen_p) == 1:
+                while True:
+                    # 1 = record available, 0 = finished, < 0 = error
+                    status = clibmseed.msr3_pack_next(packer, record_pp, reclen_p)
+
+                    if status < 0:
+                        raise MiniSEEDError(status, "Error packing miniSEED record(s)")
+                    if status != 1:
+                        return
+
                     yield ffi.buffer(record_pp[0], reclen_p[0])[:]
             finally:
-                _free_packer(packer)
+                pkr_pp = ffi.new("MS3RecordPacker **")
+                pkr_pp[0] = packer
+                clibmseed.msr3_pack_free(pkr_pp, ffi.NULL)
+
+        # Pack miniSEED records using data samples and type if provided
+        if data_samples is not None and sample_type is not None:
+            with self.with_datasamples(data_samples, sample_type):
+                yield from _pack()
+        # Otherwise, pack miniSEED records using the record's existing data
+        else:
+            yield from _pack()
 
     def to_file(
         self,

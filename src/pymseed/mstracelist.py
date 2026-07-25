@@ -2093,7 +2093,15 @@ class MS3TraceList:
         reclen_p = ffi.new("int32_t *")
 
         try:
-            while clibmseed.mstl3_pack_next(packer, flags, record_pp, reclen_p) == 1:
+            while True:
+                # 1 = record available, 0 = finished, < 0 = error
+                status = clibmseed.mstl3_pack_next(packer, flags, record_pp, reclen_p)
+
+                if status < 0:
+                    raise MiniSEEDError(status, "Error packing miniSEED record(s)")
+                if status != 1:
+                    break
+
                 yield ffi.buffer(record_pp[0], reclen_p[0])[:]
         finally:
             packer_pp = ffi.new("MS3TraceListPacker **")

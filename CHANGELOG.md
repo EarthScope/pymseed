@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - For `MS3TraceList.add_data()` deprecate the `start_time` kwargs in favor of
   `starttime` for uniformity with the rest of the package.
 
+### Fixed
+- `MS3Record.generate()` and `MS3TraceList.generate()` now raise `MiniSEEDError` on
+  a packing error instead of silently yielding no records.
+
 ## [0.9.0] - 2026-05-17
 
 ### Added
