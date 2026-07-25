@@ -27,6 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   parsing fails after the header stage (e.g. bad CRC).
 - libmseed's message registry is now configured for each thread on first use, so
   warnings and errors are captured on threads that never called `configure_logging()`.
+- `configure_logging()` no longer releases the message prefix that libmseed is
+  still using, which produced scrambled prefixes on later messages.
 
 ## [0.9.0] - 2026-05-17
 

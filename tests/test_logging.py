@@ -97,6 +97,51 @@ class TestLoggingCapture:
             # Drain so the message store doesn't fill up over cycles.
             get_error_messages()
 
+    def _emit_error_message(self) -> list[str]:
+        """Force libmseed to emit and store one real error message."""
+        from pymseed import MS3Record
+
+        clear_error_messages()
+        try:
+            for _ in MS3Record.from_buffer(get_corrupted_record()):
+                pass
+        except Exception:
+            pass
+        return get_error_messages()
+
+    def test_prefix_retained_when_not_replaced(self) -> None:
+        """A prefix left in place by a None argument must stay valid.
+
+        libmseed treats a NULL prefix as "leave the current one alone", so
+        configure_logging() without a prefix does not reset it.  Releasing the
+        buffer behind that retained prefix left libmseed dereferencing freed
+        memory and emitting a scrambled prefix.
+        """
+        import gc
+
+        configure_logging(error_prefix="[RETAINED] ")
+
+        # No prefix supplied: libmseed keeps pointing at the one set above.
+        configure_logging()
+        gc.collect()
+        # Churn the heap so a freed prefix block would be reused by now.
+        _junk = [b"\xcc" * 64 for _ in range(20000)]
+
+        messages = self._emit_error_message()
+
+        assert messages
+        assert messages[0].startswith("[RETAINED] ")
+
+    def test_empty_prefix_clears_previous_prefix(self) -> None:
+        """An empty string removes a previously configured prefix."""
+        configure_logging(error_prefix="[GONE] ")
+        configure_logging(error_prefix="")
+
+        messages = self._emit_error_message()
+
+        assert messages
+        assert not messages[0].startswith("[GONE] ")
+
     def test_get_error_messages_returns_empty_list_when_empty(self) -> None:
         """Test that get_error_messages returns empty list when no messages."""
         result = get_error_messages()

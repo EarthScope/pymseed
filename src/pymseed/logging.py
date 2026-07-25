@@ -73,8 +73,11 @@ def configure_logging(
     call wins process-wide.
 
     Args:
-        log_prefix: Prefix for log messages. None uses libmseed default.
-        error_prefix: Prefix for error/diagnostic messages. None uses libmseed default.
+        log_prefix: Prefix for log messages. ``None`` leaves the current prefix
+            in place (libmseed's default if none has been set); pass ``""`` to
+            remove a prefix that was set earlier.
+        error_prefix: Prefix for error messages, as for ``log_prefix``.
+            libmseed's default is ``"Error: "``.
         max_messages: Maximum number of warning/error messages to store in
             message registry. When the registry is full, oldest messages
             are discarded.  A value of 0 disables the registry.
@@ -91,33 +94,27 @@ def configure_logging(
 
     global _atexit_registered_clear_error_messages, _inherited_config
 
-    # Encode the new prefixes into local bytes objects first. libmseed stores
-    # the prefix by pointer rather than by copy (see logging.c: `logp->logprefix
-    # = logprefix;`), so we must keep these bytes alive for the lifetime of the
-    # thread's logging configuration by pinning them in thread-local storage.
-    #
-    # IMPORTANT: do NOT swap the new bytes into TLS until AFTER ms_rloginit has
-    # updated libmseed's pointer. Otherwise, the assignment would drop the only
-    # remaining reference to the previous prefix bytes (CPython frees them
-    # immediately) while libmseed still points at them — opening a brief
-    # use-after-free window. By computing the new bytes in locals, calling
-    # ms_rloginit to switch libmseed's pointer first, and only then rotating
-    # TLS, the previous prefix bytes outlive libmseed's reference to them.
-    new_log_prefix_bytes: bytes | None = None if log_prefix is None else log_prefix.encode("utf-8")
-    new_error_prefix_bytes: bytes | None = (
-        None if error_prefix is None else error_prefix.encode("utf-8")
+    # libmseed stores each prefix by pointer without copying (logging.c
+    # rloginit_int: `logp->logprefix = logprefix;`), so the buffer must stay
+    # alive for as long as libmseed may dereference it.  Use CFFI-owned
+    # allocations rather than the internal buffer of a Python bytes object,
+    # whose address CFFI only guarantees for the duration of the call.
+    c_log_prefix = ffi.NULL if log_prefix is None else ffi.new("char[]", log_prefix.encode("utf-8"))
+    c_error_prefix = (
+        ffi.NULL if error_prefix is None else ffi.new("char[]", error_prefix.encode("utf-8"))
     )
-
-    c_log_prefix = ffi.NULL if new_log_prefix_bytes is None else new_log_prefix_bytes
-    c_error_prefix = ffi.NULL if new_error_prefix_bytes is None else new_error_prefix_bytes
 
     # Initialize with NULL print functions to suppress console output.
     clibmseed.ms_rloginit(ffi.NULL, c_log_prefix, ffi.NULL, c_error_prefix, max_messages)
 
-    # Safe to rotate TLS now: libmseed's pointer is on the NEW bytes; dropping
-    # the previous TLS reference can no longer leave a dangling pointer.
-    _thread_local_prefixes.log_prefix = new_log_prefix_bytes
-    _thread_local_prefixes.error_prefix = new_error_prefix_bytes
+    # Pin the new buffers only after ms_rloginit() has repointed libmseed at
+    # them, so dropping the previous buffer cannot leave a dangling pointer.
+    # A prefix passed as NULL is left unchanged by libmseed, so the buffer
+    # backing it must stay pinned rather than be replaced with None.
+    if log_prefix is not None:
+        _thread_local_prefixes.log_prefix = c_log_prefix
+    if error_prefix is not None:
+        _thread_local_prefixes.error_prefix = c_error_prefix
     _thread_local_prefixes.configured = True
 
     _inherited_config = (log_prefix, error_prefix, max_messages)
