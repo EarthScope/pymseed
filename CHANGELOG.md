@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.2] - 2026-07-25
+
 ### Added
 - `MS3TraceList.__contains__()`, so `sourceid in traces` reports whether the
   source ID is in the list.  Iterating and comparing the yielded `MS3TraceID`
@@ -399,6 +401,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CFFI-based bindings to libmseed
 
 [Unreleased]: https://github.com/EarthScope/pymseed/compare/v0.0.5...HEAD
+[0.9.2]: https://github.com/EarthScope/pymseed/releases/tag/v0.9.2
 [0.9.1]: https://github.com/EarthScope/pymseed/releases/tag/v0.9.1
 [0.9.0]: https://github.com/EarthScope/pymseed/releases/tag/v0.9.0
 [0.8.1]: https://github.com/EarthScope/pymseed/releases/tag/v0.8.1
