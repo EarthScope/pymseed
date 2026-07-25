@@ -60,6 +60,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `MS3RecordValidator` now reports an incomplete record at the end of the source, and
   a record length it cannot determine, instead of ending validation silently. A
   truncated file no longer validates with zero errors.
+- `MS3TraceList.add_buffer()` and `MS3RecordValidator.from_buffer()` size the buffer in
+  bytes rather than elements, so an `array.array` or numpy view with an item size
+  greater than one byte is no longer read only in part.
 
 ## [0.9.0] - 2026-05-17
 

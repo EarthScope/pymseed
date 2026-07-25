@@ -433,6 +433,37 @@ class TestMS3RecordValidatorPartialData:
             (e.offset, e.message) for e in buffer_errors
         ]
 
+    def test_itemsize_views_validate_the_whole_buffer(self) -> None:
+        """len() on a buffer-protocol object with itemsize > 1 is the element
+        count, not the byte count. Sizing the source with it made the validator
+        examine only 1/itemsize of the data and report a clean, short result."""
+        import array
+
+        data = get_test_buffer(TEST_MSEED3_FILE)
+        assert len(data) % 2 == 0, "test data must divide evenly into 2-byte items"
+
+        ref_errors, ref_traces = MS3RecordValidator.from_buffer(data).validate()
+        expected = (
+            len(ref_errors),
+            len(ref_traces),
+            sum(seg.samplecnt for tid in ref_traces for seg in tid),
+        )
+        assert expected[0] == 0, "reference file must validate cleanly"
+
+        views: list[tuple[str, object]] = [
+            ("memoryview", memoryview(data)),
+            ("memoryview.cast('H')", memoryview(data).cast("H")),
+            ("array('H')", array.array("H", data)),
+        ]
+
+        np = pytest.importorskip("numpy", reason="numpy views are the common case")
+        views.append(("numpy int16", np.frombuffer(data, dtype=np.int16)))
+
+        for label, view in views:
+            errors, traces = MS3RecordValidator.from_buffer(view).validate()
+            got = (len(errors), len(traces), sum(seg.samplecnt for tid in traces for seg in tid))
+            assert got == expected, f"{label}: got {got}, expected {expected}"
+
     def test_undeterminable_record_length_reported(self) -> None:
         """A v2 record whose length cannot be determined (no B1000 blockette and
         no following header to scan to) leaves its payload unchecked, so it must

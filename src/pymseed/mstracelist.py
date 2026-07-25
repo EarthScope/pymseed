@@ -26,7 +26,7 @@ class MS3RecordPtr:
     def __init__(self, cffi_ptr: Any, parent_tracelist: Any = None) -> None:
         self._ptr = cffi_ptr
         # The referenced structure is owned by the trace list; hold a reference
-        # so it cannot be freed while this wrapper is still in use.
+        # so it cannot be freed while this wrapper is in use.
         self._parent_tracelist = parent_tracelist
 
     def __repr__(self) -> str:
@@ -90,7 +90,7 @@ class MS3RecordList:
     def __init__(self, cffi_ptr: Any, parent_tracelist: Any = None) -> None:
         self._list = cffi_ptr
         # The referenced structure is owned by the trace list; hold a reference
-        # so it cannot be freed while this wrapper is still in use.
+        # so it cannot be freed while this wrapper is in use.
         self._parent_tracelist = parent_tracelist
 
     def __repr__(self) -> str:
@@ -586,17 +586,14 @@ class MS3TraceSeg:
         buffer_ptr = ffi.NULL
         buffer_size = 0
         if buffer is not None:
-            # libmseed memcpys the decoded samples into this buffer, so require a
-            # writable one: without require_writable CFFI hands out the address of
-            # read-only objects (bytes, a read-only memoryview, an immutable
-            # pyarrow.Buffer) and the C code corrupts them with no error.
+            # libmseed memcpys the decoded samples into this buffer.
             try:
                 buffer_ptr = ffi.from_buffer(buffer, require_writable=True)
             except TypeError:
                 raise ValueError("Buffer must support the buffer protocol") from None
             except (BufferError, ValueError) as e:
-                # A read-only buffer raises BufferError, or ValueError when the
-                # exporter itself refuses (e.g. a read-only numpy array).
+                # CFFI raises BufferError; the exporter itself may raise
+                # ValueError (numpy does, for read-only or non-contiguous).
                 raise BufferError(f"Cannot unpack into the provided buffer: {e}") from None
 
             if hasattr(buffer, "nbytes"):
@@ -1399,9 +1396,10 @@ class MS3TraceList:
         # Validate that the buffer supports the buffer protocol
         try:
             buffer_ptr = ffi.from_buffer(buffer)
-            buffer_length = len(buffer)
         except (TypeError, AttributeError):
             raise ValueError("Buffer must support the buffer protocol") from None
+
+        buffer_length = len(buffer_ptr)
 
         # Build selections, if sourceid, starttime, or endtime are specified
         selections_ptr, free_selections = build_selections(sourceid, starttime, endtime)

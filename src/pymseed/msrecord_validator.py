@@ -82,7 +82,7 @@ class _BufferSource:
 
     def __iter__(self) -> Iterator[_RecordTuple]:
         buf_ptr = ffi.from_buffer(self._buffer)
-        buf_size = len(self._buffer)
+        buf_size = len(buf_ptr)
         format_version = ffi.new("uint8_t *")
         offset = 0
 
@@ -95,8 +95,7 @@ class _BufferSource:
                 format_version,
             )
 
-            # Undetectable, over-long, or truncated: all leave records unchecked,
-            # so report rather than ending iteration silently.
+            # Undetectable, over-long or truncated: no whole record here.
             if reclen <= 0 or reclen > remaining or reclen > clibmseed.MAXRECLEN:
                 yield (None, offset, _detection_failure(reclen, remaining))
                 return
@@ -179,8 +178,7 @@ class _FileLikeSource:
 
                 if reclen < 0:
                     # Detection only fails for want of data below MINRECLEN
-                    # bytes; at or above that the failure is conclusive, so
-                    # report it rather than reading the rest of the stream.
+                    # bytes; at or above that the failure is conclusive.
                     if eof or remaining >= clibmseed.MINRECLEN:
                         yield (None, file_offset, _detection_failure(reclen, remaining))
                         return
@@ -196,8 +194,7 @@ class _FileLikeSource:
                     return
 
                 if reclen == 0 or reclen > remaining:
-                    # At EOF the shortfall can never be filled: the trailing
-                    # record is truncated and its contents go unchecked.
+                    # At EOF the shortfall can never be filled.
                     if eof:
                         yield (None, file_offset, _detection_failure(reclen, remaining))
                         return
@@ -485,8 +482,7 @@ class MS3RecordValidator:
 
         try:
             for buf_ptr, offset, info in self._source:
-                # The source signals a failure to detect a whole record with
-                # buf_ptr=None and a description of why it stopped.
+                # A source signals no whole record with buf_ptr=None and a reason.
                 if buf_ptr is None:
                     errors.append(
                         ValidationError(

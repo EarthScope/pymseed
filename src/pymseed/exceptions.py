@@ -57,10 +57,9 @@ class MiniSEEDError(PymseedError):
         elif self.status_code < 0:
             library_message = error_string(self.status_code)
         else:
-            # Only negative values are error codes. What a non-negative status
-            # means depends on the function that returned it — MS_ENDOFFILE and
-            # msr3_parse()'s "one more byte needed" are both 1 — so look up no
-            # string for it and let the caller's message describe it.
+            # A non-negative status has no error string: its meaning depends on
+            # the producing function, and the values collide (MS_ENDOFFILE and
+            # msr3_parse()'s "one more byte needed" are both 1).
             library_message = None
 
         if library_message is None:

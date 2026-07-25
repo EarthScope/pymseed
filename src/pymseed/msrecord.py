@@ -35,8 +35,8 @@ from .util import encoding_string, nstime2timestr, timestr2nstime
 def _parse_error_message(status: int) -> str:
     """Describe a failing ``msr3_parse()`` status.
 
-    A positive status is not an error code: it is the number of additional bytes
-    ``msr3_parse()`` needs to complete the record.
+    A positive status is not an error code: it is the number of further bytes
+    needed to complete the record.
     """
     if status > 0:
         plural = "" if status == 1 else "s"
@@ -48,15 +48,13 @@ def _parse_error_message(status: int) -> str:
 class _SharedRecordStruct:
     """Owns the C record struct shared by a record iterator and the records it yields.
 
-    The iterators reuse one ``MS3Record`` struct for every record they parse.
-    Freeing it when the iterator finishes would leave any escaped
-    :class:`MS3Record` wrapper pointing at released memory, so ownership lives
-    here instead: the struct is freed once the iterator and every wrapper
-    referring to it are gone.
+    The iterators reuse one ``MS3Record`` struct for every record they parse, so
+    ownership lives here rather than with the iterator: the struct is freed once
+    the iterator and every wrapper referring to it are gone.
 
-    An escaped wrapper still reflects whatever the shared struct holds at the
-    time it is read, so it is not a way to retain a record past the iteration
-    step that produced it — it only keeps the access memory-safe.
+    An escaped wrapper reflects whatever the shared struct holds when it is read,
+    so this keeps such access memory-safe; it does not retain the record as it
+    was at the iteration step that produced it.
     """
 
     __slots__ = ("_msr_ptr", "_source")
@@ -1017,8 +1015,7 @@ class MS3Record:
             if schema_id not in KNOWN_SCHEMAS:
                 raise ValueError(f"Unknown schema_id: {schema_id}")
 
-            # Process-wide cache: the bundled schema is read, parsed and
-            # compiled once rather than on every call.
+            # Cached process-wide: read, parse and compile happen once.
             validator, load_error = load_extra_headers_validator(schema_id)
 
             if validator is None:
@@ -1430,9 +1427,8 @@ class MS3Record:
         See Also:
             MS3TraceList.add_data(): Add data samples to a trace list
         """
-        # Multi-dimensional buffers are flattened when shared zero-copy, while
-        # len() reports only the first dimension; reject them rather than
-        # keeping a fraction of the samples.
+        # A multi-dimensional buffer is flattened when shared zero-copy, while
+        # len() gives only its first dimension.
         try:
             ndim = memoryview(data_samples).ndim
         except TypeError:
@@ -2023,8 +2019,8 @@ class MS3Record:
         buf_ptr = ffi.from_buffer(buffer)
         offset = 0
 
-        # Owns the shared struct so that a record which outlives this generator
-        # cannot read freed memory; see _SharedRecordStruct.
+        # Owns the shared struct so a record outliving this generator cannot
+        # read freed memory; see _SharedRecordStruct.
         struct = _SharedRecordStruct(msr_ptr, buf_ptr)
 
         # Build selections, if sourceid, starttime, or endtime are specified
@@ -2170,8 +2166,8 @@ class MS3Record:
 
         msr_ptr = ffi.new("MS3Record **")
 
-        # Owns the shared struct so that a record which outlives this generator
-        # cannot read freed memory; see _SharedRecordStruct.
+        # Owns the shared struct so a record outliving this generator cannot
+        # read freed memory; see _SharedRecordStruct.
         struct = _SharedRecordStruct(msr_ptr)
 
         # Build selections, if sourceid, starttime, or endtime are specified
@@ -2382,8 +2378,8 @@ class MS3Record:
         )
 
         if status == clibmseed.MS_NOERROR:
-            # msr->record points into `buffer` rather than a copy of it, so the
-            # record must keep the buffer alive to stay self-contained.
+            # msr->record points into `buffer` rather than a copy, so the record
+            # must keep it alive to stay self-contained.
             return cls(recordptr=msr_ptr[0], owns=True, owner=buf_ptr)
 
         raise MiniSEEDError(status, _parse_error_message(status))
@@ -2472,15 +2468,14 @@ class MS3Record:
         )
 
         # msr3_parse() frees the supplied record and NULLs the pointer when it
-        # fails after the header stage (e.g. bad CRC), so always adopt what it
-        # leaves behind, replacing a freed record with a fresh one.
+        # fails past the header stage (e.g. bad CRC), so adopt what it leaves.
         if msr_ptr[0] != ffi.NULL:
             self._msr = msr_ptr[0]
         else:
             self._msr = clibmseed.msr3_init(ffi.NULL)
 
-        # msr->record points into `buffer` rather than a copy of it; hold the
-        # buffer so it cannot be released while this record refers to it.
+        # msr->record points into `buffer` rather than a copy; hold it so it
+        # cannot be released while this record refers to it.
         self._owner = buf_ptr
 
         if status != clibmseed.MS_NOERROR:

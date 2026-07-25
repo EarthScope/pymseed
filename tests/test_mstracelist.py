@@ -1,3 +1,4 @@
+import array
 import gc
 import io
 import math
@@ -87,6 +88,34 @@ def test_tracelist_read():
         -152810,
         -149774,
     ]
+
+
+def test_tracelist_read_buffer_itemsize_views():
+    """len() on a buffer-protocol object with itemsize > 1 is the element count,
+    not the byte count. Passing it to libmseed as a byte length made add_buffer()
+    read only 1/itemsize of the data and silently return a short trace list."""
+    with open(test_path3, "rb") as fp:
+        data = fp.read()
+
+    assert len(data) % 2 == 0, "test data must divide evenly into 2-byte items"
+
+    reference = MS3TraceList.from_buffer(data)
+    expected = (len(reference), sum(seg.samplecnt for tid in reference for seg in tid))
+    assert expected[0] == 3
+
+    views: list[tuple[str, object]] = [
+        ("memoryview", memoryview(data)),
+        ("memoryview.cast('H')", memoryview(data).cast("H")),
+        ("array('H')", array.array("H", data)),
+    ]
+
+    np = pytest.importorskip("numpy", reason="numpy views are the common case")
+    views.append(("numpy int16", np.frombuffer(data, dtype=np.int16)))
+
+    for label, view in views:
+        traces = MS3TraceList.from_buffer(view)
+        got = (len(traces), sum(seg.samplecnt for tid in traces for seg in tid))
+        assert got == expected, f"{label}: read {got}, expected {expected}"
 
 
 def test_tracelist_read_buffer():

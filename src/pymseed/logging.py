@@ -95,10 +95,9 @@ def configure_logging(
     global _atexit_registered_clear_error_messages, _inherited_config
 
     # libmseed stores each prefix by pointer without copying (logging.c
-    # rloginit_int: `logp->logprefix = logprefix;`), so the buffer must stay
-    # alive for as long as libmseed may dereference it.  Use CFFI-owned
-    # allocations rather than the internal buffer of a Python bytes object,
-    # whose address CFFI only guarantees for the duration of the call.
+    # rloginit_int), so the buffer must outlive the call.  CFFI only guarantees
+    # the address of a Python bytes object for the duration of the call, so use
+    # CFFI-owned allocations.
     c_log_prefix = ffi.NULL if log_prefix is None else ffi.new("char[]", log_prefix.encode("utf-8"))
     c_error_prefix = (
         ffi.NULL if error_prefix is None else ffi.new("char[]", error_prefix.encode("utf-8"))
@@ -107,10 +106,9 @@ def configure_logging(
     # Initialize with NULL print functions to suppress console output.
     clibmseed.ms_rloginit(ffi.NULL, c_log_prefix, ffi.NULL, c_error_prefix, max_messages)
 
-    # Pin the new buffers only after ms_rloginit() has repointed libmseed at
-    # them, so dropping the previous buffer cannot leave a dangling pointer.
-    # A prefix passed as NULL is left unchanged by libmseed, so the buffer
-    # backing it must stay pinned rather than be replaced with None.
+    # Pin only after ms_rloginit() has repointed libmseed at the new buffers, so
+    # dropping the previous ones cannot leave a dangling pointer.  libmseed
+    # leaves a prefix passed as NULL unchanged, so keep its buffer pinned.
     if log_prefix is not None:
         _thread_local_prefixes.log_prefix = c_log_prefix
     if error_prefix is not None:
@@ -130,9 +128,8 @@ def ensure_thread_logging() -> None:
 
     libmseed's message registry is thread-local: an unconfigured thread prints
     diagnostics to stderr instead of storing them, so ``get_error_messages()``
-    returns nothing and callers relying on it (notably
-    :class:`~pymseed.MS3RecordValidator`) lose all message text.  pymseed calls
-    this at the entry point of every operation that can produce messages.
+    returns nothing there.  pymseed calls this at the entry point of every
+    operation that can produce messages.
 
     Applies the arguments of the most recent :func:`configure_logging` call.
     """
