@@ -29,6 +29,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   warnings and errors are captured on threads that never called `configure_logging()`.
 - `configure_logging()` no longer releases the message prefix that libmseed is
   still using, which produced scrambled prefixes on later messages.
+- `MS3TraceSeg.recordlist` now keeps the owning `MS3TraceList` alive, so a record
+  list or `MS3RecordPtr` obtained from a temporary trace list no longer reads
+  freed memory.
 
 ## [0.9.0] - 2026-05-17
 

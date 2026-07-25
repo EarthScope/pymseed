@@ -23,8 +23,11 @@ from .util import encoding_sizetype, nstime2timestr
 class MS3RecordPtr:
     """Wrapper around CFFI MS3RecordPtr structure"""
 
-    def __init__(self, cffi_ptr: Any) -> None:
+    def __init__(self, cffi_ptr: Any, parent_tracelist: Any = None) -> None:
         self._ptr = cffi_ptr
+        # The referenced structure is owned by the trace list; hold a reference
+        # so it cannot be freed while this wrapper is still in use.
+        self._parent_tracelist = parent_tracelist
 
     def __repr__(self) -> str:
         return (
@@ -84,8 +87,11 @@ class MS3RecordList:
     - for record_ptr in record_list: iterates over all record pointers
     """
 
-    def __init__(self, cffi_ptr: Any) -> None:
+    def __init__(self, cffi_ptr: Any, parent_tracelist: Any = None) -> None:
         self._list = cffi_ptr
+        # The referenced structure is owned by the trace list; hold a reference
+        # so it cannot be freed while this wrapper is still in use.
+        self._parent_tracelist = parent_tracelist
 
     def __repr__(self) -> str:
         def indent_repr(thing):
@@ -165,7 +171,7 @@ class MS3RecordList:
         """Return iterator over record pointers"""
         current_record = self._list.first
         while current_record != ffi.NULL:
-            yield MS3RecordPtr(current_record)
+            yield MS3RecordPtr(current_record, self._parent_tracelist)
             current_record = current_record.next
 
     def records(self) -> Iterator[MS3RecordPtr]:
@@ -289,7 +295,7 @@ class MS3TraceSeg:
     def recordlist(self) -> MS3RecordList | None:
         """Return the record list structure"""
         if self._seg.recordlist:
-            return MS3RecordList(self._seg.recordlist)
+            return MS3RecordList(self._seg.recordlist, self._parent_tracelist)
         else:
             return None
 

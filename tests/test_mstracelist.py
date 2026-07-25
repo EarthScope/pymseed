@@ -1,3 +1,4 @@
+import gc
 import io
 import math
 import os
@@ -553,6 +554,63 @@ def test_tracelist_sample_size_type_requires_record_list():
 
     with pytest.raises(ValueError, match="No record list available"):
         _ = seg.sample_size_type
+
+
+def _churn_heap():
+    """Force reclamation and reuse of freed blocks so a stale pointer shows up."""
+    gc.collect()
+    return [bytearray(4096) for _ in range(3000)]
+
+
+def test_recordlist_keeps_tracelist_alive():
+    """A record list must outlive the expression that produced it.
+
+    MS3RecordList and MS3RecordPtr point into memory owned by the MS3TraceList.
+    Without a reference back to the owner, a temporary trace list was freed
+    while the record list was still in use, which read freed memory and crashed.
+    """
+    # Ground truth with the trace list held alive
+    held = MS3TraceList.from_file(test_path3, record_list=True)
+    expected_count = len(held[0][0].recordlist)
+    expected_sourceid = held[0][0].recordlist[0].record.sourceid
+    del held
+    _churn_heap()
+
+    # Every intermediate here is a temporary
+    recordlist = MS3TraceList.from_file(test_path3, record_list=True)[0][0].recordlist
+    _churn_heap()
+
+    assert len(recordlist) == expected_count
+    assert recordlist.recordcnt == expected_count
+    assert sum(1 for _ in recordlist) == expected_count
+    assert recordlist[0].record.sourceid == expected_sourceid
+    assert recordlist[-1].record.sourceid == expected_sourceid
+    assert [p.fileoffset for p in recordlist[0:3]] == [0, 478, 1020]
+
+
+def test_recordptr_keeps_tracelist_alive():
+    """A single MS3RecordPtr must outlive the list and trace list it came from."""
+    recordptr = MS3TraceList.from_file(test_path3, record_list=True)[0][0].recordlist[0]
+    _churn_heap()
+
+    assert recordptr.record.sourceid == "FDSN:IU_COLA_00_B_H_1"
+    assert recordptr.fileoffset == 0
+    assert recordptr.filename == test_path3
+    assert "MS3RecordPtr(sourceid:" in repr(recordptr)
+
+
+def test_unpack_recordlist_from_temporary_tracelist():
+    """A segment keeps its trace list alive, so unpacking works after the
+    expression that produced it has gone away.
+
+    This guards MS3TraceSeg's owner reference rather than reproducing a past
+    failure; the segment already held one.
+    """
+    segment = MS3TraceList.from_file(test_path3, record_list=True)[0][0]
+    _churn_heap()
+
+    assert segment.unpack_recordlist() == segment.samplecnt
+    assert segment.datasamples[0:3].tolist() == [-502916, -502808, -502691]
 
 
 def test_tracelist_read_recordlist():
