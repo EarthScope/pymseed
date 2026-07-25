@@ -1082,6 +1082,34 @@ def test_mstracelist_pack():
 
 
 @pytest.mark.filterwarnings("ignore::DeprecationWarning")
+def test_mstracelist_pack_reraises_handler_exception():
+    """A failing handler must not be reported as a successful pack()."""
+    # Enough samples for many 128-byte records
+    sine_500 = [int(math.sin(math.radians(x)) * 500) for x in range(0, 500)]
+
+    traces = MS3TraceList()
+    traces.add_data(
+        sourceid="FDSN:XX_TEST__B_S_X",
+        data_samples=sine_500,
+        sample_type="i",
+        sample_rate=100.0,
+        starttime_str="2024-01-01T00:00:00Z",
+    )
+
+    calls = []
+
+    def _failing_handler(record, data):
+        calls.append(record)
+        raise OSError("no space left on device")
+
+    with pytest.raises(OSError, match="no space left on device"):
+        traces.pack(_failing_handler, max_record_length=128)
+
+    # The records after the failure are not handed to the handler
+    assert len(calls) == 1
+
+
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")
 def test_mstracelist_pack_leaves_no_reference_cycle():
     """pack() must not tie the trace list into a reference cycle.
 

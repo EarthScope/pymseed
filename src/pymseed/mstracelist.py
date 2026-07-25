@@ -1872,6 +1872,8 @@ class MS3TraceList:
         Raises:
             ValueError: If format_version is not 2 or 3, or if max_record_length is invalid.
             MiniSEEDError: If the underlying libmseed library encounters an error during packing.
+            Exception: Whatever ``handler`` raises, re-raised once packing has
+                returned; the records after the failing one are not passed to it.
 
         Examples:
             Simple example writing to a file:
@@ -1918,10 +1920,20 @@ class MS3TraceList:
 
         ensure_thread_logging()
 
+        # An exception cannot cross the C call, and libmseed cannot be stopped
+        # part way through, so hold the first one, skip the handler for the
+        # remaining records, and re-raise once packing returns.
+        handler_error: list[BaseException] = []
+
         def record_handler_wrapper(record: Any, record_length: int, _handlerdata: Any) -> None:
             """Callback function for mstl3_pack()"""
-            # Convert CFFI buffer to bytes for the handler
-            handler(ffi.buffer(record, record_length)[:], handlerdata)
+            if handler_error:
+                return
+            try:
+                # Convert CFFI buffer to bytes for the handler
+                handler(ffi.buffer(record, record_length)[:], handlerdata)
+            except BaseException as exc:
+                handler_error.append(exc)
 
         # Held by this frame alone, which covers the synchronous
         # mstl3_pack_ppupdate_flushidle() call below.  Pinning the callback to
@@ -1955,6 +1967,10 @@ class MS3TraceList:
             c_extra,
             flush_idle_seconds,
         )
+
+        # Raised in preference to a packing error, as the handler failed first
+        if handler_error:
+            raise handler_error[0]
 
         if packed_records < 0:
             raise MiniSEEDError(packed_records, "Error packing miniSEED record(s)")

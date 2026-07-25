@@ -1566,6 +1566,8 @@ class MS3Record:
             MiniSEEDError: If packing fails due to invalid configuration or data
             ValueError: If sample_type is invalid, data format is incompatible,
                 or only one of ``data_samples`` and ``sample_type`` is provided.
+            Exception: Whatever ``handler`` raises, re-raised once packing has
+                returned; the records after the failing one are not passed to it.
 
         Examples:
             >>> from pymseed import MS3Record, DataEncoding
@@ -1628,10 +1630,20 @@ class MS3Record:
 
         ensure_thread_logging()
 
+        # An exception cannot cross the C call, and libmseed cannot be stopped
+        # part way through, so hold the first one, skip the handler for the
+        # remaining records, and re-raise once msr3_pack() returns.
+        handler_error: list[BaseException] = []
+
         def record_handler_wrapper(record: Any, record_length: int, _handlerdata: Any) -> None:
             """Callback function for msr3_pack()"""
-            # Convert CFFI buffer to bytes for the handler
-            handler(ffi.buffer(record, record_length)[:], handler_data)
+            if handler_error:
+                return
+            try:
+                # Convert CFFI buffer to bytes for the handler
+                handler(ffi.buffer(record, record_length)[:], handler_data)
+            except BaseException as exc:
+                handler_error.append(exc)
 
         # Held by this frame alone, which covers the synchronous msr3_pack()
         # call below.  Pinning the callback to self cycles through the bound
@@ -1660,6 +1672,10 @@ class MS3Record:
                 flags,
                 verbose,
             )
+
+        # Raised in preference to a packing error, as the handler failed first
+        if handler_error:
+            raise handler_error[0]
 
         if packed_records < 0:
             raise MiniSEEDError(packed_records, "Error packing miniSEED record(s)")

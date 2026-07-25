@@ -343,6 +343,29 @@ def test_pack_rejects_partial_sample_args():
 
 
 @pytest.mark.filterwarnings("ignore::DeprecationWarning")
+def test_pack_reraises_handler_exception():
+    """A failing handler must not be reported as a successful pack()."""
+    msr = MS3Record()
+    msr.sourceid = "FDSN:XX_TEST__L_H_Z"
+    msr.set_starttime_str("2024-01-01T00:00:00Z")
+    msr.samprate = 1
+    msr.reclen = 128
+    msr.encoding = DataEncoding.INT32
+
+    calls = []
+
+    def _failing_handler(record, data):
+        calls.append(record)
+        raise OSError("no space left on device")
+
+    with pytest.raises(OSError, match="no space left on device"):
+        msr.pack(_failing_handler, None, data_samples=list(range(200)), sample_type="i")
+
+    # The records after the failure are not handed to the handler
+    assert len(calls) == 1
+
+
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")
 def test_pack_leaves_no_reference_cycle():
     """pack() must not tie the record into a reference cycle.
 

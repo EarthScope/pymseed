@@ -30,6 +30,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and trace ID for the life of the trace list.
 
 ### Fixed
+- `MS3Record.pack()` and `MS3TraceList.pack()` re-raise an exception from the record
+  handler instead of reporting records that were never written.
 - `MS3TraceList.add_file(record_list=True)` retains one file name buffer per distinct
   path, bounding the memory held when reading a file repeatedly.
 - `MS3Record.pack()` and `MS3TraceList.pack()` release their C memory by reference
