@@ -1870,8 +1870,9 @@ class MS3TraceList:
                 - packed_records: Total number of miniSEED records generated
 
         Raises:
-            ValueError: If format_version is not 2 or 3, or if max_record_length is invalid.
-            MiniSEEDError: If the underlying libmseed library encounters an error during packing.
+            ValueError: If format_version is not 2 or 3.
+            MiniSEEDError: If the underlying libmseed library encounters an error during
+                packing, such as a max_record_length the format or encoding cannot use.
             Exception: Whatever ``handler`` raises, re-raised once packing has
                 returned; the records after the failing one are not passed to it.
 
@@ -2056,10 +2057,12 @@ class MS3TraceList:
             bytes: Each miniSEED record as it is created
 
         Raises:
-            ValueError: If format_version is not 2 or 3, or if
-                max_record_length is invalid.
+            ValueError: If format_version is not 2 or 3.  Raised by this call,
+                before the first record is created.
             MiniSEEDError: If the underlying libmseed library encounters an
-                error during creation of miniSEED records.
+                error during creation of miniSEED records, such as a
+                max_record_length the format or encoding cannot use.  Raised
+                while iterating, by the record it applies to.
 
         Examples:
             Simple example creating miniSEED records:
@@ -2143,6 +2146,9 @@ class MS3TraceList:
             )
             max_record_length = record_length
 
+        if format_version is not None and format_version not in (2, 3):
+            raise ValueError(f"Invalid miniSEED format version: {format_version}")
+
         return self._generate(
             max_record_length=max_record_length,
             encoding=encoding,
@@ -2177,11 +2183,9 @@ class MS3TraceList:
         if not remove_packed:
             flags |= clibmseed.MSF_MAINTAINMSTL
 
-        if format_version is not None:
-            if format_version not in [2, 3]:
-                raise ValueError(f"Invalid miniSEED format version: {format_version}")
-            if format_version == 2:
-                flags |= clibmseed.MSF_PACKVER2
+        # Validated by generate(), the public wrapper
+        if format_version == 2:
+            flags |= clibmseed.MSF_PACKVER2
 
         c_extra = ffi.new("char[]", extra_headers.encode("utf-8")) if extra_headers else ffi.NULL
 
@@ -2278,12 +2282,12 @@ class MS3TraceList:
             int: Number of miniSEED records written to the file.
 
         Raises:
-            ValueError: If format_version is not 2 or 3, or if
-                max_record_length is invalid.
+            ValueError: If format_version is not 2 or 3.
 
             MiniSEEDError: If the underlying libmseed library
                 encounters an error during file writing (e.g., permission
-                denied, disk full, invalid data).
+                denied, disk full, invalid data, or a max_record_length the
+                format or encoding cannot use).
 
         Examples:
             Simple file writing:

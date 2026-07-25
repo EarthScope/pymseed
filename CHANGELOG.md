@@ -32,6 +32,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of returning a size of 0.
 
 ### Fixed
+- `MS3TraceList.generate()` rejects an unsupported `format_version` on the call, as
+  documented, rather than on the first record.
 - `MS3Record.with_datasamples()` copies a non-contiguous buffer instead of raising
   `BufferError` from the zero-copy check.
 - `MS3Record.from_file()`, `from_buffer()`, and `from_filelike()` raise `MiniSEEDError`

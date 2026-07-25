@@ -1257,6 +1257,28 @@ def test_mstracelist_generate_raises_on_pack_error():
         list(traces.generate(format_version=2, max_record_length=1000))
 
 
+def test_mstracelist_generate_validates_format_version_eagerly():
+    """generate() must reject its arguments on the call, not on the first record.
+
+    A generator body raising only at the first next() leaves the caller's
+    try/except around the call itself unable to see the error.
+    """
+    traces = MS3TraceList()
+    traces.add_data(
+        sourceid="FDSN:XX_STA__B_H_Z",
+        data_samples=[1, 2, 3, 4, 5],
+        sample_type="i",
+        sample_rate=100.0,
+        starttime_str="2023-01-01T00:00:00Z",
+    )
+
+    with pytest.raises(ValueError, match="Invalid miniSEED format version: 4"):
+        traces.generate(format_version=4)
+
+    # The supported versions still pack
+    assert len(list(traces.generate(format_version=2, max_record_length=512))) == 1
+
+
 def test_mstracelist_generate_flush_idle_reclaims_idle_sources():
     """A rolling buffer whose source IDs come and go relies on
     flush_idle_seconds to drain them; without it partial segments accumulate for
