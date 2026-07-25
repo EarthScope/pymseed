@@ -32,6 +32,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of returning a size of 0.
 
 ### Fixed
+- `MS3RecordPtr.record` for a record list read from a file no longer serves raw bytes
+  from the reader's released buffer; `MS3Record.record` and `record_mv` raise instead,
+  as they do for a list read from a file-like source.
+- `MS3TraceList.add_buffer(record_list=True)` holds the source buffer, so the raw
+  record and `unpack_recordlist()` no longer read freed memory after the caller
+  releases it.
 - `MS3Record.record` and `record_mv` return the record as parsed after `reclen` is set
   as a maximum for repacking, rather than reading past it.
 - `get_error_messages()` returns messages oldest first, matching the order libmseed

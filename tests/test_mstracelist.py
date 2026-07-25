@@ -784,7 +784,48 @@ def test_record_from_temporary_recordlist_chain():
 
     assert record.sourceid == "FDSN:IU_COLA_00_B_H_1"
     assert record.reclen == 478
-    assert record.record[:2] == b"MS"
+
+    # The raw bytes belonged to the reader's buffer, released with the read
+    with pytest.raises(ValueError, match="No raw record available"):
+        record.record
+    with pytest.raises(ValueError, match="No raw record available"):
+        record.record_mv
+
+
+def test_tracelist_file_record_list_raw_record_unavailable():
+    """A file record list must not serve raw bytes from the reader's released
+    buffer, which a later read claims for itself."""
+    record = MS3TraceList.from_file(test_path3, record_list=True)[0][0].recordlist[0].record
+
+    # Reading another file has libmseed reuse the released buffer
+    MS3TraceList.from_file(os.path.join(test_dir, "data", "packtest_sine2000.mseed3"))
+
+    assert record.reclen == 478
+    with pytest.raises(ValueError, match="No raw record available"):
+        record.record
+
+
+def test_tracelist_buffer_record_list_holds_buffer():
+    """A buffer record list keeps its source buffer, so the raw records and
+    unpacking stay valid after the caller releases it."""
+    with open(test_path3, "rb") as fp:
+        data = fp.read()
+    buffer = bytearray(data)
+
+    traces = MS3TraceList.from_buffer(buffer, record_list=True)
+    segment = traces[0][0]
+    recordlist = segment.recordlist
+
+    # Reclaim and overwrite blocks the size of the released buffer, which the
+    # 4 KiB blocks of _churn_heap() do not reach
+    del buffer
+    gc.collect()
+    scratch = [bytearray(b"\xa5" * len(data)) for _ in range(20)]
+    del scratch
+
+    assert recordlist[0].record.record[:2] == b"MS"
+    assert segment.unpack_recordlist() == segment.samplecnt
+    assert segment.datasamples[0:3].tolist() == [-502916, -502808, -502691]
 
 
 def test_unpack_recordlist_from_temporary_tracelist():

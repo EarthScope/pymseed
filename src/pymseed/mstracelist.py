@@ -52,6 +52,12 @@ class MS3RecordPtr:
     def record(self) -> MS3Record:
         """Return a constructed MS3Record"""
         if not hasattr(self, "_msrecord"):
+            # A file-sourced entry retains msr->record from the reader's buffer,
+            # released with the read, so drop it rather than read freed memory.
+            # A buffer-sourced one points into a buffer the trace list holds.
+            if self._ptr.filename != ffi.NULL:
+                self._ptr.msr.record = ffi.NULL
+
             self._msrecord = MS3Record(recordptr=self._ptr.msr, owner=self._parent_tracelist)
         return self._msrecord
 
@@ -935,6 +941,11 @@ class MS3TraceList:
         # entries hold the pointer itself, so a buffer must outlive them.
         self._c_file_names: dict[bytes, Any] = {}
 
+        # Source buffers behind record list entries, which point into them
+        # rather than copying.  Held, not copied, so they cannot be released
+        # while the record lists refer to them.
+        self._buffer_refs: list[Any] = []
+
         # Read specified file
         if file_name is not None:
             self.add_file(
@@ -1325,8 +1336,8 @@ class MS3TraceList:
             record_list: If True, maintain a list of original records for each
                 trace segment. Required for `unpack_recordlist()` and allows
                 access to individual record metadata. Default: False
-                NOTE: the buffer must remain accessible to unpack data with a record list
-                This can be quite tricky to achieve, for advanced use only
+                NOTE: the record list entries point into the buffer, which the
+                trace list holds a reference to until it is discarded
 
             skip_not_data: If True, skip non-data records in the buffer instead
                 of raising an error. Useful for files with mixed content. Default: False
@@ -1438,6 +1449,12 @@ class MS3TraceList:
             raise ValueError("Buffer must support the buffer protocol") from None
 
         buffer_length = len(buffer_ptr)
+
+        # Record list entries point into the buffer instead of copying it, for
+        # both the raw records and unpacking.  Hold it before reading so the
+        # records a partial read added remain valid.
+        if record_list:
+            self._buffer_refs.append(buffer_ptr)
 
         # Build selections, if sourceid, starttime, or endtime are specified
         selections_ptr, free_selections = build_selections(sourceid, starttime, endtime)
