@@ -17,6 +17,9 @@ TEST_MSEED2_FILE = os.path.join(TEST_DATA_DIR, "testdata-COLA-signal.mseed2")
 # miniSEED v3 fixed header: byte 15 is the data encoding field
 _V3_ENCODING_OFFSET = 15
 
+# miniSEED v3 fixed header: bytes 36-39 are the payload length (uint32, LE)
+_V3_DATALENGTH_OFFSET = 36
+
 
 def get_test_buffer(filepath: str) -> bytes:
     """Read test file into a buffer."""
@@ -59,6 +62,32 @@ def _get_record_with_bad_encoding() -> bytes:
     rec = bytearray(records[0])
     rec[_V3_ENCODING_OFFSET] = 0xFF
     return bytes(rec)
+
+
+def _get_record_with_oversized_datalength() -> bytes:
+    """Get a miniSEED v3 record claiming a payload far beyond MAXRECLEN."""
+    import struct
+
+    rec = bytearray(get_test_records(TEST_MSEED3_FILE)[0])
+    struct.pack_into("<I", rec, _V3_DATALENGTH_OFFSET, 0xFFFFFF00)
+    return bytes(rec)
+
+
+class _CountingStream:
+    """Forward-only stream of `head` followed by `filler` NUL bytes, tracking
+    how much has been read."""
+
+    def __init__(self, head: bytes = b"", filler: int = 0) -> None:
+        self._head = head
+        self.total = len(head) + filler
+        self.pos = 0
+
+    def read(self, n: int) -> bytes:
+        n = min(n, self.total - self.pos)
+        start, end = self.pos, self.pos + n
+        self.pos = end
+        head = self._head[start:end]
+        return head + b"\x00" * (n - len(head))
 
 
 class TestMS3RecordValidatorBasic:
@@ -701,6 +730,62 @@ class TestMS3RecordValidatorFromFilelike:
         errors, traces = MS3RecordValidator.from_filelike(
             _ReadOnly(buffer), unpack_data=False
         ).validate()
+
+        assert len(errors) == 0
+        assert len(traces) > 0
+
+
+class TestMS3RecordValidatorUndetectableInput:
+    """Detection failures must be reported once they are conclusive, rather
+    than reading the rest of the stream in the hope of resolving them."""
+
+    def test_non_mseed_stream_reported_without_reading_it_all(self) -> None:
+        """Detection needs only MINRECLEN bytes to rule out miniSEED."""
+        chunk_size = 65536
+        stream = _CountingStream(filler=64 * chunk_size)
+
+        errors, traces = MS3RecordValidator.from_filelike(stream, chunk_size=chunk_size).validate()
+
+        assert len(traces) == 0
+        assert len(errors) == 1
+        assert "No miniSEED detected" in errors[0].message
+        assert errors[0].offset == 0
+        assert stream.pos <= chunk_size
+
+    def test_oversized_record_length_reported(self) -> None:
+        """A payload length beyond MAXRECLEN can never be satisfied, so it is
+        an error rather than a reason to keep reading."""
+        chunk_size = 65536
+        stream = _CountingStream(
+            head=_get_record_with_oversized_datalength(), filler=64 * chunk_size
+        )
+
+        errors, traces = MS3RecordValidator.from_filelike(stream, chunk_size=chunk_size).validate()
+
+        assert len(traces) == 0
+        assert len(errors) == 1
+        assert "exceeds the maximum supported" in errors[0].message
+        assert errors[0].offset == 0
+        assert stream.pos <= chunk_size
+
+    def test_oversized_record_length_reported_from_buffer(self) -> None:
+        """The buffer source reports the same oversized length as the stream
+        source."""
+        errors, traces = MS3RecordValidator.from_buffer(
+            _get_record_with_oversized_datalength()
+        ).validate()
+
+        assert len(traces) == 0
+        assert len(errors) == 1
+        assert "exceeds the maximum supported" in errors[0].message
+        assert errors[0].offset == 0
+
+    def test_record_spanning_several_chunks_still_validates(self) -> None:
+        """The early report must not pre-empt the legitimate 'need more bytes'
+        path, where a record is longer than a single chunk."""
+        stream = _CountingStream(head=get_test_buffer(TEST_MSEED3_FILE))
+
+        errors, traces = MS3RecordValidator.from_filelike(stream, chunk_size=64).validate()
 
         assert len(errors) == 0
         assert len(traces) > 0

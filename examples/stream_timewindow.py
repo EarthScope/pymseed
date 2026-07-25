@@ -9,7 +9,7 @@ Example usage:
  > stream_timewindow.py --earliest 2010-02-27T07:00:00 --latest 2010-02-27T07:10:00 < example_data.mseed > windowed.mseed
 
 This file is part of the pymseed package.
-Copyright (c) 2025, EarthScope Data Services
+Copyright (c) 2026, EarthScope Data Services
 """
 
 import argparse

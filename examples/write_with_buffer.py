@@ -34,7 +34,7 @@ The general pattern is (writing bytes to a file for example):
 ```
 
 This file is part of the the Python pymseed package.
-Copyright (c) 2025, EarthScope Data Services
+Copyright (c) 2026, EarthScope Data Services
 """
 
 import math

@@ -40,6 +40,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   outlives the reader or generator no longer reads freed memory.
 - `MS3Record.encoding_str()` and `util.encoding_string()` return `"Unset"` for the
   unset encoding (-1) instead of raising, so `repr()` works on an unpopulated record.
+- `MS3RecordValidator` now reports a detection failure as soon as it is conclusive
+  instead of buffering the rest of the stream, bounding memory on non-miniSEED input.
+- `MS3RecordValidator` now reports a record length beyond `MAXRECLEN`, e.g. from a
+  corrupt payload length, instead of validating the file as clean.
 
 ## [0.9.0] - 2026-05-17
 

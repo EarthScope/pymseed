@@ -9,7 +9,7 @@ Example usage:
   cat example_data.mseed | stream_stats.py > output.mseed
 
 This file is part of the pymseed package.
-Copyright (c) 2025, EarthScope Data Services
+Copyright (c) 2026, EarthScope Data Services
 """
 
 import pprint

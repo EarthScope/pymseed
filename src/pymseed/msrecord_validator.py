@@ -114,7 +114,7 @@ class _BufferSource:
                 buf_size - offset,
                 format_version,
             )
-            if reclen < 0:
+            if reclen < 0 or reclen > clibmseed.MAXRECLEN:
                 yield (None, offset, reclen)
                 return
             if reclen == 0 or offset + reclen > buf_size:
@@ -196,12 +196,22 @@ class _FileLikeSource:
                 )
 
                 if reclen < 0:
-                    # If not at EOF, we may simply not have enough
-                    # bytes for detection. Break to read more data.
-                    if eof:
+                    # Detection only fails for want of data below MINRECLEN
+                    # bytes; at or above that the failure is conclusive, so
+                    # report it rather than reading the rest of the stream.
+                    if eof or remaining >= clibmseed.MINRECLEN:
                         yield (None, file_offset, reclen)
                         return
                     break
+
+                # A length beyond the supported maximum, or an undetermined
+                # length with a maximum-length record already buffered, cannot
+                # be resolved by reading more data.
+                if reclen > clibmseed.MAXRECLEN or (
+                    reclen == 0 and remaining > clibmseed.MAXRECLEN
+                ):
+                    yield (None, file_offset, reclen)
+                    return
 
                 if reclen == 0 or reclen > remaining:
                     if eof:
@@ -496,6 +506,13 @@ class MS3RecordValidator:
                 if buf_ptr is None:
                     if record_length == -1:
                         reason = "No miniSEED detected"
+                    elif record_length == 0:
+                        reason = "Record length could not be determined"
+                    elif record_length > clibmseed.MAXRECLEN:
+                        reason = (
+                            f"Record length {record_length} exceeds the maximum "
+                            f"supported ({clibmseed.MAXRECLEN})"
+                        )
                     else:
                         reason = f"Record detection failed: {record_length}"
                     errors.append(

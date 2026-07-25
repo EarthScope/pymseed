@@ -8,7 +8,7 @@ Example:
   > python read_traces.py example_data.mseed
 
 This file is part of the pymseed package.
-Copyright (c) 2025, EarthScope Data Services
+Copyright (c) 2026, EarthScope Data Services
 """
 
 import argparse
