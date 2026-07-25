@@ -54,6 +54,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `MS3Record.parse()` and `parse_into()` report a truncated record as the number of
   bytes still needed instead of `Unknown error code: 414`. `MiniSEEDError` no longer
   looks up an error string for a non-negative status code, which is not an error code.
+- `MS3TraceSeg.unpack_recordlist()` raises `BufferError` for a read-only or
+  non-contiguous destination buffer instead of letting libmseed write into it, which
+  silently corrupted immutable objects such as `bytes`.
 
 ## [0.9.0] - 2026-05-17
 
@@ -288,6 +291,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CFFI-based bindings to libmseed
 
 [Unreleased]: https://github.com/EarthScope/pymseed/compare/v0.0.5...HEAD
+[0.9.1]: https://github.com/EarthScope/pymseed/releases/tag/v0.9.1
 [0.9.0]: https://github.com/EarthScope/pymseed/releases/tag/v0.9.0
 [0.8.1]: https://github.com/EarthScope/pymseed/releases/tag/v0.8.1
 [0.8.0]: https://github.com/EarthScope/pymseed/releases/tag/v0.8.0

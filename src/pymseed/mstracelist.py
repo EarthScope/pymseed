@@ -456,11 +456,11 @@ class MS3TraceSeg:
         workflows where you delay data unpacking until needed.
 
         Args:
-            buffer: Optional destination buffer for unpacked data. Must support the
-                buffer protocol (e.g., numpy array, bytearray, memoryview). If provided,
-                must be large enough to hold `self.samplecnt` samples of the appropriate
-                data type. If None, data is unpacked into internal memory owned by this
-                segment instance.
+            buffer: Optional destination buffer for unpacked data. Must be writable,
+                C-contiguous and support the buffer protocol (e.g., numpy array,
+                bytearray, writable memoryview). If provided, must be large enough to
+                hold `self.samplecnt` samples of the appropriate data type. If None,
+                data is unpacked into internal memory owned by this segment instance.
 
             verbose: Verbosity level for diagnostic output (0=quiet, 1-3=increasing
                 detail). Default: 0
@@ -472,6 +472,9 @@ class MS3TraceSeg:
             ValueError: If no record list is available (requires `record_list=True` when
                 reading), if data is already unpacked and a buffer is provided, or if
                 the provided buffer doesn't support the buffer protocol
+
+            BufferError: If the provided buffer is read-only or not C-contiguous, and so
+                cannot be written to
 
             MiniSEEDError: If unpacking fails due to corrupted or invalid record data
 
@@ -553,7 +556,9 @@ class MS3TraceSeg:
             ...                 # Create an arrow array to hold the unpacked data
             ...                 arrow_array = pa.array([0] * segment.samplecnt, type=pa.int32())
             ...
-            ...                 # Get the data buffer for direct writing
+            ...                 # Get the data buffer for direct writing. Buffers that
+            ...                 # arrow allocated itself are mutable; an imported one
+            ...                 # (e.g. pa.py_buffer(bytes)) is not and is rejected.
             ...                 array_bitmap, array_buffer = arrow_array.buffers()
             ...
             ...                 # Unpack the data directly into our array buffer
@@ -581,10 +586,18 @@ class MS3TraceSeg:
         buffer_ptr = ffi.NULL
         buffer_size = 0
         if buffer is not None:
+            # libmseed memcpys the decoded samples into this buffer, so require a
+            # writable one: without require_writable CFFI hands out the address of
+            # read-only objects (bytes, a read-only memoryview, an immutable
+            # pyarrow.Buffer) and the C code corrupts them with no error.
             try:
-                buffer_ptr = ffi.from_buffer(buffer)
+                buffer_ptr = ffi.from_buffer(buffer, require_writable=True)
             except TypeError:
                 raise ValueError("Buffer must support the buffer protocol") from None
+            except (BufferError, ValueError) as e:
+                # A read-only buffer raises BufferError, or ValueError when the
+                # exporter itself refuses (e.g. a read-only numpy array).
+                raise BufferError(f"Cannot unpack into the provided buffer: {e}") from None
 
             if hasattr(buffer, "nbytes"):
                 buffer_size = buffer.nbytes

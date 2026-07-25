@@ -435,6 +435,61 @@ def test_tracelist_unpack_recordlist_rejects_non_buffer():
     assert any(v != 0 for v in arr)  # buffer was actually written into
 
 
+def test_tracelist_unpack_recordlist_rejects_readonly_buffer():
+    """libmseed memcpys the decoded samples into the supplied buffer, so a
+    read-only one must be refused. Without require_writable=True, CFFI handed
+    out the address of immutable Python storage and the C code wrote straight
+    into it -- corrupting a `bytes` object with no error at all."""
+    traces = MS3TraceList.from_file(test_path3, record_list=True)
+
+    def fresh_segment():
+        return MS3TraceList.from_file(test_path3, record_list=True).get_traceid(
+            "FDSN:IU_COLA_00_B_H_Z"
+        )[0]
+
+    nbytes = traces.get_traceid("FDSN:IU_COLA_00_B_H_Z")[0].samplecnt * 4
+
+    immutable = bytes(nbytes)
+    with pytest.raises(BufferError, match="Cannot unpack into the provided buffer"):
+        fresh_segment().unpack_recordlist(buffer=immutable)
+
+    # The bytes object must be left untouched, not written through.
+    assert immutable == bytes(nbytes)
+
+    with pytest.raises(BufferError, match="Cannot unpack into the provided buffer"):
+        fresh_segment().unpack_recordlist(buffer=memoryview(bytes(nbytes)))
+
+    # A writable buffer of the same size still works.
+    writable = bytearray(nbytes)
+    seg = fresh_segment()
+    assert seg.unpack_recordlist(buffer=writable) == seg.samplecnt
+    assert any(writable)
+
+
+def test_tracelist_unpack_recordlist_rejects_unwritable_numpy():
+    """numpy refuses the buffer export itself, raising ValueError rather than
+    BufferError; both must surface as the same error for the caller."""
+    np = pytest.importorskip("numpy")
+
+    def fresh_segment():
+        return MS3TraceList.from_file(test_path3, record_list=True).get_traceid(
+            "FDSN:IU_COLA_00_B_H_Z"
+        )[0]
+
+    seg = fresh_segment()
+
+    readonly = np.zeros(seg.samplecnt, dtype=np.int32)
+    readonly.setflags(write=False)
+    with pytest.raises(BufferError, match="read-only"):
+        fresh_segment().unpack_recordlist(buffer=readonly)
+
+    # Writable but strided: libmseed would write a contiguous block over the
+    # whole span, not every other element.
+    strided = np.zeros(seg.samplecnt * 2, dtype=np.int32)[::2]
+    with pytest.raises(BufferError, match="contiguous"):
+        fresh_segment().unpack_recordlist(buffer=strided)
+
+
 def test_tracelist_generate_removed_packed_deprecated_alias():
     """`generate(removed_packed=...)` is a typo'd alias for `remove_packed`.
     Keep accepting it for backward compatibility but emit DeprecationWarning
