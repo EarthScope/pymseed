@@ -26,6 +26,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `MS3TraceList.get_traceid()`, the `sourceid` filtering argument,
   `configure_logging()` prefixes, `timestr2nstime()`, `sourceid2nslc()`, and
   `nslc2sourceid()`.
+- `MS3TraceList.add_data()` names the deprecated `start_time` aliases it counts
+  in the error for an ambiguous start time.
+- Deprecation notices share one wording; `MS3RecordReader`'s `input` alias and
+  the `pack()` methods no longer differ from the rest.
 
 ### Fixed
 - `MS3Record.from_filelike()` and `MS3TraceList.add_filelike()` reject a

@@ -1768,7 +1768,9 @@ class MS3TraceList:
         ]
         if len(provided) != 1:
             raise ValueError(
-                "Specify exactly one of starttime_str, starttime, or starttime_seconds"
+                "Specify exactly one of starttime_str, starttime, or "
+                "starttime_seconds, counting their deprecated start_time_str, "
+                f"start_time, and start_time_seconds aliases; got {len(provided)}"
             )
 
         name, value = provided[0]
@@ -1914,7 +1916,7 @@ class MS3TraceList:
         """
         # Issue deprecation warning
         warnings.warn(
-            "pack() is deprecated and will be removed in a future version. "
+            "pack() is deprecated and will be removed in a future release. "
             "Use generate() instead for a more Pythonic generator-based interface.",
             DeprecationWarning,
             stacklevel=2,

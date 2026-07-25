@@ -193,8 +193,8 @@ class MS3RecordReader:
                     "'input'; pass only 'source'"
                 )
             warnings.warn(
-                "'input' is a deprecated alias for 'source' and will be removed "
-                "in a future release; use 'source' instead.",
+                "'input' is a deprecated alias and will be removed in a future "
+                "release; use 'source' instead.",
                 DeprecationWarning,
                 stacklevel=2,
             )

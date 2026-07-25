@@ -1680,7 +1680,7 @@ class MS3Record:
         """
         # Issue deprecation warning
         warnings.warn(
-            "pack() is deprecated and will be removed in a future version. "
+            "pack() is deprecated and will be removed in a future release. "
             "Use generate() instead for a more Pythonic generator-based interface.",
             DeprecationWarning,
             stacklevel=2,

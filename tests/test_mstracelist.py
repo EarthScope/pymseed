@@ -440,13 +440,15 @@ def test_tracelist_add_data_rejects_ambiguous_time_arguments():
         with pytest.raises(ValueError, match="exactly one of"):
             MS3TraceList().add_data(**common, **canonical, **alias)
 
-    # Mixing a canonical name with a *different* slot's alias is also rejected.
-    with pytest.raises(ValueError, match="exactly one of"):
+    # Mixing a canonical name with a *different* slot's alias is also rejected,
+    # and the message names the aliases it counted.
+    with pytest.raises(ValueError, match="deprecated start_time_str") as excinfo:
         MS3TraceList().add_data(
             **common,
             starttime_str="2023-01-01T00:00:00.000Z",
             start_time=1672531200_000000000,
         )
+    assert "exactly one of" in str(excinfo.value)
 
     # Exactly one passed: each form still works.
     for tkw in (
