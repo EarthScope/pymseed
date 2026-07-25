@@ -158,6 +158,7 @@ class MS3Record:
         "_msr",
         "_msr_allocated",
         "_owner",
+        "_raw_reclen",
     )
 
     def __init__(
@@ -223,6 +224,8 @@ class MS3Record:
                 self._msr.reclen = reclen
             if encoding is not None:
                 self._msr.encoding = encoding
+
+        self._pin_raw_reclen()
 
         self._owner = owner
 
@@ -297,17 +300,22 @@ class MS3Record:
             f"{self.starttime_str(timeformat=TimeFormat.ISOMONTHDAY_DOY_Z)}"
         )
 
+    def _pin_raw_reclen(self) -> None:
+        """Note the length parsed with the raw record, which `reclen` no longer
+        holds once it is set as a maximum for repacking."""
+        self._raw_reclen = self._msr.reclen if self._msr.record != ffi.NULL else None
+
     @property
     def record(self) -> bytes:
         """Return raw, parsed miniSEED record as bytes (copy)"""
-        if self._msr.record == ffi.NULL:
-            raise ValueError("No raw record available")
-
-        return bytes(ffi.buffer(self._msr.record, self._msr.reclen)[:])
+        return bytes(self.record_mv)
 
     @property
     def record_mv(self) -> memoryview:
         """Return raw, parsed miniSEED record as a memoryview (no copy).
+
+        The record is returned as it was parsed, whatever ``reclen`` has been
+        set to since.
 
         The memoryview references C memory owned by this MS3Record and
         does not keep it alive on its own. The caller must keep this
@@ -320,16 +328,19 @@ class MS3Record:
         if self._msr.record == ffi.NULL:
             raise ValueError("No raw record available")
 
-        return memoryview(ffi.buffer(self._msr.record, self._msr.reclen))
+        reclen = self._msr.reclen if self._raw_reclen is None else self._raw_reclen
+
+        return memoryview(ffi.buffer(self._msr.record, reclen))
 
     @property
     def reclen(self) -> int:
-        """Return record length in bytes"""
+        """Return the parsed record length in bytes, or the maximum length set
+        for packing (-1 for the library default)"""
         return self._msr.reclen
 
     @reclen.setter
     def reclen(self, value: int) -> None:
-        """Set maximum record length in bytes"""
+        """Set maximum record length in bytes, used when packing"""
         self._msr.reclen = value
 
     @property
@@ -2549,6 +2560,8 @@ class MS3Record:
             self._msr = msr_ptr[0]
         else:
             self._msr = clibmseed.msr3_init(ffi.NULL)
+
+        self._pin_raw_reclen()
 
         # msr->record points into `buffer` rather than a copy; hold it so it
         # cannot be released while this record refers to it.

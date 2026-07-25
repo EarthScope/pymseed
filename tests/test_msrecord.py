@@ -820,6 +820,42 @@ class TestMS3RecordParse:
         assert mv.itemsize == 1
         assert mv.shape == (msr.reclen,)
 
+    def test_record_keeps_parsed_length_after_reclen_change(self):
+        """reclen doubles as the maximum length for packing, so setting it must
+        not resize the raw record, which is read from the source buffer."""
+        with open(test_pack3, "rb") as f:
+            buf = f.read()  # exactly one 475 byte record
+
+        msr = MS3Record.parse(buf, unpack_data=True)
+        msr.reclen = 4096
+
+        assert msr.reclen == 4096
+        assert msr.record == buf
+        assert len(msr.record_mv) == len(buf)
+
+        # The new length is still honored as the maximum for repacking
+        records = list(msr.generate())
+        assert len(records) == 1
+        assert len(records[0]) <= 4096
+
+    def test_parse_into_repins_record_length(self):
+        """parse_into() sizes the raw record by the newly parsed length, not by
+        a reclen left over from the previous record."""
+        with open(test_pack3, "rb") as f:
+            first = f.read()
+        with open(test_repack3_output, "rb") as f:
+            buf = f.read()
+
+        second = buf[: MS3Record.parse(buf).reclen]
+        assert len(second) != len(first)
+
+        # parse() owns its struct, which parse_into() requires
+        msr = MS3Record.parse(first)
+        msr.reclen = 4096
+        msr.parse_into(second)
+
+        assert msr.record == second
+
     def test_parse_into_reuses_owning_wrapper(self):
         """parse_into() works on a default-constructed (owning) wrapper."""
         with open(test_pack3, "rb") as f:
