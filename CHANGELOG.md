@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-07-25
+
 ### Added
 - `MS3RecordValidator` now checks that each record does not contain future data
   based on the system clock.  The new `future_data_tolerance` option sets the
