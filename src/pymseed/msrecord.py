@@ -2184,8 +2184,8 @@ class MS3Record:
 
         Args:
             fh: A file-like object with a ``.read(n)`` method that returns ``bytes``.
-            chunk_size: Number of bytes to read per ``.read()`` call.
-                Default is 65536.
+            chunk_size: Number of bytes to read per ``.read()`` call, greater
+                than 0 and less than 1 GiB. Default is 65536.
             unpack_data: If ``True``, decode data samples for each record.
                 Default is ``False``.
             sourceid: Source ID glob pattern to select matching records
@@ -2206,7 +2206,9 @@ class MS3Record:
             MS3Record: Each parsed record. Valid only until the next iteration.
 
         Raises:
-            ValueError: If ``starttime`` or ``endtime`` is not a valid
+            TypeError: If ``fh`` has no callable ``.read`` method.
+            ValueError: If ``chunk_size`` is not greater than 0 and less than
+                1 GiB, or if ``starttime`` or ``endtime`` is not a valid
                 date-time string.
             MiniSEEDError: If a record cannot be parsed, or if the stream ends
                 part way through a record, or with bytes remaining that are too
@@ -2249,6 +2251,34 @@ class MS3Record:
             from_buffer(): Iterate over records in a complete in-memory buffer
             from_file(): Iterate over records in a file
         """
+        if not callable(getattr(fh, "read", None)):
+            raise TypeError(
+                "fh must be a file-like object exposing a callable .read(n) "
+                f"method; got {type(fh).__name__}"
+            )
+
+        if chunk_size <= 0:
+            raise ValueError("chunk_size must be greater than 0")
+        elif chunk_size > 1_073_741_824:
+            raise ValueError("chunk_size must be less than 1 GiB")
+
+        return cls._iter_filelike(
+            fh, chunk_size, unpack_data, sourceid, starttime, endtime, validate_crc, verbose
+        )
+
+    @classmethod
+    def _iter_filelike(
+        cls,
+        fh: Any,
+        chunk_size: int,
+        unpack_data: bool,
+        sourceid: str | None,
+        starttime: str | None,
+        endtime: str | None,
+        validate_crc: bool,
+        verbose: int,
+    ) -> Iterator[MS3Record]:
+        """Generator behind from_filelike(), which validates the arguments."""
         ensure_thread_logging()
 
         msr_ptr = ffi.new("MS3Record **")

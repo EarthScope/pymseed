@@ -10,6 +10,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - `MS3Record.to_file()` accepts `os.PathLike` filenames and encodes them with
   `os.fsencode()`, matching the rest of the package.
+- `MS3RecordValidator.from_file()` validates the filename type when called,
+  raising `TypeError` as the other path-accepting entry points do, instead of
+  accepting `bytes` and deferring to `open()` in `validate()`.
+- `MS3Record.from_filelike()` and `MS3TraceList.add_filelike()` raise
+  `TypeError` when the stream has no callable `.read`, matching
+  `MS3RecordValidator.from_filelike()`.
+
+### Fixed
+- `MS3Record.from_filelike()` and `MS3TraceList.add_filelike()` reject a
+  `chunk_size` outside 1 byte to 1 GiB; a `chunk_size` of 0 read no records
+  and reported success.
 
 ## [0.9.1] - 2026-07-25
 

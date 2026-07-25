@@ -1507,8 +1507,8 @@ class MS3TraceList:
         Args:
             fh: A file-like object with a ``.read(n)`` method returning bytes.
 
-            chunk_size: Number of bytes to read per ``.read()`` call.
-                Default: 65536.
+            chunk_size: Number of bytes to read per ``.read()`` call, greater
+                than 0 and less than 1 GiB. Default: 65536.
 
             unpack_data: If True, decode data samples immediately.
                 Default: False.
@@ -1542,7 +1542,9 @@ class MS3TraceList:
             verbose: Verbosity level for libmseed diagnostics. Default: 0.
 
         Raises:
-            ValueError: If ``starttime`` or ``endtime`` is not a valid
+            TypeError: If ``fh`` has no callable ``.read`` method.
+            ValueError: If ``chunk_size`` is not greater than 0 and less than
+                1 GiB, or if ``starttime`` or ``endtime`` is not a valid
                 date-time string.
             MiniSEEDError: If a record cannot be parsed or cannot be added
                 to the trace list.
@@ -1575,6 +1577,17 @@ class MS3TraceList:
             >>> traces[0].sourceid
             'FDSN:IU_COLA_00_L_H_Z'
         """
+        if not callable(getattr(fh, "read", None)):
+            raise TypeError(
+                "fh must be a file-like object exposing a callable .read(n) "
+                f"method; got {type(fh).__name__}"
+            )
+
+        if chunk_size <= 0:
+            raise ValueError("chunk_size must be greater than 0")
+        elif chunk_size > 1_073_741_824:
+            raise ValueError("chunk_size must be less than 1 GiB")
+
         flags = clibmseed.MSF_PPUPDATETIME
         if skip_not_data:
             flags |= clibmseed.MSF_SKIPNOTDATA

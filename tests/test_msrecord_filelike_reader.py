@@ -42,6 +42,28 @@ def test_from_filelike_equivalence_v2():
     assert sample_count == 252000
 
 
+def test_from_filelike_rejects_non_filelike():
+    """Without a .read() method, fail at the call rather than with a
+    context-free AttributeError on the first iteration."""
+
+    class _NonCallableRead:
+        read = "this is not a method"
+
+    for bad in (b"raw bytes", "/some/path", None, 42, [1, 2], _NonCallableRead()):
+        with pytest.raises(TypeError, match="callable .read"):
+            MS3Record.from_filelike(bad)
+
+
+def test_from_filelike_chunk_size_validation():
+    """chunk_size <= 0 and > 1 GiB raise ValueError; a chunk_size of 0 read
+    nothing and reported success."""
+    data = _read(test_path2)
+
+    for bad in (0, -1, 1_073_741_825):
+        with pytest.raises(ValueError, match="chunk_size"):
+            MS3Record.from_filelike(io.BytesIO(data), chunk_size=bad)
+
+
 def test_from_filelike_small_chunk_size():
     data = _read(test_path3)
     expected = [(msr.sourceid, msr.samplecnt) for msr in MS3Record.from_buffer(data)]

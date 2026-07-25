@@ -364,7 +364,8 @@ class MS3RecordValidator:
 
         Args:
             filename: Path to miniSEED file. Accepts ``str`` or any
-                :class:`os.PathLike` (e.g. :class:`pathlib.Path`).
+                :class:`os.PathLike` (e.g. :class:`pathlib.Path`); other types
+                raise :class:`TypeError`.
             chunk_size: Read chunk size in bytes. Default is 10 MiB.
             **kwargs: Passed to ``MS3RecordValidator.__init__``.
 
@@ -372,6 +373,10 @@ class MS3RecordValidator:
             A new ``MS3RecordValidator`` instance.
 
         Raises:
+            TypeError: If filename is not a str or os.PathLike.
+
+            ValueError: If chunk_size is not greater than 0 and less than 1 GiB.
+
             OSError: File-open failures (e.g. :class:`FileNotFoundError`,
                 :class:`PermissionError`, :class:`IsADirectoryError`)
                 propagate from :meth:`validate` as the corresponding
@@ -385,6 +390,11 @@ class MS3RecordValidator:
 
             errors, traces = MS3RecordValidator.from_file("data.mseed").validate()
         """
+        if isinstance(filename, os.PathLike):
+            filename = os.fspath(filename)
+        elif not isinstance(filename, str):
+            raise TypeError(f"filename must be str or os.PathLike; got {type(filename).__name__}")
+
         if chunk_size <= 0:
             raise ValueError("chunk_size must be greater than 0")
         elif chunk_size > 1_073_741_824:

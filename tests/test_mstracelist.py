@@ -1948,6 +1948,27 @@ def test_tracelist_add_filelike_appends():
         assert len(tid) == 2
 
 
+def test_tracelist_filelike_rejects_non_filelike():
+    """Without a .read() method, fail with a TypeError naming the requirement
+    rather than a context-free AttributeError from the first chunk read."""
+    for bad in (b"raw bytes", "/some/path", None, 42, [1, 2]):
+        with pytest.raises(TypeError, match="callable .read"):
+            MS3TraceList().add_filelike(bad)
+        with pytest.raises(TypeError, match="callable .read"):
+            MS3TraceList.from_filelike(bad)
+
+
+def test_tracelist_filelike_chunk_size_validation():
+    """chunk_size <= 0 and > 1 GiB raise ValueError; a chunk_size of 0 read
+    nothing and reported success."""
+    with open(test_path3, "rb") as fp:
+        buf = fp.read()
+
+    for bad in (0, -1, 1_073_741_825):
+        with pytest.raises(ValueError, match="chunk_size"):
+            MS3TraceList.from_filelike(io.BytesIO(buf), chunk_size=bad)
+
+
 def test_tracelist_filelike_small_chunk_size():
     """Tiny chunk_size still produces correct results (exercises sliding-buffer path)."""
     with open(test_path3, "rb") as fp:

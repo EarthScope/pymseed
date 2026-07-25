@@ -781,6 +781,21 @@ class TestMS3RecordValidatorFromFilelike:
         with pytest.raises(ValueError):
             MS3RecordValidator.from_filelike(fh, chunk_size=1_073_741_825)
 
+    def test_from_file_rejects_invalid_filename_types(self) -> None:
+        """Bad filename types fail at the factory with the same TypeError the
+        other path-accepting entry points raise, not later from open()."""
+        for bad in (b"some/path", None, ["a", "b"], 3.14):
+            with pytest.raises(TypeError, match="filename must be"):
+                MS3RecordValidator.from_file(bad)
+
+    def test_from_file_accepts_pathlike(self) -> None:
+        import pathlib
+
+        errors, traces = MS3RecordValidator.from_file(pathlib.Path(TEST_MSEED3_FILE)).validate()
+
+        assert len(errors) == 0
+        assert len(traces) > 0
+
     def test_from_file_propagates_open_errors(self, tmp_path) -> None:
         """File-open failures must propagate as OSError subclasses from
         validate(), not get swallowed into the errors list. The caller relies
