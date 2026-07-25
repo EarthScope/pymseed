@@ -10,7 +10,6 @@ import sys
 import warnings
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
-from importlib.resources import files
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -18,6 +17,13 @@ if TYPE_CHECKING:
 
 from pymseed._json import json_dumps_minified, json_loads
 
+from ._extra_headers_jsonschema import (
+    _IMPORT_ERROR_MESSAGE,
+    JSONSCHEMA_MISSING,
+    KNOWN_SCHEMAS,
+    load_extra_headers_validator,
+    validator_for_extra_headers_schema,
+)
 from .clib import clibmseed, ffi
 from .definitions import SubSecond, TimeFormat
 from .exceptions import MiniSEEDError
@@ -994,28 +1000,23 @@ class MS3Record:
         if not self.extra:
             return []
 
-        from ._extra_headers_jsonschema import validator_for_extra_headers_schema
-
-        # Resolve schema bytes
         if schema_file is None:
-            if schema_id == "FDSN-v1.0":
-                schema_bytes = (
-                    files("pymseed.schemas")
-                    .joinpath("ExtraHeaders-FDSN-v1.0.schema-2020-12.json")
-                    .read_bytes()
-                )
-            else:
+            if schema_id not in KNOWN_SCHEMAS:
                 raise ValueError(f"Unknown schema_id: {schema_id}")
+
+            # Process-wide cache: the bundled schema is read, parsed and
+            # compiled once rather than on every call.
+            validator, load_error = load_extra_headers_validator(schema_id)
+
+            if validator is None:
+                if load_error == JSONSCHEMA_MISSING:
+                    raise ImportError(_IMPORT_ERROR_MESSAGE)
+                raise ValueError(f"Cannot validate extra headers: {load_error}")
         else:
             with open(schema_file, "rb") as fh:
-                schema_bytes = fh.read()
+                validator = validator_for_extra_headers_schema(json_loads(fh.read()))
 
-        schema = json_loads(schema_bytes)
-        instance = json_loads(self.extra)
-
-        validator = validator_for_extra_headers_schema(schema)
-
-        return list(validator.iter_errors(instance))
+        return list(validator.iter_errors(json_loads(self.extra)))
 
     def valid_extra_headers(
         self, schema_id: str = "FDSN-v1.0", schema_file: str | None = None

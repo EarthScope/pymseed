@@ -271,23 +271,23 @@ class TestExtraHeadersSchemaLoadFailures:
 
     @pytest.fixture(autouse=True)
     def _clear_schema_cache(self):
-        from pymseed import msrecord_validator as mv
+        from pymseed import _extra_headers_jsonschema as ehjs
 
-        mv._load_extra_headers_validator.cache_clear()
+        ehjs.load_extra_headers_validator.cache_clear()
         yield
-        mv._load_extra_headers_validator.cache_clear()
+        ehjs.load_extra_headers_validator.cache_clear()
 
     def test_corrupt_schema_file_does_not_abort_validation(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """If json_loads on the bundled schema raises, validate() must still
         complete and emit a 'schema load failed' warning per affected record."""
-        from pymseed import msrecord_validator as mv
+        from pymseed import _extra_headers_jsonschema as ehjs
 
         def boom(_data: bytes) -> object:
             raise ValueError("simulated corrupt schema JSON")
 
-        monkeypatch.setattr(mv, "json_loads", boom)
+        monkeypatch.setattr(ehjs, "json_loads", boom)
 
         buffer = _get_record_with_bad_extra_headers()
         errors, _ = MS3RecordValidator.from_buffer(
@@ -308,7 +308,7 @@ class TestExtraHeadersSchemaLoadFailures:
     ) -> None:
         """A missing bundled schema (corrupt install) must downgrade to a
         per-record warning, not crash."""
-        from pymseed import msrecord_validator as mv
+        from pymseed import _extra_headers_jsonschema as ehjs
 
         class _FakeJoin:
             def joinpath(self, *_args: object) -> "_FakeJoin":
@@ -317,7 +317,7 @@ class TestExtraHeadersSchemaLoadFailures:
             def read_bytes(self) -> bytes:
                 raise FileNotFoundError("simulated missing schema file")
 
-        monkeypatch.setattr(mv, "files", lambda _pkg: _FakeJoin())
+        monkeypatch.setattr(ehjs, "files", lambda _pkg: _FakeJoin())
 
         buffer = _get_record_with_bad_extra_headers()
         errors, _ = MS3RecordValidator.from_buffer(
@@ -337,9 +337,11 @@ class TestExtraHeadersSchemaLoadFailures:
         the schema-load failure must produce exactly one 'skipped' warning,
         not one-per-record — otherwise the errors list is drowned in
         duplicated noise."""
-        from pymseed import msrecord_validator as mv
+        from pymseed import _extra_headers_jsonschema as ehjs
 
-        monkeypatch.setattr(mv, "json_loads", lambda _b: (_ for _ in ()).throw(ValueError("boom")))
+        monkeypatch.setattr(
+            ehjs, "json_loads", lambda _b: (_ for _ in ()).throw(ValueError("boom"))
+        )
 
         # Build a buffer with several records, all carrying extra headers.
         records = get_test_records(TEST_MSEED3_FILE)
@@ -362,7 +364,7 @@ class TestExtraHeadersSchemaLoadFailures:
         """The loader's cached outcome must be reused across repeated
         validate() calls and across separate validator instances using the
         same schema_id — verified by inspecting cache_info."""
-        from pymseed import msrecord_validator as mv
+        from pymseed import _extra_headers_jsonschema as ehjs
 
         buffer = _get_record_with_bad_extra_headers()
 
@@ -370,7 +372,7 @@ class TestExtraHeadersSchemaLoadFailures:
         MS3RecordValidator.from_buffer(
             buffer, validate_crc=False, validate_extra_headers=True
         ).validate()
-        info1 = mv._load_extra_headers_validator.cache_info()
+        info1 = ehjs.load_extra_headers_validator.cache_info()
         assert info1.misses == 1
         assert info1.hits == 0
 
@@ -378,7 +380,7 @@ class TestExtraHeadersSchemaLoadFailures:
         MS3RecordValidator.from_buffer(
             buffer, validate_crc=False, validate_extra_headers=True
         ).validate()
-        info2 = mv._load_extra_headers_validator.cache_info()
+        info2 = ehjs.load_extra_headers_validator.cache_info()
         assert info2.misses == 1, "expected no additional schema load"
         assert info2.hits == 1
 

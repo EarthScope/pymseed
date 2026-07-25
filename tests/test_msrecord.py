@@ -959,3 +959,119 @@ class TestHeaderOnlyMS3Record:
         assert parsed.numsamples == 0
         assert parsed.pubversion == 1
         assert json.loads(parsed.extra) == self.headers
+
+
+class TestValidateExtraHeaders:
+    """MS3Record.validate_extra_headers() shares the process-wide schema cache
+    with MS3RecordValidator instead of re-reading, re-parsing and re-compiling
+    the bundled schema on every call."""
+
+    VALID = '{"FDSN":{"Time":{"Quality":100,"Correction":1.234}}}'
+    INVALID = '{"FDSN":{"Time":{"Quality":"really good"}}}'
+
+    @pytest.fixture(autouse=True)
+    def _clear_schema_cache(self):
+        from pymseed import _extra_headers_jsonschema as ehjs
+
+        ehjs.load_extra_headers_validator.cache_clear()
+        yield
+        ehjs.load_extra_headers_validator.cache_clear()
+
+    def test_repeated_calls_reuse_the_cached_validator(self):
+        """The bundled schema must be loaded once, not once per call."""
+        pytest.importorskip("jsonschema_rs")
+        from pymseed import _extra_headers_jsonschema as ehjs
+
+        msr = MS3Record()
+        msr.extra = self.VALID
+
+        for _ in range(5):
+            assert msr.validate_extra_headers() == []
+
+        info = ehjs.load_extra_headers_validator.cache_info()
+        assert info.misses == 1
+        assert info.hits == 4
+
+    def test_validation_results_unchanged(self):
+        """Caching the validator must not change what it reports."""
+        pytest.importorskip("jsonschema_rs")
+
+        msr = MS3Record()
+
+        msr.extra = self.VALID
+        assert msr.validate_extra_headers() == []
+        assert msr.valid_extra_headers() is True
+
+        msr.extra = self.INVALID
+        assert len(msr.validate_extra_headers()) == 1
+        assert msr.valid_extra_headers() is False
+
+    def test_no_extra_headers_returns_empty_without_loading(self):
+        """An empty extra-header string short-circuits before the schema load."""
+        from pymseed import _extra_headers_jsonschema as ehjs
+
+        assert MS3Record().validate_extra_headers() == []
+        assert ehjs.load_extra_headers_validator.cache_info().misses == 0
+
+    def test_unknown_schema_id_rejected(self):
+        """The unknown-schema_id error must not be flattened into the loader's
+        generic 'failed to load' message."""
+        msr = MS3Record()
+        msr.extra = self.VALID
+
+        with pytest.raises(ValueError, match="Unknown schema_id: bogus"):
+            msr.validate_extra_headers(schema_id="bogus")
+
+    def test_schema_file_takes_precedence_and_is_not_cached(self, tmp_path):
+        """An explicit schema_file bypasses the cache, which is keyed on the
+        bundled schema_id only."""
+        pytest.importorskip("jsonschema_rs")
+        from pymseed import _extra_headers_jsonschema as ehjs
+
+        # A schema that rejects everything, unlike the bundled FDSN schema.
+        schema = tmp_path / "reject-all.json"
+        schema.write_text(
+            json.dumps({"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}})
+        )
+
+        msr = MS3Record()
+        msr.extra = self.VALID
+
+        assert len(msr.validate_extra_headers(schema_file=str(schema))) == 1
+        assert ehjs.load_extra_headers_validator.cache_info().misses == 0
+
+    def test_load_failure_raises(self, monkeypatch):
+        """Unlike MS3RecordValidator, which downgrades a load failure to a
+        per-record warning, a direct call must not silently report 'valid'."""
+        from pymseed import _extra_headers_jsonschema as ehjs
+
+        class _FakeJoin:
+            def joinpath(self, *_args):
+                return self
+
+            def read_bytes(self):
+                raise FileNotFoundError("simulated missing schema file")
+
+        monkeypatch.setattr(ehjs, "files", lambda _pkg: _FakeJoin())
+
+        msr = MS3Record()
+        msr.extra = self.VALID
+
+        with pytest.raises(ValueError, match="bundled schema file unavailable"):
+            msr.validate_extra_headers()
+
+    def test_missing_jsonschema_reported_as_importerror(self, monkeypatch):
+        """The optional dependency stays an ImportError rather than becoming a
+        generic load failure once routed through the loader."""
+        from pymseed import _extra_headers_jsonschema as ehjs
+
+        def no_jsonschema(_schema):
+            raise ImportError(ehjs._IMPORT_ERROR_MESSAGE)
+
+        monkeypatch.setattr(ehjs, "validator_for_extra_headers_schema", no_jsonschema)
+
+        msr = MS3Record()
+        msr.extra = self.VALID
+
+        with pytest.raises(ImportError, match="jsonschema-rs is not installed"):
+            msr.validate_extra_headers()

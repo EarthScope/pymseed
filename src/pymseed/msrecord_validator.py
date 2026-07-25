@@ -8,14 +8,13 @@ parse when possible.
 
 from __future__ import annotations
 
-import functools
 import math
 import os
 from collections.abc import Iterator
 from dataclasses import dataclass
-from importlib.resources import files
 from typing import Any
 
+from ._extra_headers_jsonschema import KNOWN_SCHEMAS, load_extra_headers_validator
 from ._json import json_loads
 from .clib import clibmseed, ffi
 from .logging import clear_error_messages, ensure_thread_logging, get_error_messages
@@ -24,11 +23,6 @@ from .util import nstime2timestr, system_time
 
 # (buf_ptr, absolute_offset, record_length) — or (None, offset, error_code) for detection failure
 _RecordTuple = tuple[Any, int, int]
-
-# Maps supported schema IDs to their bundled JSON Schema filenames
-_KNOWN_SCHEMAS: dict[str, str] = {
-    "FDSN-v1.0": "ExtraHeaders-FDSN-v1.0.schema-2020-12.json",
-}
 
 
 def _timestr(nstime: int) -> str:
@@ -43,38 +37,6 @@ def _timestr(nstime: int) -> str:
         return nstime2timestr(nstime)
     except ValueError:
         return f"{nstime} ns"
-
-
-@functools.cache
-def _load_extra_headers_validator(schema_id: str) -> tuple[Any, str | None]:
-    """Load (and cache) the JSON schema validator for ``schema_id``.
-
-    Returns ``(validator, None)`` on success, or ``(None, error_message)``
-    on any failure. The result is cached at the module level via
-    :func:`functools.cache` so the bundled-schema read + JSON parse +
-    jsonschema-rs validator compile happens at most once per process per
-    schema. Both success and failure outcomes are cached, so a broken
-    install reports the same descriptive error without retrying the
-    failing load on every record.
-
-    Tests that need to exercise distinct loading outcomes for the same
-    ``schema_id`` should call ``_load_extra_headers_validator.cache_clear()``
-    between scenarios.
-    """
-    try:
-        from ._extra_headers_jsonschema import validator_for_extra_headers_schema
-
-        schema_bytes = files("pymseed.schemas").joinpath(_KNOWN_SCHEMAS[schema_id]).read_bytes()
-        validator = validator_for_extra_headers_schema(json_loads(schema_bytes))
-        return validator, None
-    except ImportError:
-        return None, "jsonschema-rs not installed"
-    except (FileNotFoundError, OSError) as e:
-        return None, f"bundled schema file unavailable: {e}"
-    except Exception as e:
-        # Covers json_loads failure, jsonschema-rs validator-construction
-        # errors, etc. — any of these means the install is broken.
-        return None, f"failed to load JSON schema: {type(e).__name__}: {e}"
 
 
 @dataclass(frozen=True)
@@ -494,11 +456,9 @@ class MS3RecordValidator:
         _eh_load_error: str | None = None
         _eh_load_warning_emitted = False
         if self._validate_extra_headers:
-            if self._extra_headers_schema not in _KNOWN_SCHEMAS:
+            if self._extra_headers_schema not in KNOWN_SCHEMAS:
                 raise ValueError(f"Unknown schema_id: {self._extra_headers_schema}")
-            _eh_validator, _eh_load_error = _load_extra_headers_validator(
-                self._extra_headers_schema
-            )
+            _eh_validator, _eh_load_error = load_extra_headers_validator(self._extra_headers_schema)
 
         try:
             for buf_ptr, offset, record_length in self._source:

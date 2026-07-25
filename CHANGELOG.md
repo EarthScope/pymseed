@@ -47,6 +47,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `MS3Record.with_datasamples()`, and therefore `generate()`, `to_file()` and
   `MS3TraceList.add_data()`, now reject a multi-dimensional `data_samples` buffer
   instead of silently keeping only the first dimension.
+- `MS3Record.validate_extra_headers()` and `valid_extra_headers()` reuse the cached
+  schema validator instead of re-reading and recompiling the bundled schema on every
+  call. A failure to load the bundled schema now raises `ValueError` rather than the
+  underlying `OSError`.
 
 ## [0.9.0] - 2026-05-17
 
