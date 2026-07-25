@@ -517,6 +517,52 @@ def test_msrecord_encoding_setter():
     assert msr.encoding == DataEncoding.FLOAT32
 
 
+def test_msrecord_numeric_setter_ranges():
+    """Out-of-range header fields raise ValueError like encoding does, not the
+    OverflowError cffi produces when the value reaches the C struct."""
+    msr = MS3Record()
+
+    for value in (0, 255):
+        msr.flags = value
+        assert msr.flags == value
+        msr.pubversion = value
+        assert msr.pubversion == value
+
+    for value in (-1, 256, 999):
+        with pytest.raises(ValueError, match="flags must be in the range 0..255"):
+            msr.flags = value
+        with pytest.raises(ValueError, match="pubversion must be in the range 0..255"):
+            msr.pubversion = value
+
+    # -1 is the documented library-default sentinel for reclen
+    for value in (-1, 1, 512, clibmseed.MAXRECLEN):
+        msr.reclen = value
+        assert msr.reclen == value
+
+    for value in (0, -2, clibmseed.MAXRECLEN + 1, 2**40):
+        with pytest.raises(ValueError, match="reclen must be"):
+            msr.reclen = value
+
+
+def test_msrecord_string_setters_reject_non_str():
+    """Non-str values raise TypeError rather than an AttributeError from
+    .encode() deeper in the call."""
+    msr = MS3Record()
+
+    for bad in (b"FDSN:XX_TEST__B_S_X", None, 42):
+        with pytest.raises(TypeError, match="sourceid must be str"):
+            msr.sourceid = bad
+
+    with pytest.raises(TypeError, match="timestr must be str"):
+        msr.set_starttime_str(42)
+
+    with pytest.raises(TypeError, match="ptr must be str"):
+        msr.get_extra_header(42)
+
+    with pytest.raises(TypeError, match="ptr must be str"):
+        msr.set_extra_header(42, "value")
+
+
 def test_msrecord_sourceid_setter():
     """Setter accepts boundary lengths, overwrites cleanly, and rejects oversize."""
 

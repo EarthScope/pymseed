@@ -1458,6 +1458,41 @@ def test_mstracelist_generate_validates_format_version_eagerly():
     assert len(list(traces.generate(format_version=2, max_record_length=512))) == 1
 
 
+def test_mstracelist_validates_encoding_range():
+    """An out-of-range encoding raises the same ValueError MS3Record.encoding
+    does, rather than the OverflowError cffi produces at the C call."""
+    traces = MS3TraceList()
+    traces.add_data(
+        sourceid="FDSN:XX_STA__B_H_Z",
+        data_samples=[1, 2, 3, 4, 5],
+        sample_type="i",
+        sample_rate=100.0,
+        starttime_str="2023-01-01T00:00:00Z",
+    )
+
+    for bad in (-1, 256, 9999):
+        with pytest.raises(ValueError, match="encoding must be in the range 0..255"):
+            traces.generate(encoding=bad)
+        with pytest.raises(ValueError, match="encoding must be in the range 0..255"):
+            traces.to_file("unused.mseed", encoding=bad)
+
+
+def test_tracelist_get_traceid_rejects_non_str():
+    traces = MS3TraceList(file_name=test_path3)
+
+    for bad in (b"FDSN:XX_STA__B_H_Z", None, 42):
+        with pytest.raises(TypeError, match="sourceid must be str"):
+            traces.get_traceid(bad)
+
+
+def test_tracelist_selection_rejects_non_str_sourceid():
+    """Filtering kwargs are encoded for C the same way, so they get the same
+    TypeError instead of an AttributeError from .encode()."""
+    for bad in (b"FDSN:XX_*", 42, ["a"]):
+        with pytest.raises(TypeError, match="sourceid must be str"):
+            MS3TraceList.from_file(test_path3, sourceid=bad)
+
+
 def test_mstracelist_generate_flush_idle_reclaims_idle_sources():
     """A rolling buffer whose source IDs come and go relies on
     flush_idle_seconds to drain them; without it partial segments accumulate for

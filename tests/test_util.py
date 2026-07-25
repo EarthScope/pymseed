@@ -155,6 +155,30 @@ class TestSourceIdConversion:
         assert chan == original_chan
 
 
+class TestStringTypeChecks:
+    """Non-str arguments must raise TypeError before being encoded for C"""
+
+    def test_timestr2nstime_rejects_non_str(self):
+        for bad in (b"2020-01-01T00:00:00Z", None, 42, ["a"]):
+            with pytest.raises(TypeError, match="timestr must be str"):
+                timestr2nstime(bad)
+
+    def test_sourceid2nslc_rejects_non_str(self):
+        for bad in (b"FDSN:XX_STA__B_H_Z", None, 42):
+            with pytest.raises(TypeError, match="sourceid must be str"):
+                sourceid2nslc(bad)
+
+    def test_nslc2sourceid_rejects_non_str(self):
+        with pytest.raises(TypeError, match="net must be str"):
+            nslc2sourceid(1, "STA", "", "BHZ")
+        with pytest.raises(TypeError, match="sta must be str"):
+            nslc2sourceid("XX", None, "", "BHZ")
+        with pytest.raises(TypeError, match="loc must be str"):
+            nslc2sourceid("XX", "STA", b"", "BHZ")
+        with pytest.raises(TypeError, match="chan must be str"):
+            nslc2sourceid("XX", "STA", "", 42)
+
+
 class TestEncodingFunctions:
     """Test encoding-related utility functions"""
 

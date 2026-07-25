@@ -16,6 +16,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `MS3Record.from_filelike()` and `MS3TraceList.add_filelike()` raise
   `TypeError` when the stream has no callable `.read`, matching
   `MS3RecordValidator.from_filelike()`.
+- The `MS3Record.flags`, `pubversion`, and `reclen` setters, and the `encoding`
+  argument of `MS3TraceList.pack()`, `generate()`, and `to_file()`, raise
+  `ValueError` for out-of-range values as `MS3Record.encoding` does, instead of
+  the `OverflowError` raised where the value reaches the C struct.
+- Arguments encoded as C strings raise `TypeError` when they are not a `str`,
+  instead of an `AttributeError` from `.encode()`: the `MS3Record.sourceid`
+  setter, `set_starttime_str()`, the extra header JSON Pointers,
+  `MS3TraceList.get_traceid()`, the `sourceid` filtering argument,
+  `configure_logging()` prefixes, `timestr2nstime()`, `sourceid2nslc()`, and
+  `nslc2sourceid()`.
 
 ### Fixed
 - `MS3Record.from_filelike()` and `MS3TraceList.add_filelike()` reject a

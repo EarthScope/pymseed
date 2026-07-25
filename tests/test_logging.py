@@ -46,6 +46,16 @@ class TestLoggingCapture:
         configure_logging()
         configure_logging()
 
+    def test_configure_logging_rejects_non_str_prefixes(self) -> None:
+        """A non-str prefix raises TypeError rather than an AttributeError from
+        .encode(); None keeps the current prefix and stays valid."""
+        with pytest.raises(TypeError, match="log_prefix must be str"):
+            configure_logging(log_prefix=42)
+        with pytest.raises(TypeError, match="error_prefix must be str"):
+            configure_logging(error_prefix=b"[ERR] ")
+
+        configure_logging(log_prefix=None, error_prefix=None)
+
     def test_configure_logging_rejects_negative_max_messages(self) -> None:
         """Negative max_messages is silently ignored by libmseed; the wrapper
         must surface this as a clear ValueError instead. Zero remains valid

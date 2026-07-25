@@ -28,6 +28,7 @@ import atexit
 import threading
 
 from .clib import clibmseed, ffi
+from .util import check_str
 
 # Maximum messages to store in the registry
 DEFAULT_MAX_MESSAGES = 10
@@ -83,12 +84,18 @@ def configure_logging(
             are discarded.  A value of 0 disables the registry.
 
     Raises:
+        TypeError: If a prefix is neither a str nor None.
         ValueError: If ``max_messages`` is negative.
 
     Example:
         >>> from pymseed import configure_logging
         >>> configure_logging(log_prefix="[LOG] ", error_prefix="[ERR] ")
     """
+    if log_prefix is not None:
+        check_str("log_prefix", log_prefix)
+    if error_prefix is not None:
+        check_str("error_prefix", error_prefix)
+
     if max_messages < 0:
         raise ValueError(f"max_messages must be >= 0; got {max_messages}. ")
 

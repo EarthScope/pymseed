@@ -29,7 +29,7 @@ from .definitions import SubSecond, TimeFormat
 from .exceptions import MiniSEEDError
 from .logging import ensure_thread_logging
 from .selections import build_selections
-from .util import encoding_string, nstime2timestr, timestr2nstime
+from .util import check_encoding, check_str, encoding_string, nstime2timestr, timestr2nstime
 
 
 def _parse_error_message(status: int) -> str:
@@ -340,7 +340,16 @@ class MS3Record:
 
     @reclen.setter
     def reclen(self, value: int) -> None:
-        """Set maximum record length in bytes, used when packing"""
+        """Set maximum record length in bytes, used when packing.
+
+        Raises:
+            ValueError: If ``value`` is not -1 or in the range 1..MAXRECLEN.
+        """
+        if value != -1 and not 0 < value <= clibmseed.MAXRECLEN:
+            raise ValueError(
+                f"reclen must be -1 (library default) or in the range "
+                f"1..{clibmseed.MAXRECLEN}; got {value}"
+            )
         self._msr.reclen = value
 
     @property
@@ -379,11 +388,14 @@ class MS3Record:
             value: Source identifier string
 
         Raises:
+            TypeError: If value is not a str
             ValueError: If identifier exceeds 63 characters
 
         See Also:
             https://docs.fdsn.org/projects/source-identifiers
         """
+        check_str("sourceid", value)
+
         encoded = value.encode("utf-8")
         if len(encoded) >= clibmseed.LM_SIDLEN:
             raise ValueError(f"Source ID too long (max {clibmseed.LM_SIDLEN - 1} bytes)")
@@ -409,7 +421,13 @@ class MS3Record:
 
     @flags.setter
     def flags(self, value: int) -> None:
-        """Set record flags as an 8-bit unsigned integer"""
+        """Set record flags as an 8-bit unsigned integer.
+
+        Raises:
+            ValueError: If ``value`` is outside the range 0..255.
+        """
+        if not 0 <= value <= 255:
+            raise ValueError(f"flags must be in the range 0..255; got {value}")
         self._msr.flags = value
 
     def flags_dict(self) -> dict[str, bool]:
@@ -678,8 +696,7 @@ class MS3Record:
         Raises:
             ValueError: If ``value`` is outside the range 0..255.
         """
-        if not 0 <= value <= 255:
-            raise ValueError(f"encoding must be in the range 0..255; got {value}")
+        check_encoding(value)
         self._msr.encoding = value
 
     @property
@@ -689,7 +706,13 @@ class MS3Record:
 
     @pubversion.setter
     def pubversion(self, value: int) -> None:
-        """Set publication version"""
+        """Set publication version.
+
+        Raises:
+            ValueError: If ``value`` is outside the range 0..255.
+        """
+        if not 0 <= value <= 255:
+            raise ValueError(f"pubversion must be in the range 0..255; got {value}")
         self._msr.pubversion = value
 
     @property
@@ -774,6 +797,10 @@ class MS3Record:
             Value of the header, can be a boolean, integer, float, string,
             or None if the header does not exist.
 
+        Raises:
+            TypeError: If ptr is not a str
+            ValueError: If the header value cannot be read
+
         Examples:
             >>> from pymseed import MS3Record
             >>> msr = MS3Record()
@@ -808,6 +835,8 @@ class MS3Record:
         See Also:
             set_extra_header(): Set an extra header value
         """
+        check_str("ptr", ptr)
+
         c_ptr = ffi.new("char[]", ptr.encode("utf-8"))
 
         parsestate = ffi.new("LM_PARSED_JSON **", None)
@@ -883,6 +912,7 @@ class MS3Record:
             value: Value to set, can be a boolean, number, or string.
 
         Raises:
+            TypeError: If ptr is not a str
             ValueError: If the header value cannot be set or type is unsupported
 
         Examples:
@@ -896,6 +926,8 @@ class MS3Record:
         See Also:
             merge_extra_header(): Apply a JSON Merge Patch to extra headers
         """
+        check_str("ptr", ptr)
+
         # Determine value type and create appropriate C value
         if isinstance(value, bool):
             type_code = b"b"

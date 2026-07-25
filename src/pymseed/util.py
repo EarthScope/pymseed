@@ -3,11 +3,25 @@ Core utility functions for pymseed
 
 """
 
+from typing import Any
+
 from .clib import cdata_to_string, clibmseed, ffi
 from .definitions import SubSecond, TimeFormat
 
 # Maximum length of any time string libmseed produces with some margin
 _TIMESTRING_BUFSIZE = 50
+
+
+def check_encoding(encoding: int) -> None:
+    """Raise ValueError if encoding is outside the range libmseed stores it in"""
+    if not 0 <= encoding <= 255:
+        raise ValueError(f"encoding must be in the range 0..255; got {encoding}")
+
+
+def check_str(name: str, value: Any) -> None:
+    """Raise TypeError if value is not a str, before it is encoded for C"""
+    if not isinstance(value, str):
+        raise TypeError(f"{name} must be str; got {type(value).__name__}")
 
 
 def nstime2timestr(
@@ -32,8 +46,11 @@ def timestr2nstime(timestr: str) -> int:
     """Convert a date-time string to nanoseconds since Unix epoch
 
     Raises:
+        TypeError: If ``timestr`` is not a str.
         ValueError: If ``timestr`` cannot be parsed as a date-time string.
     """
+    check_str("timestr", timestr)
+
     c_timestr = ffi.new("char[]", timestr.encode("utf-8"))
     nstime = clibmseed.ms_timestr2nstime(c_timestr)
 
@@ -52,8 +69,11 @@ def sourceid2nslc(sourceid: str) -> tuple[str, str, str, str]:
     """Convert an FDSN source ID to a tuple of (net, sta, loc, chan)
 
     Components that are empty in the source ID are returned as empty
-    strings.  Raises ``ValueError`` if the source ID is malformed.
+    strings.  Raises ``TypeError`` if the source ID is not a str, and
+    ``ValueError`` if it is malformed.
     """
+    check_str("sourceid", sourceid)
+
     net = ffi.new("char[]", _NSLC_CODE_BUFSIZE)
     sta = ffi.new("char[]", _NSLC_CODE_BUFSIZE)
     loc = ffi.new("char[]", _NSLC_CODE_BUFSIZE)
@@ -87,9 +107,12 @@ def sourceid2nslc(sourceid: str) -> tuple[str, str, str, str]:
 def nslc2sourceid(net: str, sta: str, loc: str, chan: str) -> str:
     """Convert network, station, location, channel to FDSN source ID
 
-    Raises ``ValueError`` if the components cannot be combined into a valid
-    FDSN source ID.
+    Raises ``TypeError`` if a component is not a str, and ``ValueError`` if the
+    components cannot be combined into a valid FDSN source ID.
     """
+    for name, value in (("net", net), ("sta", sta), ("loc", loc), ("chan", chan)):
+        check_str(name, value)
+
     sid = ffi.new("char[]", clibmseed.LM_SIDLEN)
 
     c_net = ffi.new("char[]", net.encode("utf-8"))
@@ -119,8 +142,7 @@ def encoding_string(encoding: int) -> str:
     if encoding == -1:
         return "Unset"
 
-    if not 0 <= encoding <= 255:
-        raise ValueError(f"Encoding must be in 0..255, got {encoding}")
+    check_encoding(encoding)
 
     return ffi.string(clibmseed.ms_encodingstr(encoding)).decode("utf-8")
 
@@ -161,8 +183,7 @@ def encoding_sizetype(encoding: int) -> tuple[int, str]:
         ValueError: If ``encoding`` is outside the ``uint8_t`` range (0-255)
             or is not a recognized encoding code.
     """
-    if not 0 <= encoding <= 255:
-        raise ValueError(f"Encoding must be in 0..255, got {encoding}")
+    check_encoding(encoding)
 
     samplesize_out = ffi.new("uint8_t *")
     sampletype_out = ffi.new("char [1]")

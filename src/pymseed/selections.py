@@ -17,7 +17,7 @@ from typing import Any
 
 from .clib import clibmseed, ffi
 from .exceptions import MiniSEEDError
-from .util import timestr2nstime
+from .util import check_str, timestr2nstime
 
 
 def build_selections(
@@ -39,11 +39,15 @@ def build_selections(
         endtime: End time as a formatted string, or None for open end.
 
     Raises:
+        TypeError: If an argument is neither a str nor None.
         ValueError: If a time string cannot be parsed.
         MiniSEEDError: If ms3_addselect() returns an error.
     """
     if sourceid is None and starttime is None and endtime is None:
         return ffi.NULL, None
+
+    if sourceid is not None:
+        check_str("sourceid", sourceid)
 
     sidpattern = sourceid if sourceid is not None else "*"
     c_sidpattern = ffi.new("char[]", sidpattern.encode("utf-8"))

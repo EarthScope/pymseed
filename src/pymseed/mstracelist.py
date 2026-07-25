@@ -17,7 +17,7 @@ from .exceptions import MiniSEEDError
 from .logging import ensure_thread_logging
 from .msrecord import MS3Record
 from .selections import build_selections
-from .util import encoding_sizetype, nstime2timestr
+from .util import check_encoding, check_str, encoding_sizetype, nstime2timestr
 
 
 class MS3RecordPtr:
@@ -1062,7 +1062,13 @@ class MS3TraceList:
         return len(self)
 
     def get_traceid(self, sourceid: str, version: int = 0) -> MS3TraceID | None:
-        """Get a specific trace ID from the list"""
+        """Get a specific trace ID from the list, or None if not present
+
+        Raises:
+            TypeError: If sourceid is not a str
+        """
+        check_str("sourceid", sourceid)
+
         c_sourceid = ffi.new("char[]", sourceid.encode("utf-8"))
 
         traceid_ptr = clibmseed.mstl3_findID(self._mstl, c_sourceid, version, ffi.NULL)
@@ -1873,7 +1879,8 @@ class MS3TraceList:
                 - packed_records: Total number of miniSEED records generated
 
         Raises:
-            ValueError: If format_version is not 2 or 3.
+            ValueError: If format_version is not 2 or 3, or encoding is outside
+                the range 0..255.
             MiniSEEDError: If the underlying libmseed library encounters an error during
                 packing, such as a max_record_length the format or encoding cannot use.
             Exception: Whatever ``handler`` raises, re-raised once packing has
@@ -1921,6 +1928,8 @@ class MS3TraceList:
                 stacklevel=2,
             )
             max_record_length = record_length
+
+        check_encoding(encoding)
 
         ensure_thread_logging()
 
@@ -2060,8 +2069,9 @@ class MS3TraceList:
             bytes: Each miniSEED record as it is created
 
         Raises:
-            ValueError: If format_version is not 2 or 3.  Raised by this call,
-                before the first record is created.
+            ValueError: If format_version is not 2 or 3, or encoding is outside
+                the range 0..255.  Raised by this call, before the first record
+                is created.
             MiniSEEDError: If the underlying libmseed library encounters an
                 error during creation of miniSEED records, such as a
                 max_record_length the format or encoding cannot use.  Raised
@@ -2151,6 +2161,8 @@ class MS3TraceList:
 
         if format_version is not None and format_version not in (2, 3):
             raise ValueError(f"Invalid miniSEED format version: {format_version}")
+
+        check_encoding(encoding)
 
         return self._generate(
             max_record_length=max_record_length,
@@ -2285,7 +2297,10 @@ class MS3TraceList:
             int: Number of miniSEED records written to the file.
 
         Raises:
-            ValueError: If format_version is not 2 or 3.
+            TypeError: If filename is not a str or os.PathLike.
+
+            ValueError: If format_version is not 2 or 3, or encoding is outside
+                the range 0..255.
 
             MiniSEEDError: If the underlying libmseed library
                 encounters an error during file writing (e.g., permission
@@ -2339,6 +2354,8 @@ class MS3TraceList:
             filename = os.fspath(filename)
         elif not isinstance(filename, str):
             raise TypeError(f"filename must be str or os.PathLike; got {type(filename).__name__}")
+
+        check_encoding(encoding)
 
         ensure_thread_logging()
 
