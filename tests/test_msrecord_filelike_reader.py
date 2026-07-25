@@ -1,3 +1,4 @@
+import gc
 import io
 import os
 
@@ -138,3 +139,19 @@ def test_iter_records_kwargs_forwarded():
         if msr.numsamples > 0
     ]
     assert samples_fl == samples_buf
+
+
+def test_record_survives_temporary_filelike_generator():
+    """A record must not read freed memory when its generator is a temporary.
+
+    The decoded samples are libmseed-owned and stay valid; the raw record bytes
+    live in the generator's sliding buffer and are not retained, so only the
+    struct-level access is checked here.
+    """
+    msr = next(MS3Record.from_filelike(io.BytesIO(_read(test_path3)), unpack_data=True))
+    gc.collect()
+    _churn = [bytearray(4096) for _ in range(3000)]
+
+    assert msr.sourceid == "FDSN:IU_COLA_00_B_H_1"
+    assert msr.numsamples == msr.samplecnt
+    assert msr.datasamples[0] == -502916

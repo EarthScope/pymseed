@@ -32,6 +32,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `MS3TraceSeg.recordlist` now keeps the owning `MS3TraceList` alive, so a record
   list or `MS3RecordPtr` obtained from a temporary trace list no longer reads
   freed memory.
+- `MS3Record.parse()` and `parse_into()` now keep the source buffer alive, so the
+  raw record and delayed `unpack_data()` no longer read freed memory when parsing
+  from a temporary buffer.
+- An `MS3Record` obtained from `MS3RecordReader`, `MS3Record.from_buffer()`,
+  `from_filelike()`, or a record list now keeps its owner alive, so a record that
+  outlives the reader or generator no longer reads freed memory.
 
 ## [0.9.0] - 2026-05-17
 

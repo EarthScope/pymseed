@@ -1,3 +1,4 @@
+import gc
 import os
 
 import pytest
@@ -90,3 +91,23 @@ def test_msrecord_read_buffer_summary():
 
     assert record_count == 1141
     assert sample_count == 252000
+
+
+def test_record_survives_temporary_buffer_generator():
+    """A record must not read freed memory when its generator is a temporary.
+
+    from_buffer() reuses one struct for the whole iteration and used to free it
+    when the generator was collected, leaving an escaped record pointing at
+    released memory.
+    """
+    with open(test_path3, "rb") as f:
+        data = f.read()
+
+    msr = next(MS3Record.from_buffer(data, unpack_data=True))
+    gc.collect()
+    _churn = [bytearray(4096) for _ in range(3000)]
+
+    assert msr.sourceid == "FDSN:IU_COLA_00_B_H_1"
+    assert msr.numsamples == msr.samplecnt
+    assert msr.datasamples[0] == -502916
+    assert msr.record[:2] == b"MS"

@@ -26,6 +26,39 @@ from .selections import build_selections
 from .util import encoding_string, nstime2timestr, timestr2nstime
 
 
+class _SharedRecordStruct:
+    """Owns the C record struct shared by a record iterator and the records it yields.
+
+    The iterators reuse one ``MS3Record`` struct for every record they parse.
+    Freeing it when the iterator finishes would leave any escaped
+    :class:`MS3Record` wrapper pointing at released memory, so ownership lives
+    here instead: the struct is freed once the iterator and every wrapper
+    referring to it are gone.
+
+    An escaped wrapper still reflects whatever the shared struct holds at the
+    time it is read, so it is not a way to retain a record past the iteration
+    step that produced it — it only keeps the access memory-safe.
+    """
+
+    __slots__ = ("_msr_ptr", "_source")
+
+    def __init__(self, msr_ptr: Any, source: Any = None) -> None:
+        self._msr_ptr = msr_ptr
+        # Keeps the parsed-from buffer alive; msr->record points into it.
+        self._source = source
+
+    def __del__(self) -> None:
+        if sys.is_finalizing():
+            return
+        try:
+            if self._msr_ptr[0] != ffi.NULL:
+                clibmseed.msr3_free(self._msr_ptr)
+                self._msr_ptr[0] = ffi.NULL
+        except (AttributeError, TypeError):
+            # Module-teardown race, as in MS3Record.__del__.
+            pass
+
+
 class MS3Record:
     """A wrapper for miniSEED data records supporting formats v2 and v3.
 
@@ -93,6 +126,7 @@ class MS3Record:
     __slots__ = (
         "_msr",
         "_msr_allocated",
+        "_owner",
         "_record_handler",
         "_record_handler_data",
         "_record_handler_callback",
@@ -104,6 +138,7 @@ class MS3Record:
         encoding: int | None = None,
         recordptr: Any = None,
         owns: bool = False,
+        owner: Any = None,
     ) -> None:
         """
         Initialize MS3Record wrapper.
@@ -124,6 +159,11 @@ class MS3Record:
                  and is responsible for freeing it via ``msr3_free`` on
                  finalization. Ignored when ``recordptr`` is ``None`` (a
                  freshly allocated record is always owned by its wrapper).
+                 Internal use only.
+            owner: Object whose lifetime must cover this record's C memory —
+                 the source buffer, the reader, or the trace list that owns the
+                 struct. Held as a strong reference so the memory cannot be
+                 released while this wrapper still refers to it.
                  Internal use only.
 
         Note:
@@ -156,6 +196,7 @@ class MS3Record:
             if encoding is not None:
                 self._msr.encoding = encoding
 
+        self._owner = owner
         self._record_handler = None
         self._record_handler_data = None
         self._record_handler_callback = None
@@ -1951,6 +1992,10 @@ class MS3Record:
         buf_ptr = ffi.from_buffer(buffer)
         offset = 0
 
+        # Owns the shared struct so that a record which outlives this generator
+        # cannot read freed memory; see _SharedRecordStruct.
+        struct = _SharedRecordStruct(msr_ptr, buf_ptr)
+
         # Build selections, if sourceid, starttime, or endtime are specified
         selections_ptr, free_selections = build_selections(sourceid, starttime, endtime)
         has_selections = selections_ptr != ffi.NULL
@@ -1992,15 +2037,14 @@ class MS3Record:
                             if unpacked < 0:
                                 raise MiniSEEDError(unpacked, "Error unpacking data samples")
 
-                    yield cls(recordptr=msr_ptr[0])
+                    yield cls(recordptr=msr_ptr[0], owner=struct)
                 elif status > 0:
                     return
                 else:
                     raise MiniSEEDError(status, "Error parsing miniSEED record")
         finally:
-            if msr_ptr[0] != ffi.NULL:
-                clibmseed.msr3_free(msr_ptr)
-                msr_ptr[0] = ffi.NULL
+            # The struct is released by `struct` once this frame and every
+            # record wrapper referring to it are gone.
             if free_selections is not None:
                 free_selections()
 
@@ -2095,6 +2139,10 @@ class MS3Record:
 
         msr_ptr = ffi.new("MS3Record **")
 
+        # Owns the shared struct so that a record which outlives this generator
+        # cannot read freed memory; see _SharedRecordStruct.
+        struct = _SharedRecordStruct(msr_ptr)
+
         # Build selections, if sourceid, starttime, or endtime are specified
         selections_ptr, free_selections = build_selections(sourceid, starttime, endtime)
         has_selections = selections_ptr != ffi.NULL
@@ -2136,7 +2184,7 @@ class MS3Record:
                                 if unpacked < 0:
                                     raise MiniSEEDError(unpacked, "Error unpacking data samples")
 
-                        yield cls(recordptr=msr_ptr[0])
+                        yield cls(recordptr=msr_ptr[0], owner=struct)
                         continue
                     elif status > 0:
                         pass  # need more data; fall through to read
@@ -2157,9 +2205,8 @@ class MS3Record:
                 else:
                     eof = True
         finally:
-            if msr_ptr[0] != ffi.NULL:
-                clibmseed.msr3_free(msr_ptr)
-                msr_ptr[0] = ffi.NULL
+            # The struct is released by `struct` once this frame and every
+            # record wrapper referring to it are gone.
             if free_selections is not None:
                 free_selections()
 
@@ -2304,7 +2351,9 @@ class MS3Record:
         )
 
         if status == clibmseed.MS_NOERROR:
-            return cls(recordptr=msr_ptr[0], owns=True)
+            # msr->record points into `buffer` rather than a copy of it, so the
+            # record must keep the buffer alive to stay self-contained.
+            return cls(recordptr=msr_ptr[0], owns=True, owner=buf_ptr)
         else:
             raise MiniSEEDError(status, "Error parsing miniSEED record")
 
@@ -2398,6 +2447,10 @@ class MS3Record:
             self._msr = msr_ptr[0]
         else:
             self._msr = clibmseed.msr3_init(ffi.NULL)
+
+        # msr->record points into `buffer` rather than a copy of it; hold the
+        # buffer so it cannot be released while this record refers to it.
+        self._owner = buf_ptr
 
         if status != clibmseed.MS_NOERROR:
             raise MiniSEEDError(status, "Error parsing miniSEED record")

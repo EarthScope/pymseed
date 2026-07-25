@@ -599,6 +599,20 @@ def test_recordptr_keeps_tracelist_alive():
     assert "MS3RecordPtr(sourceid:" in repr(recordptr)
 
 
+def test_record_from_temporary_recordlist_chain():
+    """An MS3Record from a record list must keep the owning trace list alive.
+
+    MS3RecordPtr.record wraps a struct owned by the trace list, so a record that
+    escaped the whole chain used to read freed memory.
+    """
+    record = MS3TraceList.from_file(test_path3, record_list=True)[0][0].recordlist[0].record
+    _churn_heap()
+
+    assert record.sourceid == "FDSN:IU_COLA_00_B_H_1"
+    assert record.reclen == 478
+    assert record.record[:2] == b"MS"
+
+
 def test_unpack_recordlist_from_temporary_tracelist():
     """A segment keeps its trace list alive, so unpacking works after the
     expression that produced it has gone away.

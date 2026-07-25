@@ -1,3 +1,4 @@
+import gc
 import os
 import sys
 
@@ -374,3 +375,26 @@ def test_msrecord_reader_rejects_use_after_close():
         msreader.read()
     with pytest.raises(ValueError, match="closed"):
         msreader.read()
+
+
+def test_record_survives_temporary_reader():
+    """A record must not read freed memory when its reader is a temporary.
+
+    MS3RecordReader.read() hands out a wrapper around the reader's own struct.
+    Without a reference back to the reader, garbage collection freed the struct
+    and access crashed or silently returned an empty record.
+    """
+    raw = next(iter(MS3Record.from_file(test_path3))).record
+    gc.collect()
+    _churn = [bytearray(4096) for _ in range(3000)]
+
+    assert raw[:2] == b"MS"
+    assert len(raw) == 478
+
+    msr = next(iter(MS3Record.from_file(test_path3, unpack_data=True)))
+    gc.collect()
+    _churn = [bytearray(4096) for _ in range(3000)]
+
+    assert msr.sourceid == "FDSN:IU_COLA_00_B_H_1"
+    assert msr.numsamples == msr.samplecnt
+    assert msr.datasamples[0] == -502916

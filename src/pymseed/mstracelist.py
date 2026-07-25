@@ -52,7 +52,7 @@ class MS3RecordPtr:
     def record(self) -> MS3Record:
         """Return a constructed MS3Record"""
         if not hasattr(self, "_msrecord"):
-            self._msrecord = MS3Record(recordptr=self._ptr.msr)
+            self._msrecord = MS3Record(recordptr=self._ptr.msr, owner=self._parent_tracelist)
         return self._msrecord
 
     @property

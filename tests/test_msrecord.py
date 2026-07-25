@@ -21,6 +21,12 @@ sine_500 = [int(math.sin(math.radians(x)) * 500) for x in range(0, 500)]
 record_buffer = b""
 
 
+def _churn_heap():
+    """Force reclamation and reuse of freed blocks so a stale pointer shows up."""
+    gc.collect()
+    return [bytearray(4096) for _ in range(3000)]
+
+
 def record_handler(record, handler_data):
     """A callback function for MS3Record.set_record_handler()
     Stores the record in a global buffer for testing
@@ -772,6 +778,51 @@ class TestMS3RecordParse:
         with open(test_pack3, "rb") as f:
             msr.parse_into(f.read())
         assert msr.sourceid == "FDSN:XX_TEST__B_S_X"
+
+    def test_parse_survives_temporary_source_buffer(self):
+        """parse() must keep the buffer it parsed from alive.
+
+        msr->record points into the supplied buffer rather than a copy, so a
+        record parsed from a temporary read the buffer's freed memory: raw record
+        bytes came back as zeros and delayed unpacking produced wrong samples.
+        """
+        with open(test_pack3, "rb") as f:
+            held = f.read()
+        # Bind the record: datasamples is a view into memory it owns.
+        reference = MS3Record.parse(held, unpack_data=True)
+        expected = list(reference.datasamples)
+
+        def parse_from_temporary():
+            with open(test_pack3, "rb") as f:
+                return MS3Record.parse(f.read())
+
+        msr = parse_from_temporary()
+        _churn_heap()
+
+        assert msr.record[:2] == b"MS"
+        assert msr.unpack_data() == msr.samplecnt
+        assert list(msr.datasamples) == expected
+
+    def test_parse_into_survives_temporary_source_buffer(self):
+        """parse_into() must keep the buffer it parsed from alive."""
+        with open(test_pack3, "rb") as f:
+            held = f.read()
+        # Bind the record: datasamples is a view into memory it owns.
+        reference = MS3Record.parse(held, unpack_data=True)
+        expected = list(reference.datasamples)
+
+        msr = MS3Record()
+
+        def parse_into_from_temporary():
+            with open(test_pack3, "rb") as f:
+                msr.parse_into(f.read())
+
+        parse_into_from_temporary()
+        _churn_heap()
+
+        assert msr.record[:2] == b"MS"
+        assert msr.unpack_data() == msr.samplecnt
+        assert list(msr.datasamples) == expected
 
     def test_parse_error_truncated_buffer(self):
         """Raise MiniSEEDError when buffer is too small to contain a record."""

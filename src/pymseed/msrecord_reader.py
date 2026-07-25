@@ -292,7 +292,9 @@ class MS3RecordReader:
         )
 
         if status == clibmseed.MS_NOERROR:
-            return MS3Record(recordptr=self._msr_ptr[0])
+            # Hold the reader so its struct cannot be freed by garbage collection
+            # while this record is still referenced.
+            return MS3Record(recordptr=self._msr_ptr[0], owner=self)
         if status == clibmseed.MS_ENDOFFILE:
             return None
 
