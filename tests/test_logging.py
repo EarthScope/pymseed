@@ -199,6 +199,38 @@ class TestLoggingCapture:
         # Should have captured messages from all three attempts
         assert len(messages) >= 3
 
+    def test_captured_messages_are_oldest_first(self) -> None:
+        """Messages are returned in the order libmseed generated them.
+
+        libmseed's registry is newest-first (entries are added at its head),
+        which would otherwise present multi-message diagnostics in reverse.
+        """
+        from pymseed import MiniSEEDError, MS3Record
+
+        def corrupt_first_record(path: str) -> bytes:
+            for msr in MS3Record.from_file(path):
+                record = bytearray(msr.record)
+                record[100] ^= 0xFF
+                return bytes(record)
+            raise RuntimeError(f"No records in {path}")
+
+        # Two sources, so each CRC message names a different source ID
+        first = corrupt_first_record(TEST_MSEED3_FILE)
+        second = corrupt_first_record(os.path.join(TEST_DATA_DIR, "testdata-60sec-period.mseed3"))
+
+        clear_error_messages()
+
+        for corrupted in (first, second):
+            with pytest.raises(MiniSEEDError):
+                for _ in MS3Record.from_buffer(corrupted, unpack_data=True):
+                    pass
+
+        messages = get_error_messages()
+
+        assert len(messages) == 2
+        assert "IU_COLA" in messages[0]
+        assert "XX_SIN" in messages[1]
+
     def test_clear_removes_all_messages(self) -> None:
         """Test that clear_error_messages removes all messages."""
         from pymseed import MiniSEEDError, MS3Record

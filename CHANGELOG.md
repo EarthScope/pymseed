@@ -32,6 +32,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of returning a size of 0.
 
 ### Fixed
+- `get_error_messages()` returns messages oldest first, matching the order libmseed
+  generated them, instead of reversed.
 - `MS3RecordReader()` raises `TypeError` when passed both `source` and its deprecated
   `input` alias, instead of silently discarding `source`.
 - `MS3TraceSeg.datasamples` and `np_datasamples` return views that hold the trace list,

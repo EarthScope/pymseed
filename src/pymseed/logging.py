@@ -156,8 +156,13 @@ def get_error_messages() -> list[str]:
     Messages are popped from the registry and returned as a list of strings.
     After calling this function, the registry will be empty.
 
+    When more than ``max_messages`` messages have accumulated, libmseed
+    discards the earliest, so a long-running operation returns only its
+    latest diagnostics.
+
     Returns:
-        A list of error/warning message strings. Empty list if no messages.
+        A list of error/warning message strings, oldest first.  Empty list
+        if no messages.
     """
     buf = getattr(_thread_local_rlog_pop_buf, "buf", None)
     if buf is None:
@@ -170,5 +175,8 @@ def get_error_messages() -> list[str]:
         if length <= 0:
             break
         messages.append(ffi.unpack(buf, length).decode("utf-8", errors="replace").rstrip("\n"))
+
+    # The registry is newest-first, entries are added at its head
+    messages.reverse()
 
     return messages
