@@ -1464,8 +1464,9 @@ class MS3Record:
                         sample_array = ffi.cast("int32_t *", buffer_export)
                     else:
                         raise ValueError("Incompatible buffer format")
-                except (TypeError, ValueError):
-                    # Not compatible or not a buffer - need conversion
+                except (TypeError, ValueError, BufferError):
+                    # Not a buffer, or one that cannot be shared as it is
+                    # (incompatible format, not contiguous) - need conversion
                     sample_array = ffi.new("int32_t[]", [int(sample) for sample in data_samples])
 
                 self._msr.datasamples = sample_array
@@ -1480,8 +1481,9 @@ class MS3Record:
                         sample_array = ffi.cast("float *", buffer_export)
                     else:
                         raise ValueError("Incompatible buffer format")
-                except (TypeError, ValueError):
-                    # Not compatible or not a buffer - need conversion
+                except (TypeError, ValueError, BufferError):
+                    # Not a buffer, or one that cannot be shared as it is
+                    # (incompatible format, not contiguous) - need conversion
                     sample_array = ffi.new("float[]", [float(sample) for sample in data_samples])
 
                 self._msr.datasamples = sample_array
@@ -1496,8 +1498,9 @@ class MS3Record:
                         sample_array = ffi.cast("double *", buffer_export)
                     else:
                         raise ValueError("Incompatible buffer format")
-                except (TypeError, ValueError):
-                    # Not compatible or not a buffer - need conversion
+                except (TypeError, ValueError, BufferError):
+                    # Not a buffer, or one that cannot be shared as it is
+                    # (incompatible format, not contiguous) - need conversion
                     sample_array = ffi.new("double[]", [float(sample) for sample in data_samples])
 
                 self._msr.datasamples = sample_array

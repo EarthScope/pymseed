@@ -32,6 +32,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of returning a size of 0.
 
 ### Fixed
+- `MS3Record.with_datasamples()` copies a non-contiguous buffer instead of raising
+  `BufferError` from the zero-copy check.
 - `MS3Record.from_file()`, `from_buffer()`, and `from_filelike()` raise `MiniSEEDError`
   with a status of `MS_ENDOFFILE` when the source ends part way through a record, or
   with bytes remaining that are too few for one, instead of stopping silently.  For

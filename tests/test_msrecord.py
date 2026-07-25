@@ -307,6 +307,40 @@ def test_with_datasamples_holds_the_buffer_export():
             data.extend(b"\0" * 4096)
 
 
+def test_with_datasamples_copies_non_contiguous_buffers():
+    """A strided buffer cannot be shared as it is, so it must fall back to a copy."""
+    msr = MS3Record()
+    msr.sourceid = "FDSN:XX_TEST__B_H_Z"
+    msr.set_starttime_str("2024-01-01T00:00:00Z")
+    msr.samprate = 100.0
+
+    for typecode, sample_type, expected in (
+        ("i", "i", [1, 3, 5]),
+        ("f", "f", [1.0, 3.0, 5.0]),
+        ("d", "d", [1.0, 3.0, 5.0]),
+    ):
+        strided = memoryview(array.array(typecode, [1, 2, 3, 4, 5, 6]))[::2]
+        with msr.with_datasamples(strided, sample_type):
+            assert msr.numsamples == 3
+            assert list(msr.datasamples) == expected
+
+
+def test_with_datasamples_packs_non_contiguous_as_the_same_samples():
+    """The copy must carry the strided samples, not the bytes they are strided over."""
+    msr = MS3Record()
+    msr.sourceid = "FDSN:XX_TEST__B_H_Z"
+    msr.set_starttime_str("2024-01-01T00:00:00Z")
+    msr.samprate = 100.0
+    msr.encoding = DataEncoding.INT32
+    msr.reclen = 512
+
+    strided = memoryview(array.array("i", [10, 20, 30, 40, 50, 60]))[::2]
+
+    assert list(msr.generate(data_samples=strided, sample_type="i")) == list(
+        msr.generate(data_samples=[10, 30, 50], sample_type="i")
+    )
+
+
 def test_with_datasamples_holds_the_numpy_export():
     """The same pin must apply to numpy sources."""
     np = pytest.importorskip("numpy")
