@@ -1479,6 +1479,27 @@ def test_tracelist_filelike_record_list_unpack_fails_cleanly():
         seg.unpack_recordlist()
 
 
+def test_tracelist_filelike_record_list_raw_record_unavailable():
+    """Filelike + record_list=True: raw record reads raise instead of returning
+    stale bytes from the freed parse buffer."""
+    with open(test_path3, "rb") as fp:
+        buf = fp.read()
+    traces = MS3TraceList.from_filelike(io.BytesIO(buf), record_list=True)
+
+    gc.collect()
+    scratch = bytearray(4 * 1024 * 1024)  # encourage reuse of the freed buffer
+    del scratch
+
+    for tid in traces:
+        for recptr in tid[0].recordlist:
+            record = recptr.record
+            assert record.reclen > 0
+            with pytest.raises(ValueError, match="No raw record available"):
+                record.record
+            with pytest.raises(ValueError, match="No raw record available"):
+                record.record_mv
+
+
 def test_tracelist_filelike_unpack_data_and_record_list():
     """Filelike + unpack_data=True + record_list=True yields samples and metadata."""
     with open(test_path3, "rb") as fp:

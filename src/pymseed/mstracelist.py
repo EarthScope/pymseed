@@ -1466,10 +1466,10 @@ class MS3TraceList:
             (source ID, start/end times, record length, encoding, etc.),
             **but** :meth:`MS3TraceSeg.unpack_recordlist` cannot be used on
             the resulting record list as the original source bytes do not persist.
-            The per-record references that :meth:`unpack_recordlist` relies
-            on are deliberately cauterized to avoid dangling references.
-            If you need :meth:`unpack_recordlist`, read the data with :meth:`add_file`
-            or :meth:`add_buffer` instead.
+            The per-record references to those bytes are cleared, so
+            :attr:`MS3Record.record` and :attr:`MS3Record.record_mv` also raise
+            for entries in this list.  If you need either, read the data with
+            :meth:`add_file` or :meth:`add_buffer` instead.
 
         Args:
             fh: A file-like object with a ``.read(n)`` method returning bytes.
@@ -1593,13 +1593,15 @@ class MS3TraceList:
                         "Error adding record from file-like stream",
                     )
 
-                # Avoid dangling references to the source bytes
+                # Avoid dangling references to the source bytes, including msr->record,
+                # which the copied MS3Record struct retains.
                 if record_list and pprecptr[0] != ffi.NULL:
                     recptr = pprecptr[0]
                     recptr.bufferptr = ffi.NULL
                     recptr.fileptr = ffi.NULL
                     recptr.filename = ffi.NULL
                     recptr.fileoffset = 0
+                    recptr.msr.record = ffi.NULL
         finally:
             if free_selections is not None:
                 free_selections()
