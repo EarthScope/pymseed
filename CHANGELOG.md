@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - libmseed updated to v3.5.0
 - For `MS3TraceList.add_data()` deprecate the `start_time` kwargs in favor of
   `starttime` for uniformity with the rest of the package.
+- `MS3TraceList.generate()`: document that abandoning the generator with
+  `remove_packed=True` keeps the samples of the records already yielded, which a
+  later call creates records for again.
 
 ### Fixed
 - `MS3TraceList.add_file(record_list=True)` retains one file name buffer per distinct

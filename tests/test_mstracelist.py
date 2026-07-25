@@ -1176,6 +1176,40 @@ def test_mstracelist_generate_raises_on_pack_error():
         list(traces.generate(format_version=2, max_record_length=1000))
 
 
+def test_mstracelist_generate_abandoned_keeps_yielded_samples():
+    """Pins the documented cost of abandoning generate() with remove_packed.
+
+    libmseed trims a segment only when it finishes packing, so samples of the
+    records already yielded stay in the trace list and a later generate()
+    creates records for them again.
+    """
+    traces = MS3TraceList()
+    traces.add_data(
+        sourceid="FDSN:XX_STA__B_H_Z",
+        data_samples=list(range(20000)),
+        sample_type="i",
+        sample_rate=100.0,
+        starttime_str="2023-01-01T00:00:00Z",
+    )
+    samples = traces[0][0].numsamples
+
+    generator = traces.generate(max_record_length=512, remove_packed=True)
+    abandoned = 0
+    for _record in generator:
+        abandoned += 1
+        if abandoned == 3:
+            break
+    generator.close()
+
+    assert abandoned == 3
+    assert traces[0][0].numsamples == samples
+
+    # The full set of records is created again, duplicating the three above
+    complete = len(list(traces.generate(max_record_length=512, remove_packed=True)))
+    assert complete >= abandoned
+    assert len(traces) == 0
+
+
 def test_mstracelist_generate():
     """Test creation of miniSEED v3 and v2 records from a trace list.
 

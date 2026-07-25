@@ -2052,6 +2052,16 @@ class MS3TraceList:
             * `flush_data=True` to flush all data from the trace list
             * `remove_packed=True` to remove packed data from the trace list
 
+        .. warning::
+            With `remove_packed=True`, samples are removed from the trace list
+            only when the segment they belong to finishes packing.  Abandoning
+            this generator early — a ``break``, a ``return``, or an exception
+            raised while handling a record — leaves the samples of the records
+            already yielded in the trace list, and a later `generate()` creates
+            records for them again.  Iterate to completion to keep the buffer
+            and the output consistent, handling per-record failures inside the
+            loop.
+
         See also:
             - to_file()
         """
