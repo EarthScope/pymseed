@@ -5,7 +5,7 @@ Core library interface for pymseed using CFFI
 
 from typing import Any
 
-__all__ = ["ffi", "clibmseed", "cdata_to_string", "owned_memoryview"]
+__all__ = ["ffi", "clibmseed", "buffer_pointer", "cdata_to_string", "owned_memoryview"]
 
 try:
     # This is the correct pattern: import the ffi and lib objects
@@ -24,6 +24,47 @@ except ImportError as exc:
         "or for development:\n"
         "  pip install -e ."
     ) from exc
+
+
+def buffer_pointer(buffer: Any, *, writable: bool = False, context: str = "") -> Any:
+    """
+    Bind `buffer` for C access, rejecting one that cannot be used.
+
+    The exception ffi.from_buffer() raises for an unusable buffer depends on the
+    interpreter and on the exporter: CPython reports read-only storage as
+    BufferError, PyPy as TypeError, and numpy raises ValueError of its own.
+    memoryview classifies the buffer the same way everywhere, so ask it first and
+    the contract does not vary.
+
+    Args:
+        buffer: Object supporting the buffer protocol
+        writable: Require storage that C code may write into
+        context: Prefix for the BufferError message, naming the operation
+
+    Returns:
+        CFFI char[] bound to the memory of `buffer`, whose len() is its size in
+        bytes.
+
+    Raises:
+        ValueError: If `buffer` does not support the buffer protocol
+        BufferError: If `buffer` is not C-contiguous, or is read-only when
+            `writable` is set
+    """
+    try:
+        with memoryview(buffer) as view:
+            readonly, contiguous = view.readonly, view.c_contiguous
+    except TypeError:
+        raise ValueError("Buffer must support the buffer protocol") from None
+
+    prefix = f"{context}: " if context else ""
+
+    if not contiguous:
+        raise BufferError(f"{prefix}buffer is not C-contiguous")
+
+    if writable and readonly:
+        raise BufferError(f"{prefix}buffer is read-only")
+
+    return ffi.from_buffer(buffer, require_writable=writable)
 
 
 def owned_memoryview(ptr: Any, nbytes: int, format: str, owner: Any) -> memoryview:

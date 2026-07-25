@@ -24,7 +24,7 @@ from ._extra_headers_jsonschema import (
     load_extra_headers_validator,
     validator_for_extra_headers_schema,
 )
-from .clib import clibmseed, ffi
+from .clib import buffer_pointer, clibmseed, ffi
 from .definitions import SubSecond, TimeFormat
 from .exceptions import MiniSEEDError
 from .logging import ensure_thread_logging
@@ -1443,6 +1443,12 @@ class MS3Record:
             The original record state is completely restored when exiting the context,
             including datasamples pointer, data size, sample counts, and sample type.
 
+            A zero-copy source is held by reference for the whole context and must
+            not be resized within it, which would leave the record pointing at
+            freed memory.  On CPython the buffer protocol refuses the resize with
+            ``BufferError``; PyPy keeps no export count, so there such a resize is
+            undefined behavior that nothing reports.
+
         See Also:
             MS3TraceList.add_data(): Add data samples to a trace list
         """
@@ -1984,12 +1990,14 @@ class MS3Record:
         ``numpy.ndarray``), the caller must not modify the contents until
         iteration finishes — doing so is **undefined behavior** that
         silently corrupts the next record read and is not caught by Python
-        or CFFI. Resizing operations (e.g. ``buf.extend(...)``,
+        or CFFI. On CPython, resizing operations (e.g. ``buf.extend(...)``,
         ``buf.clear()``, ``del buf[i:]``) *are* caught by the buffer
-        protocol and raise ``BufferError`` while the generator is alive.
-        If the source must remain writable, pass an immutable copy
-        (``bytes(buf)``), or close the generator (e.g. ``gen.close()``, or
-        let the ``for`` loop complete) before mutating.
+        protocol and raise ``BufferError`` while the generator is alive;
+        PyPy keeps no such export count, so there a resize is undefined
+        behavior as well. If the source must remain writable, pass an
+        immutable copy (``bytes(buf)``), or close the generator
+        (e.g. ``gen.close()``, or let the ``for`` loop complete) before
+        mutating.
 
         Args:
             buffer: Bytes-like object containing miniSEED data. Must support
@@ -2015,8 +2023,11 @@ class MS3Record:
             MS3Record: Each parsed record. Valid only until the next iteration.
 
         Raises:
-            ValueError: If ``starttime`` or ``endtime`` is not a valid
-                date-time string.
+            ValueError: If ``buffer`` does not support the buffer protocol, or
+                if ``starttime`` or ``endtime`` is not a valid date-time
+                string.  Being a generator, this is raised on first iteration
+                rather than at the call.
+            BufferError: If ``buffer`` is not C-contiguous.
             MiniSEEDError: If a record cannot be parsed, or if the buffer ends
                 part way through a record, or with bytes remaining that are too
                 few for one; the truncated cases carry a status of
@@ -2060,7 +2071,7 @@ class MS3Record:
         ensure_thread_logging()
 
         msr_ptr = ffi.new("MS3Record **")
-        buf_ptr = ffi.from_buffer(buffer)
+        buf_ptr = buffer_pointer(buffer)
         offset = 0
 
         # Owns the shared struct so a record outliving this generator cannot
@@ -2419,6 +2430,8 @@ class MS3Record:
             MS3Record: Fully self-contained record instance.
 
         Raises:
+            ValueError: If ``buffer`` does not support the buffer protocol.
+            BufferError: If ``buffer`` is not C-contiguous.
             MiniSEEDError: If the buffer does not contain a complete, valid
                 miniSEED record.
 
@@ -2447,7 +2460,7 @@ class MS3Record:
         """
         ensure_thread_logging()
 
-        buf_ptr = ffi.from_buffer(buffer)
+        buf_ptr = buffer_pointer(buffer)
         msr_ptr = ffi.new("MS3Record **")
 
         parse_flags = 0
@@ -2502,7 +2515,9 @@ class MS3Record:
         Raises:
             MiniSEEDError: If the buffer does not contain a complete, valid
                 miniSEED record.
-            ValueError: If this wrapper does not own its underlying C struct
+            BufferError: If ``buffer`` is not C-contiguous.
+            ValueError: If ``buffer`` does not support the buffer protocol, or
+                if this wrapper does not own its underlying C struct
                 (e.g. it was obtained from an iterator like
                 :meth:`from_buffer`, :meth:`from_filelike`, or
                 :class:`MS3RecordReader`, or it is a view into an
@@ -2536,7 +2551,7 @@ class MS3Record:
 
         ensure_thread_logging()
 
-        buf_ptr = ffi.from_buffer(buffer)
+        buf_ptr = buffer_pointer(buffer)
         msr_ptr = ffi.new("MS3Record **")
         msr_ptr[0] = self._msr
 

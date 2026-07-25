@@ -18,6 +18,8 @@ from pymseed import (
     system_time,
     timestr2nstime,
 )
+from pymseed.clib import buffer_pointer
+from tests.gc_helpers import assert_released, requires_refcounting
 
 test_dir = os.path.abspath(os.path.dirname(__file__))
 test_path3 = os.path.join(test_dir, "data", "testdata-COLA-signal.mseed3")
@@ -494,9 +496,7 @@ def test_tracelist_add_data_start_time_deprecated_aliases():
 
 def test_tracelist_unpack_recordlist_rejects_non_buffer():
     """unpack_recordlist() must raise ValueError on objects that don't expose
-    the buffer protocol, not bubble up CFFI's TypeError. Also exercises an
-    array.array (no .nbytes, has .itemsize) to keep the fallback branch
-    covered."""
+    the buffer protocol, not bubble up CFFI's TypeError."""
     import array
 
     traces = MS3TraceList.from_file(test_path3, record_list=True)
@@ -509,9 +509,8 @@ def test_tracelist_unpack_recordlist_rejects_non_buffer():
     with pytest.raises(ValueError, match="buffer protocol"):
         seg.unpack_recordlist(buffer=NotABuffer())
 
-    # array.array has .itemsize but no .nbytes; the itemsize fallback must
-    # compute the correct byte size so libmseed sees a buffer large enough
-    # to hold all samples.
+    # An itemsize wider than a byte must be sized in bytes, so libmseed sees a
+    # buffer large enough to hold all samples rather than 1/itemsize of one.
     arr = array.array("i", [0] * seg.samplecnt)
     count = seg.unpack_recordlist(buffer=arr)
     assert count == seg.samplecnt
@@ -550,8 +549,8 @@ def test_tracelist_unpack_recordlist_rejects_readonly_buffer():
 
 
 def test_tracelist_unpack_recordlist_rejects_unwritable_numpy():
-    """numpy refuses the buffer export itself, raising ValueError rather than
-    BufferError; both must surface as the same error for the caller."""
+    """A numpy array that C code cannot write over the whole span must be
+    refused, whichever exception numpy would have raised for the export."""
     np = pytest.importorskip("numpy")
 
     def fresh_segment():
@@ -571,6 +570,42 @@ def test_tracelist_unpack_recordlist_rejects_unwritable_numpy():
     strided = np.zeros(seg.samplecnt * 2, dtype=np.int32)[::2]
     with pytest.raises(BufferError, match="contiguous"):
         fresh_segment().unpack_recordlist(buffer=strided)
+
+
+def test_buffer_pointer_classifies_buffers_the_same_everywhere():
+    """The exception ffi.from_buffer() raises for an unusable buffer varies with
+    the interpreter and the exporter, so buffer_pointer() classifies the buffer
+    itself.  Read-only storage is a BufferError on CPython but a TypeError on
+    PyPy, which would otherwise be reported as "not a buffer"."""
+    import array
+
+    class NotABuffer:
+        pass
+
+    with pytest.raises(ValueError, match="buffer protocol"):
+        buffer_pointer(NotABuffer())
+
+    for readonly in (b"1234", memoryview(b"1234")):
+        with pytest.raises(BufferError, match="read-only"):
+            buffer_pointer(readonly, writable=True)
+
+        # The same buffer is fine where C only reads it
+        assert len(buffer_pointer(readonly)) == 4
+
+    with pytest.raises(BufferError, match="not C-contiguous"):
+        buffer_pointer(memoryview(bytearray(32)).cast("i")[::2])
+
+    # The context names the operation in the message
+    with pytest.raises(BufferError, match="While testing: buffer is read-only"):
+        buffer_pointer(b"1234", writable=True, context="While testing")
+
+    # len() is the size in bytes for any itemsize, not the element count
+    for buffer, nbytes in (
+        (bytearray(16), 16),
+        (array.array("i", [0] * 4), 16),
+        (memoryview(bytearray(16)).cast("i"), 16),
+    ):
+        assert len(buffer_pointer(buffer, writable=True)) == nbytes
 
 
 def test_tracelist_generate_removed_packed_deprecated_alias():
@@ -1179,8 +1214,7 @@ def test_datasamples_view_holds_the_trace_list():
 
     # Dropping the view releases the trace list again
     del view
-    gc.collect()
-    assert reference() is None
+    assert_released(reference)
 
 
 def test_datasamples_view_holds_the_trace_list_for_every_sample_type():
@@ -1232,13 +1266,8 @@ def test_np_datasamples_view_holds_the_trace_list():
     assert np.array_equal(view, np.array(samples, dtype=np.int32))
 
 
-@pytest.mark.filterwarnings("ignore::DeprecationWarning")
-def test_mstracelist_pack_leaves_no_reference_cycle():
-    """pack() must not tie the trace list into a reference cycle.
-
-    A cycle leaves mstl3_free() waiting for the cyclic collector, which in a
-    long-running rolling buffer defers every release.
-    """
+def _packed_tracelist():
+    """A trace list that has been through pack(), for the cycle tests below."""
     traces = MS3TraceList()
     traces.add_data(
         sourceid="FDSN:XX_TEST__B_S_X",
@@ -1249,6 +1278,32 @@ def test_mstracelist_pack_leaves_no_reference_cycle():
     )
     traces.pack(lambda record, handler_data: None)
 
+    return traces
+
+
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")
+def test_mstracelist_pack_leaves_the_trace_list_collectable():
+    """pack() must leave the trace list collectable.
+
+    A cycle through the callback cdata the collector cannot traverse would
+    strand it for the life of the process.
+    """
+    traces = _packed_tracelist()
+    reference = weakref.ref(traces)
+
+    del traces
+    assert_released(reference)
+
+
+@requires_refcounting
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")
+def test_mstracelist_pack_leaves_no_reference_cycle():
+    """pack() must not tie the trace list into a reference cycle.
+
+    A cycle leaves mstl3_free() waiting for the cyclic collector, which in a
+    long-running rolling buffer defers every release.
+    """
+    traces = _packed_tracelist()
     reference = weakref.ref(traces)
 
     # Reference counting alone must release it, with the cyclic collector off

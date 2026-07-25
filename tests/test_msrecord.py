@@ -9,6 +9,7 @@ import pytest
 
 from pymseed import DataEncoding, MiniSEEDError, MS3Record
 from pymseed.clib import clibmseed, ffi
+from tests.gc_helpers import collect_until, requires_buffer_export_lock, requires_refcounting
 
 test_dir = os.path.abspath(os.path.dirname(__file__))
 test_pack3 = os.path.join(test_dir, "data", "packtest_sine500.mseed3")
@@ -283,9 +284,13 @@ def test_with_datasamples_accepts_one_dimensional():
             assert msr.numsamples == expected
 
 
+@requires_buffer_export_lock
 def test_with_datasamples_holds_the_buffer_export():
     """A zero-copy source must stay pinned for the whole context, so resizing it
-    inside the block raises rather than leaving msr->datasamples dangling."""
+    inside the block raises rather than leaving msr->datasamples dangling.
+
+    Only CPython refuses the resize; PyPy keeps no export count, so there a
+    resize inside the block is undefined behavior that nothing reports."""
     msr = MS3Record()
     msr.sourceid = "FDSN:XX_TEST__B_H_Z"
     msr.set_starttime_str("2024-01-01T00:00:00Z")
@@ -399,39 +404,59 @@ def test_pack_reraises_handler_exception():
     assert len(calls) == 1
 
 
-@pytest.mark.filterwarnings("ignore::DeprecationWarning")
-def test_pack_leaves_no_reference_cycle():
-    """pack() must not tie the record into a reference cycle.
+def _pack_once(collected):
+    """Pack a record whose handler closure carries a canary.
 
-    A cycle leaves msr3_free() waiting for the cyclic collector.  MS3Record
-    uses __slots__ and is not weakref-able, so a canary in the handler closure
-    stands in for the record's own finalization.
+    MS3Record uses __slots__ and is not weakref-able, so the canary stands in
+    for the record's own finalization.
     """
-    collected = []
 
     class Canary:
         def __del__(self):
             collected.append(True)
 
-    def _pack_once():
-        canary = Canary()
-        msr = MS3Record()
-        msr.sourceid = "FDSN:XX_TEST__L_H_Z"
-        msr.set_starttime_str("2024-01-01T00:00:00Z")
-        msr.samprate = 1
-        msr.pack(
-            lambda record, data, _canary=canary: None,
-            None,
-            data_samples=[1, 2, 3],
-            sample_type="i",
-        )
+    canary = Canary()
+    msr = MS3Record()
+    msr.sourceid = "FDSN:XX_TEST__L_H_Z"
+    msr.set_starttime_str("2024-01-01T00:00:00Z")
+    msr.samprate = 1
+    msr.pack(
+        lambda record, data, _canary=canary: None,
+        None,
+        data_samples=[1, 2, 3],
+        sample_type="i",
+    )
+
+
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")
+def test_pack_leaves_the_handler_collectable():
+    """pack() must leave the handler collectable.
+
+    A cycle through the callback cdata the collector cannot traverse would
+    strand the record for the life of the process.
+    """
+    collected = []
+
+    _pack_once(collected)
+
+    assert collect_until(lambda: collected == [True]), "handler was never released"
+
+
+@requires_refcounting
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")
+def test_pack_leaves_no_reference_cycle():
+    """pack() must not tie the record into a reference cycle.
+
+    A cycle leaves msr3_free() waiting for the cyclic collector.
+    """
+    collected = []
 
     # Reference counting alone must release the handler, with the cyclic
     # collector off
     gc.collect()
     gc.disable()
     try:
-        _pack_once()
+        _pack_once(collected)
         assert collected == [True]
     finally:
         gc.enable()

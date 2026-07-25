@@ -16,7 +16,7 @@ from typing import Any
 
 from ._extra_headers_jsonschema import KNOWN_SCHEMAS, load_extra_headers_validator
 from ._json import json_loads
-from .clib import clibmseed, ffi
+from .clib import buffer_pointer, clibmseed, ffi
 from .logging import clear_error_messages, ensure_thread_logging, get_error_messages
 from .mstracelist import MS3TraceList
 from .util import nstime2timestr, system_time
@@ -81,7 +81,7 @@ class _BufferSource:
         self._buffer = buffer
 
     def __iter__(self) -> Iterator[_RecordTuple]:
-        buf_ptr = ffi.from_buffer(self._buffer)
+        buf_ptr = buffer_pointer(self._buffer)
         buf_size = len(buf_ptr)
         format_version = ffi.new("uint8_t *")
         offset = 0
@@ -337,6 +337,11 @@ class MS3RecordValidator:
 
         Returns:
             A new ``MS3RecordValidator`` instance.
+
+        Raises:
+            ValueError: If buffer does not support the buffer protocol, raised
+                by ``validate()`` when the buffer is read.
+            BufferError: If buffer is not C-contiguous, likewise.
 
         Example::
 

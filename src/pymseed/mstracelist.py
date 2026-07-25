@@ -11,7 +11,7 @@ import warnings
 from collections.abc import Callable, Iterator, Sequence
 from typing import Any
 
-from .clib import cdata_to_string, clibmseed, ffi, owned_memoryview
+from .clib import buffer_pointer, cdata_to_string, clibmseed, ffi, owned_memoryview
 from .definitions import DataEncoding, SubSecond, TimeFormat
 from .exceptions import MiniSEEDError
 from .logging import ensure_thread_logging
@@ -615,29 +615,14 @@ class MS3TraceSeg:
         if self.datasamples and buffer is not None:
             raise ValueError("Data samples already unpacked")
 
-        # Bind to the buffer once; only the byte-size derivation needs to vary
-        # across buffer-like types (numpy/memoryview expose .nbytes,
-        # array.array exposes .itemsize, bytes/bytearray/pyarrow.Buffer have
-        # len() in bytes).
         buffer_ptr = ffi.NULL
         buffer_size = 0
         if buffer is not None:
             # libmseed memcpys the decoded samples into this buffer.
-            try:
-                buffer_ptr = ffi.from_buffer(buffer, require_writable=True)
-            except TypeError:
-                raise ValueError("Buffer must support the buffer protocol") from None
-            except (BufferError, ValueError) as e:
-                # CFFI raises BufferError; the exporter itself may raise
-                # ValueError (numpy does, for read-only or non-contiguous).
-                raise BufferError(f"Cannot unpack into the provided buffer: {e}") from None
-
-            if hasattr(buffer, "nbytes"):
-                buffer_size = buffer.nbytes
-            elif hasattr(buffer, "itemsize"):
-                buffer_size = len(buffer) * buffer.itemsize
-            else:
-                buffer_size = len(buffer)
+            buffer_ptr = buffer_pointer(
+                buffer, writable=True, context="Cannot unpack into the provided buffer"
+            )
+            buffer_size = len(buffer_ptr)
 
         status = clibmseed.mstl3_unpack_recordlist(
             self._parent_id,
@@ -1352,7 +1337,9 @@ class MS3TraceList:
                 detail). Default: 0
 
         Raises:
-            ValueError: If starttime or endtime is not a valid date-time string
+            ValueError: If buffer does not support the buffer protocol, or if
+                starttime or endtime is not a valid date-time string
+            BufferError: If buffer is not C-contiguous
             MiniSEEDError: If buffer cannot be read or contains invalid data
 
         Note:
@@ -1442,12 +1429,7 @@ class MS3TraceList:
 
         ensure_thread_logging()
 
-        # Validate that the buffer supports the buffer protocol
-        try:
-            buffer_ptr = ffi.from_buffer(buffer)
-        except (TypeError, AttributeError):
-            raise ValueError("Buffer must support the buffer protocol") from None
-
+        buffer_ptr = buffer_pointer(buffer)
         buffer_length = len(buffer_ptr)
 
         # Record list entries point into the buffer instead of copying it, for

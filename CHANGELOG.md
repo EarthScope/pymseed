@@ -30,6 +30,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and trace ID for the life of the trace list.
 - `util.sample_size()` raises `ValueError` for an unrecognized sample type instead
   of returning a size of 0.
+- `MS3Record.from_buffer()` and `with_datasamples()`: document that only CPython refuses
+  to resize a buffer while it is held, so on PyPy such a resize is undefined behavior
+  that nothing reports.
 
 ### Fixed
 - `MS3RecordPtr.record` for a record list read from a file no longer serves raw bytes
@@ -50,6 +53,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   documented, rather than on the first record.
 - `MS3Record.with_datasamples()` copies a non-contiguous buffer instead of raising
   `BufferError` from the zero-copy check.
+- `MS3TraceSeg.unpack_recordlist()` reports a read-only buffer as `BufferError` on PyPy
+  as well as CPython, rather than as a `ValueError` about the buffer protocol.  Every
+  entry point taking a buffer now raises `ValueError` for one that is not a buffer and
+  `BufferError` for one that is not C-contiguous, instead of leaking CFFI's exception.
 - `MS3Record.from_file()`, `from_buffer()`, and `from_filelike()` raise `MiniSEEDError`
   with a status of `MS_ENDOFFILE` when the source ends part way through a record, or
   with bytes remaining that are too few for one, instead of stopping silently.  For
