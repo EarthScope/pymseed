@@ -1018,6 +1018,7 @@ mstl3_readbuffer_selection (MS3TraceList **ppmstl, const char *buffer, uint64_t 
       }
 
       recordptr->bufferptr = buffer + offset;
+      recordptr->msr->record = buffer + offset;
       recordptr->fileptr = NULL;
       recordptr->filename = NULL;
       recordptr->fileoffset = 0;
@@ -1389,6 +1390,9 @@ lm_add_recordptr (MS3TraceSeg *seg, const MS3Record *msr, nstime_t endtime, int8
     libmseed_memory.free (recordptr);
     return NULL;
   }
+
+  /* The duplicated record pointer is only valid if re-established by the caller */
+  recordptr->msr->record = NULL;
 
   /* If no record list for the segment is present, allocate and add record pointer */
   if (seg->recordlist == NULL)

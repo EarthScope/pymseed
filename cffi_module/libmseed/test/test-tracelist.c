@@ -100,6 +100,7 @@ TEST (tracelist, ms3_readtracelist_recptr)
   CHECK (recptr->fileptr == NULL, "recptr->fileptr is not expected NULL");     /* File is not currently open, closed by read routine */
   CHECK (recptr->fileoffset == 1152, "recptr->fileoffset is not expected 1152");
   CHECK (recptr->msr != NULL, "recptr->msr is not expected NULL");
+  CHECK (recptr->msr->record == NULL, "recptr->msr->record is not expected NULL"); /* Record is not in a buffer */
   CHECK (recptr->endtime == endtime, "recptr->endtime is not expected '2010-02-27T07:55:51.069539Z'");
   CHECK (recptr->dataoffset == 64, "recptr->dataoffset is not expected 64");
   CHECK (recptr->next == NULL, "recptr->next is not exected NULL");
@@ -181,6 +182,7 @@ TEST (tracelist, mstl3_readbuffer_recptr)
 
   CHECK (recptr->fileoffset == 0, "recptr->fileoffset is not expected 0");
   CHECK (recptr->msr != NULL, "recptr->msr is not expected NULL");
+  CHECK (recptr->msr->record == recptr->bufferptr, "recptr->msr->record is not expected recptr->bufferptr");
   CHECK (recptr->endtime == endtime, "recptr->endtime is not expected '2010-02-27T07:55:51.069539Z'");
   CHECK (recptr->dataoffset == 64, "recptr->dataoffset is not expected 64");
   CHECK (recptr->next == NULL, "recptr->next is not expected NULL");

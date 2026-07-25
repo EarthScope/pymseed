@@ -17,7 +17,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * Copyright (C) 2025:
+ * Copyright (C) 2026:
  * @author Chad Trabant, EarthScope Data Services
  ***************************************************************************/
 
@@ -29,8 +29,8 @@ extern "C"
 {
 #endif
 
-#define LIBMSEED_VERSION "3.5.0"    //!< Library version
-#define LIBMSEED_RELEASE "2026.205" //!< Library release date
+#define LIBMSEED_VERSION "3.5.1"    //!< Library version
+#define LIBMSEED_RELEASE "2026.206" //!< Library release date
 
 /** @defgroup io-functions File and URL I/O */
 /** @defgroup miniseed-record Record Handling */
@@ -454,6 +454,7 @@ extern int64_t ms_decode_data (const void *input, uint64_t inputsize, uint8_t en
 extern MS3Record *msr3_init (MS3Record *msr);
 extern void msr3_free (MS3Record **ppmsr);
 extern MS3Record *msr3_duplicate (const MS3Record *msr, int8_t datadup);
+extern MS3Record *msr3_duplicate_extra (const MS3Record *msr, int8_t datadup, int8_t extradup);
 extern nstime_t msr3_endtime (const MS3Record *msr);
 extern void msr3_print (const MS3Record *msr, int8_t details);
 extern int msr3_resize_buffer (MS3Record *msr);
@@ -532,7 +533,10 @@ extern void ms3_printselections (const MS3Selections *selections);
  * the file name remains valid for the lifetime of the record list.
  *
  * A ::MS3Record is stored with and contains the bit flags, extra
- * headers, etc. for the record.
+ * headers, etc. for the record.  The raw record pointer (\a
+ * MS3Record.record) is only populated when the record remains
+ * available in a caller-supplied buffer; it is NULL otherwise, for
+ * example for records read from files.
  *
  * The \a dataoffset to the encoded data is stored to enable direct
  * decoding of data samples without re-parsing the header, used by
@@ -549,7 +553,7 @@ typedef struct MS3RecordPtr
   FILE *fileptr;         //!< Pointer to open FILE containing record, NULL if not used
   const char *filename;  //!< Pointer (borrowed) to file name containing record, NULL if not used
   int64_t fileoffset;    //!< Offset into file to record for \a fileptr or \a filename
-  MS3Record *msr;        //!< Pointer to ::MS3Record for this record
+  MS3Record *msr;        //!< Pointer to ::MS3Record for this record, \a msr->record is only valid if from a caller-supplied buffer
   nstime_t endtime;      //!< End time of record, time of last sample
   uint32_t dataoffset;   //!< Offset from start of record to encoded data
   void *prvtptr;         //!< Private pointer, will not be populated by library but will be free'd

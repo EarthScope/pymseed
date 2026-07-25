@@ -2457,3 +2457,95 @@ TEST (pack, msr3_pack_v2_samprate_range)
   CHECK (pack_v2_at_rate (-10.0, &records) > 0 && records > 0,
          "Sample period -10 (0.1 Hz) was rejected for v2");
 }
+
+/* Retain the last record emitted, for parsing back */
+static char lastrecord[512];
+static int lastreclen = 0;
+
+static void
+record_keeper (char *record, int reclen, void *ptr)
+{
+  (void)ptr;
+  if (reclen <= (int)sizeof (lastrecord))
+  {
+    memcpy (lastrecord, record, reclen);
+    lastreclen = reclen;
+  }
+}
+
+/* Pack a single v2 record with the specified extra headers, returning the
+ * msr3_pack() result and retaining the record in 'lastrecord'. */
+static int64_t
+pack_v2_with_extra (const char *extra)
+{
+  MS3Record msr = MS3Record_INITIALIZER;
+  int32_t data[4] = {1, 2, 3, 4};
+
+  lastreclen = 0;
+
+  strcpy (msr.sid, "FDSN:XX_TEST__B_H_Z");
+  msr.reclen = 512;
+  msr.pubversion = 1;
+  msr.formatversion = 2;
+  msr.starttime = ms_timestr2nstime ("2024-01-02T03:04:05Z");
+  msr.samprate = 1.0;
+  msr.encoding = DE_INT32;
+  msr.datasamples = data;
+  msr.sampletype = 'i';
+  msr.numsamples = 4;
+  msr.samplecnt = 4;
+  msr.extra = (char *)extra;
+  msr.extralength = (uint16_t)strlen (extra);
+
+  return msr3_pack (&msr, record_keeper, NULL, NULL, MSF_FLUSHDATA, 0);
+}
+
+/* Verify that a calibration abort round trips through miniSEED v2 as a
+ * Blockette 395, and that a sequence which cannot be represented is rejected.
+ *
+ * Reading a Blockette 395 produces a sequence with a Type of ABORT and an
+ * EndTime, which must be accepted when packing so the blockette can be
+ * written back out. */
+TEST (pack, msr3_pack_v2_calibration_abort)
+{
+  MS3Record *rmsr = NULL;
+  char gotstr[64];
+  int rrv;
+
+  CHECK (pack_v2_with_extra ("{\"FDSN\":{\"Calibration\":{\"Sequence\":[{\"Type\":\"ABORT\","
+                             "\"EndTime\":\"2024-01-02T03:04:09Z\"}]}}}") > 0,
+         "A calibration abort sequence was rejected for v2");
+  REQUIRE (lastreclen > 0, "No record was retained");
+
+  rrv = msr3_parse (lastrecord, lastreclen, &rmsr, 0, 0);
+  REQUIRE (rrv == MS_NOERROR, "msr3_parse() did not return expected MS_NOERROR");
+
+  rrv = mseh_get_string (rmsr, "/FDSN/Calibration/Sequence/0/Type", gotstr, sizeof (gotstr));
+  CHECK (rrv == 0, "mseh_get_string() did not find the decoded calibration Type");
+  CHECK (strcmp (gotstr, "ABORT") == 0, "Decoded calibration Type is not ABORT");
+
+  rrv = mseh_get_string (rmsr, "/FDSN/Calibration/Sequence/0/EndTime", gotstr, sizeof (gotstr));
+  CHECK (rrv == 0, "mseh_get_string() did not find the decoded calibration EndTime");
+  CHECK (strcmp (gotstr, "2024-01-02T03:04:09Z") == 0,
+         "Decoded calibration EndTime does not match encoded value");
+
+  msr3_free (&rmsr);
+
+  /* A sequence with only an end time is a Blockette 395 alone */
+  CHECK (pack_v2_with_extra ("{\"FDSN\":{\"Calibration\":{\"Sequence\":[{"
+                             "\"EndTime\":\"2024-01-02T03:04:09Z\"}]}}}") > 0,
+         "A calibration sequence with only an end time was rejected for v2");
+
+  /* An abort without an end time has no content to write */
+  CHECK (pack_v2_with_extra ("{\"FDSN\":{\"Calibration\":{\"Sequence\":[{\"Type\":\"ABORT\"}]}}}") < 0,
+         "A calibration abort without an end time was not rejected");
+
+  /* An end time must be a string to be converted */
+  CHECK (pack_v2_with_extra ("{\"FDSN\":{\"Calibration\":{\"Sequence\":[{\"EndTime\":12345}]}}}") < 0,
+         "A non-string calibration end time was not rejected");
+
+  /* An unrecognized type cannot be mapped to a blockette */
+  CHECK (pack_v2_with_extra ("{\"FDSN\":{\"Calibration\":{\"Sequence\":[{\"Type\":\"BOGUS\","
+                             "\"EndTime\":\"2024-01-02T03:04:09Z\"}]}}}") < 0,
+         "An unrecognized calibration Type was not rejected");
+}

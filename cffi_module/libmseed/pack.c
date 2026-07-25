@@ -1614,7 +1614,7 @@ msr3_pack_header2_offsets (const MS3Record *msr, char *record, uint32_t recbufle
       if (!yyjson_is_obj (ehiterval))
         continue;
 
-      /* Determine which calibration type: STEP, SINE, PSEUDORANDOM, GENERIC */
+      /* Determine which calibration type: STEP, SINE, PSEUDORANDOM, GENERIC, ABORT */
       blockette_type = 0;
       blockette_length = 0;
       if (yyjson_ptr_get_str (ehiterval, "/Type", &header_string))
@@ -1639,7 +1639,13 @@ msr3_pack_header2_offsets (const MS3Record *msr, char *record, uint32_t recbufle
           blockette_type = 390;
           blockette_length = 28;
         }
+        else if (lmp_strncasecmp (header_string, "ABORT", 5) == 0)
+        {
+          blockette_type = 395;
+          blockette_length = 16;
+        }
       }
+      /* A sequence with only an end time is a Blockette 395 alone */
       else if (yyjson_ptr_get (ehiterval, "/EndTime"))
       {
         blockette_type = 395;
@@ -1649,6 +1655,15 @@ msr3_pack_header2_offsets (const MS3Record *msr, char *record, uint32_t recbufle
       if (!blockette_type || !blockette_length)
       {
         ms_log (2, "%s: Unknown or unset /FDSN/Calibration/Sequence/Type or /EndTime\n", msr->sid);
+        yyjson_doc_free (ehdoc);
+        return -1;
+      }
+
+      /* An end time is the only content of a B395 */
+      if (blockette_type == 395 && !yyjson_ptr_get_str (ehiterval, "/EndTime", &header_string))
+      {
+        ms_log (2, "%s: Missing or non-string /FDSN/Calibration/Sequence/EndTime for B395\n",
+                msr->sid);
         yyjson_doc_free (ehdoc);
         return -1;
       }
@@ -1861,7 +1876,7 @@ msr3_pack_header2_offsets (const MS3Record *msr, char *record, uint32_t recbufle
         written += blockette_length;
       }
     }
-  } /* End if /FDSN/Event/Detection */
+  } /* End if /FDSN/Calibration/Sequence */
 
   if (ehdoc)
   {

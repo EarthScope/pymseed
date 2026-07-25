@@ -19,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `None` for a segment carrying no update time.
 
 ### Changed
-- libmseed updated to v3.5.0
+- libmseed updated to v3.5.1
 - For `MS3TraceList.add_data()` deprecate the `start_time` kwargs in favor of
   `starttime` for uniformity with the rest of the package.
 - `MS3TraceList.generate()`: document that abandoning the generator with
