@@ -791,6 +791,30 @@ def test_msrecord_to_file(tmp_path):
             assert reference_data == test_data
 
 
+def test_msrecord_to_file_rejects_invalid_filename_types(tmp_path):
+    msr = MS3Record()
+    for bad in (b"some/path", None, ["a", "b"], 3.14):
+        with pytest.raises(TypeError, match="filename must be"):
+            msr.to_file(bad)
+
+
+def test_msrecord_to_file_accepts_pathlike(tmp_path):
+    import pathlib
+
+    msr = MS3Record()
+    msr.sourceid = "FDSN:XX_TEST__B_S_X"
+    msr.set_starttime_str("2023-01-02T01:02:03.123456789Z")
+    msr.samprate = 50.0
+    msr.encoding = DataEncoding.STEIM2
+
+    out = pathlib.Path(tmp_path) / "out.mseed3"
+    with msr.with_datasamples(sine_500, "i"):
+        records_written = msr.to_file(out, overwrite=True)
+
+    assert records_written == 1
+    assert out.exists() and out.stat().st_size > 0
+
+
 class TestMS3RecordParse:
     """Tests for MS3Record.parse() — single-record buffer parsing."""
 

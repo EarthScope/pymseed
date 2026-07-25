@@ -1834,14 +1834,16 @@ class MS3Record:
 
     def to_file(
         self,
-        filename: str,
+        filename: str | os.PathLike[str],
         overwrite: bool = False,
         verbose: int = 0,
     ) -> int:
         """Write data contained in the record to a miniSEED file
 
         Args:
-            filename: Path to the output miniSEED file. The file will be created if it
+            filename: Path to the output miniSEED file. Accepts ``str`` or any
+                :class:`os.PathLike` (e.g. :class:`pathlib.Path`); other types
+                raise :class:`TypeError`. The file will be created if it
                 doesn't exist. Directory must already exist.
             overwrite: If True, overwrites existing file. If False and file exists,
                 append data to the end of the file. Default is False for safety.
@@ -1851,6 +1853,8 @@ class MS3Record:
             int: Number of miniSEED records written to the file.
 
         Raises:
+            TypeError: If filename is not a str or os.PathLike.
+
             MiniSEEDError: If the underlying libmseed library encounters an error during
                 file writing (e.g., permission denied, disk full, invalid data).
 
@@ -1858,10 +1862,15 @@ class MS3Record:
             generate(): For creating record
             MS3Record: Full record documentation
         """
+        if isinstance(filename, os.PathLike):
+            filename = os.fspath(filename)
+        elif not isinstance(filename, str):
+            raise TypeError(f"filename must be str or os.PathLike; got {type(filename).__name__}")
+
         ensure_thread_logging()
 
         # Convert filename to bytes (C string)
-        c_filename = ffi.new("char[]", filename.encode("utf-8"))
+        c_filename = ffi.new("char[]", os.fsencode(filename))
 
         # Set flags based on record configuration
         pack_flags = clibmseed.MSF_FLUSHDATA  # Pack all available data

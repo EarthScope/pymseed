@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- `MS3Record.to_file()` accepts `os.PathLike` filenames and encodes them with
+  `os.fsencode()`, matching the rest of the package.
+
 ## [0.9.1] - 2026-07-25
 
 ### Added
