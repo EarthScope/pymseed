@@ -137,6 +137,7 @@ def test_tracelist_segment_update_time():
 def test_tracelist_segment_update_time_unrecorded():
     """Segments built without an update time report None rather than reading
     whatever else a private pointer might hold."""
+    pytest.importorskip("jsonschema_rs")
     with open(test_path3, "rb") as f:
         errors, traces = MS3RecordValidator.from_buffer(f.read()).validate()
 

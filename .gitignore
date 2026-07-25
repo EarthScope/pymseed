@@ -31,6 +31,7 @@ pip-delete-this-directory.txt
 .venv/
 venv/
 src/miniseed/libmseed.h
+pypyvenv
 
 # Generated CFFI and other files generated during build phase
 cffi_module/libmseed/libmseed.a

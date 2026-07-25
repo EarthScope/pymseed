@@ -491,6 +491,7 @@ class TestUnconfiguredThreadLogging:
         Every per-record message the validator reports comes from the registry,
         so an unconfigured thread reported zero errors for a corrupt payload.
         """
+        pytest.importorskip("jsonschema_rs")
         buffer = get_payload_corrupted_buffer()
 
         def validate() -> list[Any]:

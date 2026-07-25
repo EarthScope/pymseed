@@ -95,6 +95,7 @@ class TestMS3RecordValidatorBasic:
 
     def test_validate_clean_buffer_mseed3(self) -> None:
         """Test parsing a clean miniSEED v3 buffer with no errors."""
+        pytest.importorskip("jsonschema_rs")
         buffer = get_test_buffer(TEST_MSEED3_FILE)
 
         errors, traces = MS3RecordValidator.from_buffer(buffer, unpack_data=False).validate()
@@ -105,6 +106,7 @@ class TestMS3RecordValidatorBasic:
 
     def test_validate_clean_buffer_mseed2(self) -> None:
         """Test parsing a clean miniSEED v2 buffer with no errors."""
+        pytest.importorskip("jsonschema_rs")
         buffer = get_test_buffer(TEST_MSEED2_FILE)
 
         errors, traces = MS3RecordValidator.from_buffer(buffer, unpack_data=False).validate()
@@ -115,6 +117,7 @@ class TestMS3RecordValidatorBasic:
 
     def test_validate_with_unpack_data(self) -> None:
         """Test parsing with data unpacking enabled produces no errors on clean data."""
+        pytest.importorskip("jsonschema_rs")
         buffer = get_test_buffer(TEST_MSEED3_FILE)
 
         errors, traces = MS3RecordValidator.from_buffer(buffer, unpack_data=True).validate()
@@ -131,6 +134,7 @@ class TestMS3RecordValidatorBasic:
 
     def test_return_trace_list_false(self) -> None:
         """Test that return_trace_list=False returns None for traces."""
+        pytest.importorskip("jsonschema_rs")
         buffer = get_test_buffer(TEST_MSEED3_FILE)
 
         errors, traces = MS3RecordValidator.from_buffer(buffer, return_trace_list=False).validate()
@@ -207,6 +211,7 @@ class TestMS3RecordValidatorDataUnpacking:
 
     def test_unpack_data_disabled_suppresses_errors(self) -> None:
         """Test that unpack_data=False suppresses data unpacking errors."""
+        pytest.importorskip("jsonschema_rs")
         buffer = _get_record_with_bad_encoding()
 
         errors_on, _ = MS3RecordValidator.from_buffer(
@@ -396,6 +401,7 @@ class TestMS3RecordValidatorPartialData:
     def test_partial_record_at_end(self) -> None:
         """An incomplete record at the end of a buffer is reported while every
         complete record before it is still validated and returned."""
+        pytest.importorskip("jsonschema_rs")
         buffer = get_test_buffer(TEST_MSEED3_FILE)
 
         full_errors, full_traces = MS3RecordValidator.from_buffer(buffer).validate()
@@ -421,6 +427,7 @@ class TestMS3RecordValidatorPartialData:
     def test_partial_record_at_end_of_stream(self) -> None:
         """The stream source must report the same shortfall as the buffer source,
         at the same offset."""
+        pytest.importorskip("jsonschema_rs")
         import io
 
         truncated = get_test_buffer(TEST_MSEED3_FILE)[:-100]
@@ -437,6 +444,7 @@ class TestMS3RecordValidatorPartialData:
         """len() on a buffer-protocol object with itemsize > 1 is the element
         count, not the byte count. Sizing the source with it made the validator
         examine only 1/itemsize of the data and report a clean, short result."""
+        pytest.importorskip("jsonschema_rs")
         import array
 
         data = get_test_buffer(TEST_MSEED3_FILE)
@@ -490,6 +498,7 @@ class TestMS3RecordValidatorPartialData:
     def test_complete_source_reports_no_shortfall(self) -> None:
         """Guard against over-reporting: a source ending exactly on a record
         boundary must stay clean, for both sources and both format versions."""
+        pytest.importorskip("jsonschema_rs")
         import io
 
         for path in (TEST_MSEED3_FILE, TEST_MSEED2_FILE):
@@ -581,6 +590,7 @@ class TestMS3RecordValidatorFromFile:
 
     def test_from_file_clean_mseed3(self) -> None:
         """Test validating a clean miniSEED v3 file."""
+        pytest.importorskip("jsonschema_rs")
         errors, traces = MS3RecordValidator.from_file(TEST_MSEED3_FILE, unpack_data=True).validate()
 
         assert isinstance(traces, MS3TraceList)
@@ -589,6 +599,7 @@ class TestMS3RecordValidatorFromFile:
 
     def test_from_file_clean_mseed2(self) -> None:
         """Test validating a clean miniSEED v2 file."""
+        pytest.importorskip("jsonschema_rs")
         errors, traces = MS3RecordValidator.from_file(TEST_MSEED2_FILE, unpack_data=True).validate()
 
         assert isinstance(traces, MS3TraceList)
@@ -693,6 +704,7 @@ class TestMS3RecordValidatorIntegration:
 
     def test_full_file_validate_mseed3(self) -> None:
         """Test parsing entire miniSEED v3 file and verify sample counts."""
+        pytest.importorskip("jsonschema_rs")
         buffer = get_test_buffer(TEST_MSEED3_FILE)
 
         errors, traces = MS3RecordValidator.from_buffer(buffer, unpack_data=True).validate()
@@ -703,6 +715,7 @@ class TestMS3RecordValidatorIntegration:
 
     def test_full_file_validate_mseed2(self) -> None:
         """Test parsing entire miniSEED v2 file and verify sample counts."""
+        pytest.importorskip("jsonschema_rs")
         buffer = get_test_buffer(TEST_MSEED2_FILE)
 
         errors, traces = MS3RecordValidator.from_buffer(buffer, unpack_data=True).validate()
@@ -728,6 +741,7 @@ class TestMS3RecordValidatorFromFilelike:
 
     def test_validate_clean_mseed3(self) -> None:
         """from_filelike on a BytesIO wrapping v3 data produces zero errors."""
+        pytest.importorskip("jsonschema_rs")
         import io
 
         buffer = get_test_buffer(TEST_MSEED3_FILE)
@@ -808,6 +822,7 @@ class TestMS3RecordValidatorFromFilelike:
 
     def test_non_seekable_stream(self) -> None:
         """from_filelike works with a forward-only stream that has no seek/tell."""
+        pytest.importorskip("jsonschema_rs")
 
         class _ReadOnly:
             """Wraps bytes, exposing only .read(n) — no seek or tell."""
@@ -882,6 +897,7 @@ class TestMS3RecordValidatorUndetectableInput:
     def test_record_spanning_several_chunks_still_validates(self) -> None:
         """The early report must not pre-empt the legitimate 'need more bytes'
         path, where a record is longer than a single chunk."""
+        pytest.importorskip("jsonschema_rs")
         stream = _CountingStream(head=get_test_buffer(TEST_MSEED3_FILE))
 
         errors, traces = MS3RecordValidator.from_filelike(stream, chunk_size=64).validate()
@@ -915,6 +931,7 @@ class TestMS3RecordValidatorFutureData:
 
     def test_clean_historical_data_has_no_future_errors(self) -> None:
         """Data from the past passes the check with the default tolerance."""
+        pytest.importorskip("jsonschema_rs")
         for path in (TEST_MSEED3_FILE, TEST_MSEED2_FILE):
             errors, _ = MS3RecordValidator.from_buffer(get_test_buffer(path)).validate()
             assert errors == []
@@ -927,6 +944,7 @@ class TestMS3RecordValidatorFutureData:
 
     def test_every_future_record_is_reported(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """With "now" set before the data, every record is flagged."""
+        pytest.importorskip("jsonschema_rs")
         from pymseed import msrecord_validator as mv
         from pymseed.util import timestr2nstime
 
@@ -945,6 +963,7 @@ class TestMS3RecordValidatorFutureData:
 
     def test_tolerance_none_disables_check(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """future_data_tolerance=None skips the check entirely."""
+        pytest.importorskip("jsonschema_rs")
         from pymseed import msrecord_validator as mv
         from pymseed.util import timestr2nstime
 
@@ -974,6 +993,7 @@ class TestMS3RecordValidatorFutureData:
     ) -> None:
         """A record ending 3 s past "now" is reported only when the tolerance
         is smaller than the excess."""
+        pytest.importorskip("jsonschema_rs")
         from pymseed import msrecord_validator as mv
 
         record, endtime = self._first_record()
@@ -991,6 +1011,7 @@ class TestMS3RecordValidatorFutureData:
     ) -> None:
         """A record that only looks future against a stale clock reading is
         cleared by the re-read, not reported."""
+        pytest.importorskip("jsonschema_rs")
         from pymseed import msrecord_validator as mv
         from pymseed.util import system_time as real_system_time
         from pymseed.util import timestr2nstime
@@ -1034,6 +1055,7 @@ class TestMS3RecordValidatorFutureData:
 
     def test_future_error_fields_populated(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """The future-data ValidationError carries the record context."""
+        pytest.importorskip("jsonschema_rs")
         from pymseed import msrecord_validator as mv
         from pymseed.util import timestr2nstime
 
@@ -1068,6 +1090,7 @@ class TestMS3RecordValidatorFutureData:
     def test_unformattable_end_time_does_not_raise(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """An end time libmseed cannot format still yields an error message
         rather than propagating ValueError out of validate()."""
+        pytest.importorskip("jsonschema_rs")
         from pymseed import msrecord_validator as mv
 
         def unformattable(_nstime: int) -> str:
