@@ -11,6 +11,7 @@ from typing import Any
 
 from .clib import clibmseed, ffi
 from .exceptions import MiniSEEDError
+from .logging import ensure_thread_logging
 from .msrecord import MS3Record
 from .selections import build_selections
 
@@ -163,6 +164,8 @@ class MS3RecordReader:
         verbose: int = 0,
         input: str | os.PathLike[str] | int = _INPUT_SENTINEL,
     ) -> None:
+        ensure_thread_logging()
+
         self._msfp_ptr = ffi.new("MS3FileParam **")
         self._msr_ptr = ffi.new("MS3Record **")
         self._selections = ffi.NULL

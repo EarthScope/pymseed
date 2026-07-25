@@ -38,6 +38,11 @@ _atexit_registered_clear_error_messages = False
 # Thread-local storage for keeping prefix strings alive
 _thread_local_prefixes = threading.local()
 
+# Arguments of the most recent configure_logging() call, applied to threads that
+# have not configured themselves.  Replaced as a whole tuple so readers on other
+# threads always see a consistent set.
+_inherited_config: tuple[str | None, str | None, int] = (None, None, DEFAULT_MAX_MESSAGES)
+
 # Reused pop buffer per thread (ms_rlog_pop requires a stable char[] each call)
 _thread_local_rlog_pop_buf = threading.local()
 
@@ -56,6 +61,10 @@ def configure_logging(
     This function can be called from any thread to configure its logging
     parameters. Each :class:`threading.Thread` can hold its own log prefixes
     and message registry; calls from different threads do not interfere.
+
+    The arguments are also remembered as the configuration for threads that
+    never call this function themselves; pymseed applies it to each thread on
+    first use, so message capture works on any thread without setup.
 
     Per-thread isolation requires libmseed to be built with thread-local
     storage (the default — see ``logging.c`` ``lm_thread_local`` selection).
@@ -80,7 +89,7 @@ def configure_logging(
     if max_messages < 0:
         raise ValueError(f"max_messages must be >= 0; got {max_messages}. ")
 
-    global _atexit_registered_clear_error_messages
+    global _atexit_registered_clear_error_messages, _inherited_config
 
     # Encode the new prefixes into local bytes objects first. libmseed stores
     # the prefix by pointer rather than by copy (see logging.c: `logp->logprefix
@@ -109,11 +118,31 @@ def configure_logging(
     # the previous TLS reference can no longer leave a dangling pointer.
     _thread_local_prefixes.log_prefix = new_log_prefix_bytes
     _thread_local_prefixes.error_prefix = new_error_prefix_bytes
+    _thread_local_prefixes.configured = True
+
+    _inherited_config = (log_prefix, error_prefix, max_messages)
 
     # Register cleanup at exit (only once)
     if not _atexit_registered_clear_error_messages:
         atexit.register(clear_error_messages)
         _atexit_registered_clear_error_messages = True
+
+
+def ensure_thread_logging() -> None:
+    """Configure libmseed logging for the calling thread if not already done.
+
+    libmseed's message registry is thread-local: an unconfigured thread prints
+    diagnostics to stderr instead of storing them, so ``get_error_messages()``
+    returns nothing and callers relying on it (notably
+    :class:`~pymseed.MS3RecordValidator`) lose all message text.  pymseed calls
+    this at the entry point of every operation that can produce messages.
+
+    Applies the arguments of the most recent :func:`configure_logging` call.
+    """
+    if getattr(_thread_local_prefixes, "configured", False):
+        return
+
+    configure_logging(*_inherited_config)
 
 
 def clear_error_messages() -> int:

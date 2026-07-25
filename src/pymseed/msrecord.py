@@ -21,6 +21,7 @@ from pymseed._json import json_dumps_minified, json_loads
 from .clib import clibmseed, ffi
 from .definitions import SubSecond, TimeFormat
 from .exceptions import MiniSEEDError
+from .logging import ensure_thread_logging
 from .selections import build_selections
 from .util import encoding_string, nstime2timestr, timestr2nstime
 
@@ -1290,6 +1291,8 @@ class MS3Record:
         Raises:
             MiniSEEDError: If unpacking fails
         """
+        ensure_thread_logging()
+
         samples_unpacked = clibmseed.msr3_unpack_data(self._msr, verbose)
 
         if samples_unpacked < 0:
@@ -1563,6 +1566,8 @@ class MS3Record:
                 f"sample_type={sample_type!r}"
             )
 
+        ensure_thread_logging()
+
         # Set handler function as CFFI callback function
         self._record_handler = handler
         self._record_handler_data = handler_data
@@ -1680,6 +1685,8 @@ class MS3Record:
         verbose: int,
     ) -> Iterator[bytes]:
         """Generator body for :meth:`generate`. Assumes arguments are validated."""
+        ensure_thread_logging()
+
         flags = clibmseed.MSF_FLUSHDATA  # Always flush data when packing
 
         record_pp = ffi.new("char **")
@@ -1741,6 +1748,8 @@ class MS3Record:
             generate(): For creating record
             MS3Record: Full record documentation
         """
+        ensure_thread_logging()
+
         # Convert filename to bytes (C string)
         c_filename = ffi.new("char[]", filename.encode("utf-8"))
 
@@ -1936,6 +1945,8 @@ class MS3Record:
             parse(): Parse a single record from a buffer (owns the C struct)
             from_file(): Iterate over records in a file
         """
+        ensure_thread_logging()
+
         msr_ptr = ffi.new("MS3Record **")
         buf_ptr = ffi.from_buffer(buffer)
         offset = 0
@@ -2080,6 +2091,8 @@ class MS3Record:
             from_buffer(): Iterate over records in a complete in-memory buffer
             from_file(): Iterate over records in a file
         """
+        ensure_thread_logging()
+
         msr_ptr = ffi.new("MS3Record **")
 
         # Build selections, if sourceid, starttime, or endtime are specified
@@ -2271,6 +2284,8 @@ class MS3Record:
         See Also:
             from_buffer(): Iterate over multiple records in a buffer
         """
+        ensure_thread_logging()
+
         buf_ptr = ffi.from_buffer(buffer)
         msr_ptr = ffi.new("MS3Record **")
 
@@ -2355,6 +2370,8 @@ class MS3Record:
                 "record, or call parse_into() on a wrapper created with "
                 "MS3Record()."
             )
+
+        ensure_thread_logging()
 
         buf_ptr = ffi.from_buffer(buffer)
         msr_ptr = ffi.new("MS3Record **")

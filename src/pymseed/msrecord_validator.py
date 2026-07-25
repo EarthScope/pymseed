@@ -18,7 +18,7 @@ from typing import Any
 
 from ._json import json_loads
 from .clib import clibmseed, ffi
-from .logging import clear_error_messages, get_error_messages
+from .logging import clear_error_messages, ensure_thread_logging, get_error_messages
 from .mstracelist import MS3TraceList
 from .util import nstime2timestr, system_time
 
@@ -467,6 +467,8 @@ class MS3RecordValidator:
             caller can distinguish "couldn't open the source" from
             "source opened but contained bad records".
         """
+        ensure_thread_logging()
+
         errors: list[ValidationError] = []
         tracelist = MS3TraceList() if self._return_trace_list else None
 

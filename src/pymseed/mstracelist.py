@@ -14,6 +14,7 @@ from typing import Any
 from .clib import cdata_to_string, clibmseed, ffi
 from .definitions import DataEncoding, SubSecond, TimeFormat
 from .exceptions import MiniSEEDError
+from .logging import ensure_thread_logging
 from .msrecord import MS3Record
 from .selections import build_selections
 from .util import encoding_sizetype, nstime2timestr
@@ -1178,6 +1179,8 @@ class MS3TraceList:
         elif not isinstance(file_name, str):
             raise TypeError(f"file_name must be str or os.PathLike; got {type(file_name).__name__}")
 
+        ensure_thread_logging()
+
         # Store file name for reference and use in record lists.
         c_file_name = ffi.new("char[]", os.fsencode(file_name))
         if record_list:
@@ -1372,6 +1375,8 @@ class MS3TraceList:
         mstl_ptr = ffi.new("MS3TraceList **")
         mstl_ptr[0] = self._mstl
 
+        ensure_thread_logging()
+
         # Validate that the buffer supports the buffer protocol
         try:
             buffer_ptr = ffi.from_buffer(buffer)
@@ -1528,6 +1533,8 @@ class MS3TraceList:
         if record_list:
             flags |= clibmseed.MSF_RECORDLIST
 
+        ensure_thread_logging()
+
         # A handle for the record entries in a record list, reused for each record
         pprecptr = ffi.new("MS3RecordPtr **") if record_list else ffi.NULL
 
@@ -1672,6 +1679,8 @@ class MS3TraceList:
             >>> len(traces[0]) # One trace segment
             1
         """
+
+        ensure_thread_logging()
 
         # Create an MS3Record to hold the data
         msr = MS3Record()
@@ -1858,6 +1867,8 @@ class MS3TraceList:
                 stacklevel=2,
             )
             max_record_length = record_length
+
+        ensure_thread_logging()
 
         # Set handler function as CFFI callback function
         self._record_handler = handler
@@ -2060,6 +2071,8 @@ class MS3TraceList:
     ) -> Iterator[bytes]:
         """Generator body for :meth:`generate`. Kept private so the public
         wrapper can validate arguments eagerly before the first yield."""
+        ensure_thread_logging()
+
         flags = 0
 
         if flush_data:
@@ -2223,6 +2236,8 @@ class MS3TraceList:
             filename = os.fspath(filename)
         elif not isinstance(filename, str):
             raise TypeError(f"filename must be str or os.PathLike; got {type(filename).__name__}")
+
+        ensure_thread_logging()
 
         # Convert filename to bytes (C string).
         c_filename = ffi.new("char[]", os.fsencode(filename))

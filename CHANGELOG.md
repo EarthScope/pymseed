@@ -25,6 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a packing error instead of silently yielding no records.
 - `MS3Record.parse_into()` no longer leaves a freed record pointer behind when
   parsing fails after the header stage (e.g. bad CRC).
+- libmseed's message registry is now configured for each thread on first use, so
+  warnings and errors are captured on threads that never called `configure_logging()`.
 
 ## [0.9.0] - 2026-05-17
 
