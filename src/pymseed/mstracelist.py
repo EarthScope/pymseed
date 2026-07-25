@@ -52,12 +52,8 @@ class MS3RecordPtr:
     def record(self) -> MS3Record:
         """Return a constructed MS3Record"""
         if not hasattr(self, "_msrecord"):
-            # A file-sourced entry retains msr->record from the reader's buffer,
-            # released with the read, so drop it rather than read freed memory.
-            # A buffer-sourced one points into a buffer the trace list holds.
-            if self._ptr.filename != ffi.NULL:
-                self._ptr.msr.record = ffi.NULL
-
+            # libmseed leaves msr->record unset unless the source bytes outlive the
+            # read, as they do for a buffer-sourced entry held by the trace list.
             self._msrecord = MS3Record(recordptr=self._ptr.msr, owner=self._parent_tracelist)
         return self._msrecord
 
@@ -1614,6 +1610,8 @@ class MS3TraceList:
                     if unpack_data:
                         msr.unpack_data(verbose=verbose)
 
+                # A record added directly carries no source reference, msr->record
+                # included, matching source bytes that do not outlive the read.
                 seg = clibmseed.mstl3_addmsr_recordptr(
                     self._mstl,
                     msr._msr,
@@ -1629,16 +1627,6 @@ class MS3TraceList:
                         clibmseed.MS_GENERROR,
                         "Error adding record from file-like stream",
                     )
-
-                # Avoid dangling references to the source bytes, including msr->record,
-                # which the copied MS3Record struct retains.
-                if record_list and pprecptr[0] != ffi.NULL:
-                    recptr = pprecptr[0]
-                    recptr.bufferptr = ffi.NULL
-                    recptr.fileptr = ffi.NULL
-                    recptr.filename = ffi.NULL
-                    recptr.fileoffset = 0
-                    recptr.msr.record = ffi.NULL
         finally:
             if free_selections is not None:
                 free_selections()

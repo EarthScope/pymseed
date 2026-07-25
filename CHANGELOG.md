@@ -35,9 +35,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that nothing reports.
 
 ### Fixed
-- `MS3RecordPtr.record` for a record list read from a file no longer serves raw bytes
-  from the reader's released buffer; `MS3Record.record` and `record_mv` raise instead,
-  as they do for a list read from a file-like source.
+- `MS3RecordPtr.record` for a record list read from a file or a file-like stream no
+  longer serves raw bytes from a released buffer; `MS3Record.record` and `record_mv`
+  raise instead.
 - `MS3TraceList.add_buffer(record_list=True)` holds the source buffer, so the raw
   record and `unpack_recordlist()` no longer read freed memory after the caller
   releases it.
@@ -113,9 +113,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `MS3TraceList.add_buffer()` and `MS3RecordValidator.from_buffer()` size the buffer in
   bytes rather than elements, so an `array.array` or numpy view with an item size
   greater than one byte is no longer read only in part.
-- `MS3TraceList.add_filelike()` with `record_list=True` now also clears the raw record
-  pointer of each record-list entry, so reading `MS3Record.record` or `record_mv` from
-  such a list raises instead of returning freed memory.
 
 ## [0.9.0] - 2026-05-17
 
