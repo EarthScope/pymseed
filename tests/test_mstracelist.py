@@ -593,32 +593,48 @@ def test_tracelist_to_file_accepts_pathlike(tmp_path):
 def test_tracelist_add_file_does_not_retain_filename_buffer_without_record_list():
     """Without record_list=True no MS3RecordPtr entries reference the C
     filename buffer, so add_file() must not pin it on the trace list. The
-    record_list=True path still needs to retain it because libmseed stores
-    the pointer in MS3RecordPtr entries for later use (e.g. by
-    unpack_recordlist())."""
+    record_list=True path must retain it because libmseed stores the pointer in
+    MS3RecordPtr entries for later use (e.g. by unpack_recordlist())."""
     traces = MS3TraceList()
     assert len(traces._c_file_names) == 0
 
-    # Re-using one MS3TraceList across many add_file() calls must not grow
-    # the retained-buffer list when record_list=False.
+    # Many add_file() calls on one trace list pin nothing when
+    # record_list=False.
     for _ in range(5):
         traces.add_file(test_path3)
     assert len(traces._c_file_names) == 0
 
-    # With record_list=True each call must retain its filename buffer so the
-    # libmseed-stored pointer remains valid for the lifetime of the records.
+    # With record_list=True the buffer must be retained for the lifetime of the
+    # records, but one per distinct path serves any number of calls.
     traces_rl = MS3TraceList()
-    traces_rl.add_file(test_path3, record_list=True)
-    traces_rl.add_file(test_path3, record_list=True)
-    assert len(traces_rl._c_file_names) == 2
+    for _ in range(5):
+        traces_rl.add_file(test_path3, record_list=True)
+    assert len(traces_rl._c_file_names) == 1
 
-    # And the retained pointer is still readable through the record list,
-    # confirming the buffer wasn't prematurely freed.
+    # The retained pointer is still readable through the record list.
     traceid = next(iter(traces_rl))
     seg = traceid[0]
     first_ptr = next(iter(seg.recordlist))
     assert first_ptr.filename is not None
     assert first_ptr.filename.endswith(os.path.basename(test_path3))
+
+
+def test_tracelist_add_file_retains_one_buffer_per_path(tmp_path):
+    """Distinct paths each need their own buffer, and a buffer shared by several
+    reads must serve unpack_recordlist() for every record pointing at it."""
+    copy_path = tmp_path / "copy.mseed3"
+    copy_path.write_bytes(open(test_path3, "rb").read())
+
+    traces = MS3TraceList()
+    traces.add_file(test_path3, record_list=True)
+    traces.add_file(copy_path, record_list=True)
+    traces.add_file(test_path3, record_list=True)
+    assert len(traces._c_file_names) == 2
+
+    # Every segment unpacks, including the two sharing one filename buffer
+    for traceid in traces:
+        for seg in traceid:
+            assert seg.unpack_recordlist() == seg.samplecnt
 
 
 def test_tracelist_has_same_data_short_circuits_on_sampletype():

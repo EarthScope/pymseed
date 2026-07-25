@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `starttime` for uniformity with the rest of the package.
 
 ### Fixed
+- `MS3TraceList.add_file(record_list=True)` retains one file name buffer per distinct
+  path, bounding the memory held when reading a file repeatedly.
 - `MS3Record.pack()` and `MS3TraceList.pack()` release their C memory by reference
   counting rather than waiting for the cyclic garbage collector, and drop the
   handler and handler data (commonly an open file) on return.

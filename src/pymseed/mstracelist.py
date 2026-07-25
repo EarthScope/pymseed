@@ -901,8 +901,9 @@ class MS3TraceList:
         if self._mstl == ffi.NULL:
             raise MiniSEEDError(clibmseed.MS_GENERROR, "Error initializing trace list")
 
-        # Store filenames for record list functionality in C-compatible buffers
-        self._c_file_names = []
+        # One C-compatible file name buffer per encoded path.  Record list
+        # entries hold the pointer itself, so a buffer must outlive them.
+        self._c_file_names: dict[bytes, Any] = {}
 
         # Read specified file
         if file_name is not None:
@@ -1197,10 +1198,17 @@ class MS3TraceList:
 
         ensure_thread_logging()
 
-        # Store file name for reference and use in record lists.
-        c_file_name = ffi.new("char[]", os.fsencode(file_name))
+        # Store file name for reference and use in record lists.  Sharing one
+        # buffer per path also lets unpack_recordlist() match entries by
+        # pointer and open the file once.
+        encoded_file_name = os.fsencode(file_name)
         if record_list:
-            self._c_file_names.append(c_file_name)
+            c_file_name = self._c_file_names.get(encoded_file_name)
+            if c_file_name is None:
+                c_file_name = ffi.new("char[]", encoded_file_name)
+                self._c_file_names[encoded_file_name] = c_file_name
+        else:
+            c_file_name = ffi.new("char[]", encoded_file_name)
 
         # Request storing time of update in the trace list segment
         # This stores the update time as an nstime_t in the segment's private pointer (seg.prvtptr)
