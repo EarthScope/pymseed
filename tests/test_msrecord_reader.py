@@ -358,6 +358,22 @@ def test_msrecord_reader_input_kwarg_is_deprecated_alias():
         MS3RecordReader()
 
 
+def test_msrecord_reader_rejects_source_and_input_together():
+    """Supplying both must not silently discard one of them."""
+    from pymseed import MS3RecordReader
+
+    with pytest.raises(TypeError, match="both 'source' and its deprecated alias"):
+        MS3RecordReader(source=test_path3, input="nonexistent.mseed")
+
+    # Also when source is positional
+    with pytest.raises(TypeError, match="both 'source' and its deprecated alias"):
+        MS3RecordReader(test_path3, input="nonexistent.mseed")
+
+    # Reaching the reader through MS3Record.from_file() is no different
+    with pytest.raises(TypeError, match="both 'source' and its deprecated alias"):
+        MS3Record.from_file(test_path3, input="nonexistent.mseed")
+
+
 def test_msrecord_reader_rejects_use_after_close():
     # Reading or iterating after close() must not silently resurrect the
     # underlying libmseed file param (which would re-open the file from the

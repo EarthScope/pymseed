@@ -100,7 +100,13 @@ class MS3RecordReader:
             produce more detailed output. 0 = no output, 1+ = increasing verbosity.
             Defaults to 0 (silent).
 
+        input: Deprecated alias for ``source``; passing it emits a
+            ``DeprecationWarning``, and passing both raises :class:`TypeError`.
+            This alias will be removed in a future release.
+
     Raises:
+        TypeError: If ``source`` is missing, is not a supported type, or is passed
+            together with the deprecated ``input`` alias.
         ValueError: If ``starttime`` or ``endtime`` is not a valid date-time string.
         MiniSEEDError: If the file or file descriptor cannot be initialized for reading,
             or if the stream ends part way through a record, or with bytes remaining
@@ -181,6 +187,11 @@ class MS3RecordReader:
         self.parse_flags = 0
 
         if input is not _INPUT_SENTINEL:
+            if source is not _INPUT_SENTINEL:
+                raise TypeError(
+                    "MS3RecordReader() got both 'source' and its deprecated alias "
+                    "'input'; pass only 'source'"
+                )
             warnings.warn(
                 "'input' is a deprecated alias for 'source' and will be removed "
                 "in a future release; use 'source' instead.",
