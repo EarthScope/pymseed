@@ -282,6 +282,47 @@ def test_with_datasamples_accepts_one_dimensional():
             assert msr.numsamples == expected
 
 
+def test_with_datasamples_holds_the_buffer_export():
+    """A zero-copy source must stay pinned for the whole context, so resizing it
+    inside the block raises rather than leaving msr->datasamples dangling."""
+    msr = MS3Record()
+    msr.sourceid = "FDSN:XX_TEST__B_H_Z"
+    msr.set_starttime_str("2024-01-01T00:00:00Z")
+    msr.samprate = 100.0
+    msr.encoding = DataEncoding.INT32
+
+    for typecode, sample_type in (("i", "i"), ("f", "f"), ("d", "d")):
+        data = array.array(typecode, [1, 2, 3, 4])
+        with msr.with_datasamples(data, sample_type):
+            with pytest.raises(BufferError, match="exporting buffers"):
+                data.extend([0] * 1000)
+        data.extend([0] * 1000)  # released again on exit
+        assert len(data) == 1004
+
+    # bytearray reached through a memoryview cast
+    data = bytearray(array.array("i", [1, 2, 3, 4]).tobytes())
+    with msr.with_datasamples(memoryview(data).cast("i"), "i"):
+        with pytest.raises(BufferError, match="cannot be re-sized"):
+            data.extend(b"\0" * 4096)
+
+
+def test_with_datasamples_holds_the_numpy_export():
+    """The same pin must apply to numpy sources."""
+    np = pytest.importorskip("numpy")
+
+    msr = MS3Record()
+    msr.sourceid = "FDSN:XX_TEST__B_H_Z"
+    msr.set_starttime_str("2024-01-01T00:00:00Z")
+    msr.samprate = 100.0
+    msr.encoding = DataEncoding.INT32
+
+    for dtype, sample_type in ((np.int32, "i"), (np.float32, "f"), (np.float64, "d")):
+        data = np.arange(4, dtype=dtype)
+        with msr.with_datasamples(data, sample_type):
+            with pytest.raises(ValueError, match="cannot resize"):
+                data.resize(1000, refcheck=True)
+
+
 @pytest.mark.filterwarnings("ignore::DeprecationWarning")
 def test_pack_rejects_partial_sample_args():
     """pack() must fail when only one of data_samples/sample_type is given."""

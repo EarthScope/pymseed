@@ -1450,8 +1450,10 @@ class MS3Record:
                 try:
                     mv = memoryview(data_samples)
                     if mv.format == "i" and mv.itemsize == 4:
-                        # Compatible format - safe to zero-copy
-                        sample_array = ffi.cast("int32_t *", ffi.from_buffer(data_samples))
+                        # Compatible format - safe to zero-copy. The export must stay
+                        # bound for the whole context to keep the source pinned.
+                        buffer_export = ffi.from_buffer(data_samples)
+                        sample_array = ffi.cast("int32_t *", buffer_export)
                     else:
                         raise ValueError("Incompatible buffer format")
                 except (TypeError, ValueError):
@@ -1465,8 +1467,9 @@ class MS3Record:
                 try:
                     mv = memoryview(data_samples)
                     if mv.format == "f" and mv.itemsize == 4:
-                        # Compatible format - safe to zero-copy
-                        sample_array = ffi.cast("float *", ffi.from_buffer(data_samples))
+                        # Compatible format - safe to zero-copy, export pinned as above
+                        buffer_export = ffi.from_buffer(data_samples)
+                        sample_array = ffi.cast("float *", buffer_export)
                     else:
                         raise ValueError("Incompatible buffer format")
                 except (TypeError, ValueError):
@@ -1480,8 +1483,9 @@ class MS3Record:
                 try:
                     mv = memoryview(data_samples)
                     if mv.format == "d" and mv.itemsize == 8:
-                        # Compatible format - safe to zero-copy
-                        sample_array = ffi.cast("double *", ffi.from_buffer(data_samples))
+                        # Compatible format - safe to zero-copy, export pinned as above
+                        buffer_export = ffi.from_buffer(data_samples)
+                        sample_array = ffi.cast("double *", buffer_export)
                     else:
                         raise ValueError("Incompatible buffer format")
                 except (TypeError, ValueError):
