@@ -290,6 +290,26 @@ def test_tracelist_sampletype_returns_none_when_unset():
     assert seg.sampletype == "i"
 
 
+def test_tracelist_add_data_rejects_multidimensional():
+    """add_data() shares MS3Record.with_datasamples(), so a multi-dimensional
+    array must be rejected here too rather than adding only the first row."""
+    np = pytest.importorskip("numpy")
+
+    traces = MS3TraceList()
+    common = {
+        "sourceid": "FDSN:XX_STA__B_H_Z",
+        "sample_type": "i",
+        "sample_rate": 20.0,
+        "starttime_str": "2023-01-01T00:00:00.000Z",
+    }
+
+    with pytest.raises(ValueError, match="one-dimensional"):
+        traces.add_data(data_samples=np.arange(12, dtype=np.int32).reshape(3, 4), **common)
+
+    traces.add_data(data_samples=np.arange(12, dtype=np.int32), **common)
+    assert sum(seg.samplecnt for tid in traces for seg in tid) == 12
+
+
 def test_tracelist_add_data_rejects_ambiguous_time_arguments():
     """add_data() documents the three starttime_* parameters as mutually
     exclusive; previously the implementation just let starttime_str win

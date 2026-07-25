@@ -1,3 +1,4 @@
+import array
 import gc
 import json
 import math
@@ -230,6 +231,55 @@ def test_generate_raises_on_pack_error_without_data_samples():
     with msr.with_datasamples([1.5, 2.5, 3.5], "f"):
         with pytest.raises(MiniSEEDError, match="Steim2"):
             list(msr.generate())
+
+
+def test_with_datasamples_rejects_multidimensional():
+    """A multi-dimensional buffer is flattened when shared zero-copy while
+    len() reports only the first dimension, so it must be rejected rather than
+    silently packing a fraction of the samples."""
+    np = pytest.importorskip("numpy")
+
+    msr = MS3Record()
+    msr.sourceid = "FDSN:XX_TEST__B_H_Z"
+    msr.set_starttime_str("2024-01-01T00:00:00Z")
+    msr.samprate = 100.0
+    msr.encoding = DataEncoding.INT32
+
+    for data, sample_type in (
+        (np.arange(12, dtype=np.int32).reshape(3, 4), "i"),
+        (np.arange(12, dtype=np.float32).reshape(3, 4), "f"),
+        (np.arange(12, dtype=np.float64).reshape(3, 4), "d"),
+        (np.arange(12, dtype=np.uint8).reshape(3, 4), "t"),
+        (np.int32(5), "i"),
+    ):
+        with pytest.raises(ValueError, match="one-dimensional"):
+            with msr.with_datasamples(data, sample_type):
+                pass
+
+
+def test_with_datasamples_accepts_one_dimensional():
+    """The dimension check must not reject the supported input types, including
+    a non-contiguous array that takes the element-wise copy path."""
+    np = pytest.importorskip("numpy")
+
+    msr = MS3Record()
+    msr.sourceid = "FDSN:XX_TEST__B_H_Z"
+    msr.set_starttime_str("2024-01-01T00:00:00Z")
+    msr.samprate = 100.0
+    msr.encoding = DataEncoding.INT32
+
+    for data, sample_type, expected in (
+        ([1, 2, 3, 4], "i", 4),
+        (array.array("i", [1, 2, 3, 4]), "i", 4),
+        (memoryview(array.array("i", [1, 2, 3])), "i", 3),
+        (np.arange(4, dtype=np.int32), "i", 4),
+        (np.arange(8, dtype=np.int32)[::2], "i", 4),
+        (np.arange(4, dtype=np.float64), "d", 4),
+        ("hello", "t", 5),
+        (b"hello", "t", 5),
+    ):
+        with msr.with_datasamples(data, sample_type):
+            assert msr.numsamples == expected
 
 
 @pytest.mark.filterwarnings("ignore::DeprecationWarning")

@@ -44,6 +44,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of buffering the rest of the stream, bounding memory on non-miniSEED input.
 - `MS3RecordValidator` now reports a record length beyond `MAXRECLEN`, e.g. from a
   corrupt payload length, instead of validating the file as clean.
+- `MS3Record.with_datasamples()`, and therefore `generate()`, `to_file()` and
+  `MS3TraceList.add_data()`, now reject a multi-dimensional `data_samples` buffer
+  instead of silently keeping only the first dimension.
 
 ## [0.9.0] - 2026-05-17
 

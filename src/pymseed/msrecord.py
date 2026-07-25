@@ -1354,13 +1354,18 @@ class MS3Record:
         short period of time.
 
         Args:
-            data_samples: Sequence containing the data samples. Can be a list, numpy array,
-                memoryview, or any object supporting the sequence protocol.  If the value
-                supports a memoryview, it will be used directly without copying.
+            data_samples: One-dimensional sequence containing the data samples. Can be a
+                list, numpy array, memoryview, or any object supporting the sequence
+                protocol.  If the value supports a memoryview, it will be used directly
+                without copying.
             sample_type: Single character string indicating the data type ('i', 'f', 'd', 't')
 
         Yields:
             MS3Record: The record with the temporary data samples set
+
+        Raises:
+            ValueError: If ``data_samples`` is not one-dimensional, or ``sample_type`` is
+                not one of 'i', 'f', 'd', 't'.
 
         Examples:
             Setting data samples for packing:
@@ -1411,6 +1416,17 @@ class MS3Record:
         See Also:
             MS3TraceList.add_data(): Add data samples to a trace list
         """
+        # Multi-dimensional buffers are flattened when shared zero-copy, while
+        # len() reports only the first dimension; reject them rather than
+        # keeping a fraction of the samples.
+        try:
+            ndim = memoryview(data_samples).ndim
+        except TypeError:
+            ndim = 1
+
+        if ndim != 1:
+            raise ValueError(f"data_samples must be one-dimensional, got {ndim} dimensions")
+
         # Save original state
         orig_datasamples = self._msr.datasamples
         orig_datasize = self._msr.datasize
