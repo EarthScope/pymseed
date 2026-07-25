@@ -12,7 +12,7 @@ from typing import Any
 from .clib import clibmseed, ffi
 from .exceptions import MiniSEEDError
 from .logging import ensure_thread_logging
-from .msrecord import MS3Record
+from .msrecord import MS3Record, _truncated_source_message
 from .selections import build_selections
 
 _INPUT_SENTINEL: Any = object()
@@ -66,7 +66,9 @@ class MS3RecordReader:
             Defaults to 0.
 
         end_byte_offset (int, optional): End byte offset in the input bytes stream.
-            Defaults to 0, which means read until the end of the stream.
+            Defaults to 0, which means read until the end of the stream.  A range
+            ending part way through a record raises :class:`MiniSEEDError` after
+            the records that fit within it, as a truncated stream does.
 
         unpack_data (bool, optional): Whether to decode/unpack the data samples from
             the records. If False, only metadata is parsed and data remains in
@@ -100,7 +102,11 @@ class MS3RecordReader:
 
     Raises:
         ValueError: If ``starttime`` or ``endtime`` is not a valid date-time string.
-        MiniSEEDError: If the file or file descriptor cannot be initialized for reading.
+        MiniSEEDError: If the file or file descriptor cannot be initialized for reading,
+            or if the stream ends part way through a record, or with bytes remaining
+            that are too few for one.  The truncated cases carry a status of
+            ``MS_ENDOFFILE`` and are reported as a clean end of stream when
+            ``skip_not_data`` is set.
 
     Examples:
         Basic usage with a file path as a context manager:
@@ -269,7 +275,8 @@ class MS3RecordReader:
         """Read the next miniSEED record from the file or file descriptor.
 
         Returns the next :class:`MS3Record`, or ``None`` at end of stream.
-        Raises :class:`ValueError` if the reader has been closed.
+        Raises :class:`ValueError` if the reader has been closed, and
+        :class:`MiniSEEDError` if the stream ends part way through a record.
 
         .. warning::
             The returned :class:`MS3Record` shares a single C struct with
@@ -296,6 +303,24 @@ class MS3RecordReader:
             # while this record is still referenced.
             return MS3Record(recordptr=self._msr_ptr[0], owner=self)
         if status == clibmseed.MS_ENDOFFILE:
+            # libmseed returns MS_ENDOFFILE for both a clean end of stream and a
+            # record the stream ends part way through; unconsumed bytes left
+            # buffered distinguish the truncated case.  Skipping non-data is a
+            # request to tolerate exactly this sort of trailing remnant.
+            if not self.parse_flags & clibmseed.MSF_SKIPNOTDATA:
+                msfp = self._msfp_ptr[0]
+                buffered = msfp.readlength - msfp.readoffset if msfp != ffi.NULL else 0
+                if buffered > 0:
+                    # Redetect the remnant for the same shortfall the buffer and
+                    # file-like iterators report; the read call does not return it.
+                    formatversion = ffi.new("uint8_t *")
+                    reclen = clibmseed.ms3_detect(
+                        msfp.readbuffer + msfp.readoffset, buffered, formatversion
+                    )
+                    needed = reclen - buffered if reclen > buffered else 0
+                    raise MiniSEEDError(
+                        status, _truncated_source_message("stream", buffered, needed)
+                    )
             return None
 
         # libmseed reports MS_NOTSEED for two different conditions: a record

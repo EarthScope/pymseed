@@ -3,7 +3,8 @@ import os
 
 import pytest
 
-from pymseed import DataEncoding, MS3Record, SubSecond, TimeFormat
+from pymseed import DataEncoding, MiniSEEDError, MS3Record, SubSecond, TimeFormat
+from pymseed.clib import clibmseed
 
 test_dir = os.path.abspath(os.path.dirname(__file__))
 test_path3 = os.path.join(test_dir, "data", "testdata-COLA-signal.mseed3")
@@ -111,3 +112,57 @@ def test_record_survives_temporary_buffer_generator():
     assert msr.numsamples == msr.samplecnt
     assert msr.datasamples[0] == -502916
     assert msr.record[:2] == b"MS"
+
+
+def test_from_buffer_reports_truncated_final_record():
+    """A buffer ending mid-record must not read as a clean end of data."""
+    with open(test_path3, "rb") as fp:
+        data = fp.read()
+
+    with pytest.raises(MiniSEEDError, match="100 more bytes needed") as excinfo:
+        list(MS3Record.from_buffer(data[:-100]))
+
+    assert excinfo.value.status_code == clibmseed.MS_ENDOFFILE
+
+    # The records before the truncation are still yielded
+    records = []
+    with pytest.raises(MiniSEEDError):
+        for msr in MS3Record.from_buffer(data[:-100]):
+            records.append(msr.sourceid)
+    assert len(records) == 1140
+
+
+def test_from_buffer_reports_trailing_bytes():
+    """Bytes too few for any record must be reported, not dropped."""
+    with open(test_path3, "rb") as fp:
+        data = fp.read()
+
+    with pytest.raises(MiniSEEDError, match="2 unparsed bytes"):
+        list(MS3Record.from_buffer(data + b"xx"))
+
+    # An empty buffer is a clean, empty result
+    assert list(MS3Record.from_buffer(b"")) == []
+
+
+def test_from_buffer_sizes_final_v2_record_without_blockette_1000():
+    """The buffer is the end of the data, which sizes a v2 record lacking B1000.
+
+    Records followed by another are sized by scanning for the next header; only
+    the final one needs the end-of-data length implied by the buffer.
+    """
+    with open(test_path2, "rb") as fp:
+        data = bytearray(fp.read())
+
+    # Drop the first blockette offset from each 512-byte record
+    for offset in range(0, len(data), 512):
+        data[offset + 46 : offset + 48] = b"\x00\x00"
+
+    assert sum(1 for _ in MS3Record.from_buffer(bytes(data))) == 1141
+
+
+def test_from_buffer_reports_data_too_short_as_not_seed():
+    """Too little data for any record reads as not miniSEED, as from_file() does."""
+    with pytest.raises(MiniSEEDError, match="No miniSEED data detected") as excinfo:
+        list(MS3Record.from_buffer(b"hello"))
+
+    assert excinfo.value.status_code == clibmseed.MS_NOTSEED

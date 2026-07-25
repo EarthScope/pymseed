@@ -5,6 +5,7 @@ import sys
 import pytest
 
 from pymseed import NSTMODULUS, DataEncoding, MS3Record, SubSecond, TimeFormat
+from pymseed.clib import clibmseed
 from pymseed.exceptions import MiniSEEDError
 
 test_dir = os.path.abspath(os.path.dirname(__file__))
@@ -398,3 +399,44 @@ def test_record_survives_temporary_reader():
     assert msr.sourceid == "FDSN:IU_COLA_00_B_H_1"
     assert msr.numsamples == msr.samplecnt
     assert msr.datasamples[0] == -502916
+
+
+def test_msrecord_reader_reports_truncated_final_record(tmp_path):
+    """A file ending mid-record must not read as a clean end of stream."""
+    with open(test_path3, "rb") as fp:
+        data = fp.read()
+    truncated = tmp_path / "truncated.mseed3"
+    truncated.write_bytes(data[:-100])
+
+    records = []
+    with pytest.raises(MiniSEEDError, match="100 more bytes needed") as excinfo:
+        for msr in MS3Record.from_file(str(truncated)):
+            records.append(msr.sourceid)
+
+    assert excinfo.value.status_code == clibmseed.MS_ENDOFFILE
+    assert len(records) == 1140
+
+    # Skipping non-data accepts the remnant as the end of the stream
+    assert sum(1 for _ in MS3Record.from_file(str(truncated), skip_not_data=True)) == 1140
+
+
+def test_msrecord_reader_reports_trailing_bytes(tmp_path):
+    """Bytes too few for any record must be reported, not dropped."""
+    with open(test_path3, "rb") as fp:
+        data = fp.read()
+    padded = tmp_path / "padded.mseed3"
+    padded.write_bytes(data + b"xx")
+
+    with pytest.raises(MiniSEEDError, match="2 unparsed bytes"):
+        list(MS3Record.from_file(str(padded)))
+
+    assert sum(1 for _ in MS3Record.from_file(str(padded), skip_not_data=True)) == 1141
+
+
+def test_msrecord_reader_reports_byte_range_ending_mid_record():
+    """A byte range ending inside a record is as truncated as a short file."""
+    with pytest.raises(MiniSEEDError, match="more bytes needed"):
+        list(MS3Record.from_file(test_path3, end_byte_offset=600))
+
+    # The first record ends exactly at the requested end offset
+    assert sum(1 for _ in MS3Record.from_file(test_path3, end_byte_offset=477)) == 1

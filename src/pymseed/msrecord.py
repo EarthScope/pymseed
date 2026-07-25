@@ -45,6 +45,20 @@ def _parse_error_message(status: int) -> str:
     return "Error parsing miniSEED record"
 
 
+def _truncated_source_message(source: str, remaining: int, needed: int = 0) -> str:
+    """Describe data at the end of ``source`` that cannot complete a record.
+
+    ``needed`` is ``msr3_parse()``'s hint of the bytes still missing, when a
+    record was detected; otherwise ``remaining`` unparsed bytes are reported.
+    """
+    if needed > 0:
+        plural = "" if needed == 1 else "s"
+        return f"Incomplete miniSEED record at end of {source}, {needed} more byte{plural} needed"
+
+    plural = "" if remaining == 1 else "s"
+    return f"Incomplete miniSEED record at end of {source}, {remaining} unparsed byte{plural}"
+
+
 class _SharedRecordStruct:
     """Owns the C record struct shared by a record iterator and the records it yields.
 
@@ -1882,6 +1896,11 @@ class MS3Record:
             :func:`pymseed.get_error_messages`).  A file that contains no
             miniSEED at all is still an error.
 
+            A file ending part way through a record, or with bytes remaining
+            that are too few for one, raises :class:`MiniSEEDError` after the
+            records that did parse.  Pass ``skip_not_data=True`` to accept such
+            a remnant as the end of the stream.
+
         Examples:
             Read every record in a file:
 
@@ -1984,7 +2003,10 @@ class MS3Record:
         Raises:
             ValueError: If ``starttime`` or ``endtime`` is not a valid
                 date-time string.
-            MiniSEEDError: If a record cannot be parsed.
+            MiniSEEDError: If a record cannot be parsed, or if the buffer ends
+                part way through a record, or with bytes remaining that are too
+                few for one; the truncated cases carry a status of
+                ``MS_ENDOFFILE``.
 
         Note:
             Every record header in the buffer is parsed even when a filter is
@@ -2043,11 +2065,26 @@ class MS3Record:
         if validate_crc:
             parse_flags |= clibmseed.MSF_VALIDATECRC
 
+        # The buffer is all the data there is, which is what allows libmseed to
+        # size a version 2 record carrying no Blockette 1000.
+        parse_flags |= clibmseed.MSF_ATENDOFFILE
+
+        parsed_any = False
+
         try:
             while True:
                 remaining = len(buf_ptr) - offset
-                if remaining < clibmseed.MINRECLEN:
+                if remaining == 0:
                     return
+                if remaining < clibmseed.MINRECLEN:
+                    # As the file reader does, treat data too short to hold any
+                    # record at all as not miniSEED rather than as truncated
+                    if not parsed_any:
+                        raise MiniSEEDError(clibmseed.MS_NOTSEED, "Error parsing miniSEED record")
+                    raise MiniSEEDError(
+                        clibmseed.MS_ENDOFFILE,
+                        _truncated_source_message("buffer", remaining),
+                    )
 
                 status = clibmseed.msr3_parse(
                     buf_ptr + offset,
@@ -2059,6 +2096,7 @@ class MS3Record:
 
                 if status == clibmseed.MS_NOERROR:
                     offset += msr_ptr[0].reclen
+                    parsed_any = True
 
                     if has_selections:
                         if (
@@ -2074,7 +2112,11 @@ class MS3Record:
 
                     yield cls(recordptr=msr_ptr[0], owner=struct)
                 elif status > 0:
-                    return
+                    # A record was detected but the buffer ends before it does
+                    raise MiniSEEDError(
+                        clibmseed.MS_ENDOFFILE,
+                        _truncated_source_message("buffer", remaining, status),
+                    )
                 else:
                     raise MiniSEEDError(status, "Error parsing miniSEED record")
         finally:
@@ -2132,7 +2174,10 @@ class MS3Record:
         Raises:
             ValueError: If ``starttime`` or ``endtime`` is not a valid
                 date-time string.
-            MiniSEEDError: If a record cannot be parsed.
+            MiniSEEDError: If a record cannot be parsed, or if the stream ends
+                part way through a record, or with bytes remaining that are too
+                few for one; the truncated cases carry a status of
+                ``MS_ENDOFFILE``.
 
         Note:
             Every record header in the stream is parsed even when a filter is
@@ -2193,6 +2238,8 @@ class MS3Record:
         buf = bytearray()
         offset = 0
         eof = False
+        parsed_any = False
+        needed = 0  # Bytes msr3_parse() reported missing from a detected record
 
         try:
             while True:
@@ -2200,13 +2247,21 @@ class MS3Record:
 
                 if remaining >= clibmseed.MINRECLEN:
                     buf_ptr = ffi.from_buffer(buf)
+                    # Once the stream is exhausted libmseed can size a version 2
+                    # record carrying no Blockette 1000 from what is left.
                     status = clibmseed.msr3_parse(
-                        buf_ptr + offset, remaining, msr_ptr, parse_flags, verbose
+                        buf_ptr + offset,
+                        remaining,
+                        msr_ptr,
+                        parse_flags | (clibmseed.MSF_ATENDOFFILE if eof else 0),
+                        verbose,
                     )
                     buf_ptr = None  # release buffer export before any modification
+                    needed = status if status > 0 else 0
 
                     if status == clibmseed.MS_NOERROR:
                         offset += msr_ptr[0].reclen
+                        parsed_any = True
 
                         if has_selections:
                             if (
@@ -2227,7 +2282,16 @@ class MS3Record:
                         raise MiniSEEDError(status, "Error parsing miniSEED record")
 
                 if eof:
-                    return
+                    if remaining == 0:
+                        return
+                    # As the file reader does, treat data too short to hold any
+                    # record at all as not miniSEED rather than as truncated
+                    if not parsed_any and remaining < clibmseed.MINRECLEN:
+                        raise MiniSEEDError(clibmseed.MS_NOTSEED, "Error parsing miniSEED record")
+                    raise MiniSEEDError(
+                        clibmseed.MS_ENDOFFILE,
+                        _truncated_source_message("stream", remaining, needed),
+                    )
 
                 # Compact consumed bytes before reading more
                 if offset > 0:
@@ -2281,7 +2345,8 @@ class MS3Record:
             MS3Record: Each parsed record.
 
         Raises:
-            MiniSEEDError: If a record cannot be parsed.
+            MiniSEEDError: If a record cannot be parsed, or if the source ends
+                part way through a record.
             TypeError: If *source* is not a recognised type.
             ValueError: If *source* is a negative integer (not a valid fd).
 

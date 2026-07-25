@@ -30,6 +30,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and trace ID for the life of the trace list.
 
 ### Fixed
+- `MS3Record.from_file()`, `from_buffer()`, and `from_filelike()` raise `MiniSEEDError`
+  with a status of `MS_ENDOFFILE` when the source ends part way through a record, or
+  with bytes remaining that are too few for one, instead of stopping silently.  For
+  `from_file()`, `skip_not_data=True` accepts such a remnant as the end of the stream.
+  A source holding too little data for any record reports `MS_NOTSEED` from all three.
+- `MS3Record.from_buffer()` and `from_filelike()` size a trailing miniSEED v2 record
+  that carries no Blockette 1000, as reading from a file does, rather than dropping it.
 - `MS3Record.pack()` and `MS3TraceList.pack()` re-raise an exception from the record
   handler instead of reporting records that were never written.
 - `MS3TraceList.add_file(record_list=True)` retains one file name buffer per distinct

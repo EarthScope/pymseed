@@ -2,7 +2,10 @@ import gc
 import io
 import os
 
-from pymseed import MS3Record
+import pytest
+
+from pymseed import MiniSEEDError, MS3Record
+from pymseed.clib import clibmseed
 
 test_dir = os.path.abspath(os.path.dirname(__file__))
 test_path3 = os.path.join(test_dir, "data", "testdata-COLA-signal.mseed3")
@@ -155,3 +158,43 @@ def test_record_survives_temporary_filelike_generator():
     assert msr.sourceid == "FDSN:IU_COLA_00_B_H_1"
     assert msr.numsamples == msr.samplecnt
     assert msr.datasamples[0] == -502916
+
+
+def test_from_filelike_reports_truncated_final_record():
+    """A stream ending mid-record must not read as a clean end of data."""
+    data = _read(test_path3)
+
+    records = []
+    with pytest.raises(MiniSEEDError, match="100 more bytes needed") as excinfo:
+        for msr in MS3Record.from_filelike(io.BytesIO(data[:-100])):
+            records.append(msr.sourceid)
+
+    assert excinfo.value.status_code == clibmseed.MS_ENDOFFILE
+    assert len(records) == 1140
+
+
+def test_from_filelike_reports_trailing_bytes():
+    """Bytes too few for any record must be reported, not dropped."""
+    data = _read(test_path3)
+
+    with pytest.raises(MiniSEEDError, match="2 unparsed bytes"):
+        list(MS3Record.from_filelike(io.BytesIO(data + b"xx")))
+
+
+def test_from_filelike_sizes_final_v2_record_without_blockette_1000():
+    """An exhausted stream sizes a trailing v2 record lacking Blockette 1000."""
+    data = bytearray(_read(test_path2))
+
+    # Drop the first blockette offset from each 512-byte record
+    for offset in range(0, len(data), 512):
+        data[offset + 46 : offset + 48] = b"\x00\x00"
+
+    assert sum(1 for _ in MS3Record.from_filelike(io.BytesIO(bytes(data)))) == 1141
+
+
+def test_from_filelike_reports_data_too_short_as_not_seed():
+    """Too little data for any record reads as not miniSEED, as from_file() does."""
+    with pytest.raises(MiniSEEDError, match="No miniSEED data detected") as excinfo:
+        list(MS3Record.from_filelike(io.BytesIO(b"hello")))
+
+    assert excinfo.value.status_code == clibmseed.MS_NOTSEED
