@@ -789,7 +789,8 @@ class TestMS3RecordValidatorFromFilelike:
         validator = MS3RecordValidator.from_file(TEST_MSEED3_FILE, validate_crc=False)
         representation = repr(validator)
         assert representation.startswith("MS3RecordValidator(source: _FileSource(")
-        assert TEST_MSEED3_FILE in representation
+        # The repr quotes the file name, escaping the separators on Windows
+        assert repr(TEST_MSEED3_FILE) in representation
         assert "validate_crc: False" in representation
         assert str(validator).startswith(f"{TEST_MSEED3_FILE}, ")
 
