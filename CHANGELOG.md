@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.3] - 2026-07-30
+
+- libmseed updated to v3.5.3.  This includes a significant optimization to
+  constructing trace lists with many segments.
+
 ## [0.9.2] - 2026-07-25
 
 ### Added
@@ -401,6 +406,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CFFI-based bindings to libmseed
 
 [Unreleased]: https://github.com/EarthScope/pymseed/compare/v0.0.5...HEAD
+[0.9.3]: https://github.com/EarthScope/pymseed/releases/tag/v0.9.3
 [0.9.2]: https://github.com/EarthScope/pymseed/releases/tag/v0.9.2
 [0.9.1]: https://github.com/EarthScope/pymseed/releases/tag/v0.9.1
 [0.9.0]: https://github.com/EarthScope/pymseed/releases/tag/v0.9.0
