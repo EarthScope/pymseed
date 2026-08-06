@@ -74,14 +74,11 @@ def test_sourceid_glob(buffer):
 def test_sourceid_no_match(buffer):
     """Non-matching source ID filter yields no records, and is not an error
 
-    The file path is the interesting one: libmseed returns MS_NOTSEED once it
-    reaches the end of the stream having returned no records, and the reader
-    must not turn that into an exception while filtering is active.  libmseed's
-    diagnostic is left in the log registry, drained here so it does not carry
-    over into other tests.
+    Records that are parsed and skipped by a selection are not the same as
+    input that is not miniSEED, so the read ends cleanly with no diagnostic.
     """
     assert _from_file(sourceid="FDSN:XX_NONE_*") == []
-    assert any("not SEED" in message for message in get_error_messages())
+    assert get_error_messages() == []
 
     assert _from_buffer(buffer, sourceid="FDSN:XX_NONE_*") == []
     assert _from_filelike(buffer, sourceid="FDSN:XX_NONE_*") == []

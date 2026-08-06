@@ -1417,13 +1417,8 @@ class MS3TraceList:
             if free_selections is not None:
                 free_selections()
 
-        # MS_NOTSEED is returned when no records match an active selection;
-        # treat that as a valid empty result rather than an error.
         if status != clibmseed.MS_NOERROR:
-            if free_selections is not None and status == clibmseed.MS_NOTSEED:
-                pass
-            else:
-                raise MiniSEEDError(status, f"Error reading file: {file_name}")
+            raise MiniSEEDError(status, f"Error reading file: {file_name}")
 
     def add_buffer(
         self,
@@ -1604,13 +1599,8 @@ class MS3TraceList:
             if free_selections is not None:
                 free_selections()
 
-        # MS_NOTSEED is returned when no records match an active selection;
-        # treat that as a valid empty result rather than an error.
         if status < 0:
-            if free_selections is not None and status == clibmseed.MS_NOTSEED:
-                pass
-            else:
-                raise MiniSEEDError(status, f"Error reading buffer (status: {status})")
+            raise MiniSEEDError(status, f"Error reading buffer (status: {status})")
 
     def add_filelike(
         self,

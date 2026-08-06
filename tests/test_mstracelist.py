@@ -19,6 +19,7 @@ from pymseed import (
     timestr2nstime,
 )
 from pymseed.clib import buffer_pointer
+from pymseed.logging import clear_error_messages
 from tests.gc_helpers import assert_released, requires_refcounting
 
 test_dir = os.path.abspath(os.path.dirname(__file__))
@@ -1833,6 +1834,20 @@ def test_tracelist_file_sourceid_no_match():
     """Non-matching source ID filter returns empty trace list."""
     traces = MS3TraceList.from_file(test_path3, sourceid="FDSN:XX_NONE_*")
     assert len(traces) == 0
+
+
+def test_tracelist_no_match_still_reports_truly_bad_input(tmp_path):
+    """A non-miniSEED file or buffer is still an error, even with filtering active."""
+    junk = tmp_path / "junk.mseed"
+    junk.write_bytes(b"X" * 4096)
+
+    with pytest.raises(MiniSEEDError):
+        MS3TraceList.from_file(str(junk), sourceid="FDSN:XX_NONE_*")
+
+    with pytest.raises(MiniSEEDError):
+        MS3TraceList.from_buffer(b"X" * 4096, sourceid="FDSN:XX_NONE_*")
+
+    clear_error_messages()
 
 
 def test_tracelist_file_time_window():

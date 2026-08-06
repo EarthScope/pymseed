@@ -1958,10 +1958,8 @@ class MS3Record:
 
         Note:
             A filter that matches nothing yields no records rather than
-            raising; libmseed's "No data records read, not SEED?" diagnostic
-            for that case is left in the log registry (see
-            :func:`pymseed.get_error_messages`).  A file that contains no
-            miniSEED at all is still an error.
+            raising.  A file that contains no miniSEED at all is still an
+            error.
 
             A file ending part way through a record, or with bytes remaining
             that are too few for one, raises :class:`MiniSEEDError` after the

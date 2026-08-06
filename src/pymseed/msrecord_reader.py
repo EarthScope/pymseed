@@ -354,26 +354,6 @@ class MS3RecordReader:
                     )
             return None
 
-        # libmseed reports MS_NOTSEED for two different conditions: a record
-        # that could not be parsed as miniSEED, and reaching the end of the
-        # stream having returned no records at all.  An active selection that
-        # rejects every record in an otherwise valid stream produces the
-        # latter, which is a valid empty result rather than an error (mirroring
-        # MS3TraceList.add_buffer()).
-        #
-        # The two are told apart by how much unconsumed data is left buffered:
-        # the end-of-stream case is only reached with less than a minimum
-        # record remaining, whereas a parse failure stops with the offending
-        # (full-length) record still buffered.  A non-miniSEED stream therefore
-        # still raises, even while filtering.  libmseed's "No data records
-        # read, not SEED?" diagnostic remains in the log registry and is
-        # visible through get_error_messages().
-        if status == clibmseed.MS_NOTSEED and self._selections != ffi.NULL:
-            msfp = self._msfp_ptr[0]
-            buffered = msfp.readlength - msfp.readoffset if msfp != ffi.NULL else 0
-            if buffered < clibmseed.MINRECLEN:
-                return None
-
         raise MiniSEEDError(status, "Error reading miniSEED record")
 
     def __next__(self) -> MS3Record:

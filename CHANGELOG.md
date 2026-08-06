@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.4] - 2026-08-05
+
+- libmseed updated to v3.5.4.  Including:
+    * Trace list packing optimization and improvements
+    * Return MS_ENDOFFILE instead of MS_NOTSEED when selections skip all data
+- `MS3TraceList.add_file()` and `add_buffer()` no longer suppress MS_NOTSEED
+  while a selection is active, so non-miniSEED input raises whether or not
+  filtering is in use.
+
 ## [0.9.3] - 2026-07-30
 
 - libmseed updated to v3.5.3.  This includes a significant optimization to
@@ -406,6 +415,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CFFI-based bindings to libmseed
 
 [Unreleased]: https://github.com/EarthScope/pymseed/compare/v0.0.5...HEAD
+[0.9.4]: https://github.com/EarthScope/pymseed/releases/tag/v0.9.4
 [0.9.3]: https://github.com/EarthScope/pymseed/releases/tag/v0.9.3
 [0.9.2]: https://github.com/EarthScope/pymseed/releases/tag/v0.9.2
 [0.9.1]: https://github.com/EarthScope/pymseed/releases/tag/v0.9.1
