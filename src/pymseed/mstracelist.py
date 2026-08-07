@@ -553,6 +553,11 @@ class MS3TraceSeg:
         """Return data samples as a numpy array unpacked from the record list
 
         The numpy array returned is an independent copy of the data samples.
+
+        This makes a second pass over the source, re-reading each record; for a
+        file, reading with ``unpack_data=True`` and calling
+        :meth:`take_np_datasamples` is usually faster.  The record list is still
+        preferable to decode only some segments, or into a caller's buffer.
         """
         np = _require_numpy()
 
@@ -581,6 +586,10 @@ class MS3TraceSeg:
         This method decodes data samples from the original miniSEED records that were
         stored when reading with `record_list=True`. It's used for memory-efficient
         workflows where you delay data unpacking until needed.
+
+        Decoding here makes a second pass over the source, re-reading each record;
+        for a file, reading with ``unpack_data=True`` and taking the samples with
+        :meth:`take_np_datasamples` is usually faster when every segment is wanted.
 
         Args:
             buffer: Optional destination buffer for unpacked data. Must be writable,

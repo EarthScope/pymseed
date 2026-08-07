@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Document the faster `unpack_data=True` + `take_np_datasamples()` alternative
+  in the record list unpacking methods.
+
+## [0.9.5] - 2026-08-07
+
 - Add `MS3TraceSeg.take_np_datasamples()`, transferring a segment's decoded
   sample buffer to a numpy array with no copy, so the array has no dependency
   on the trace list and can outlive it.
@@ -419,6 +424,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CFFI-based bindings to libmseed
 
 [Unreleased]: https://github.com/EarthScope/pymseed/compare/v0.0.5...HEAD
+[0.9.5]: https://github.com/EarthScope/pymseed/releases/tag/v0.9.5
 [0.9.4]: https://github.com/EarthScope/pymseed/releases/tag/v0.9.4
 [0.9.3]: https://github.com/EarthScope/pymseed/releases/tag/v0.9.3
 [0.9.2]: https://github.com/EarthScope/pymseed/releases/tag/v0.9.2
