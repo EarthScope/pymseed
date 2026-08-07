@@ -11,7 +11,14 @@ import warnings
 from collections.abc import Callable, Iterator, Sequence
 from typing import Any
 
-from .clib import buffer_pointer, cdata_to_string, clibmseed, ffi, owned_memoryview
+from .clib import (
+    buffer_pointer,
+    cdata_to_string,
+    clibmseed,
+    ffi,
+    owned_memoryview,
+    owning_memoryview,
+)
 from .definitions import DataEncoding, SubSecond, TimeFormat
 from .exceptions import MiniSEEDError
 from .logging import ensure_thread_logging
@@ -52,6 +59,33 @@ def _resolve_alias(
     )
 
     return alias_value
+
+
+def _require_numpy() -> Any:
+    """Import and return numpy, or raise if it is not installed."""
+    try:
+        import numpy as np
+    except ImportError:
+        raise ImportError(
+            "numpy is not installed. Install numpy or this package with [numpy] optional dependency"
+        ) from None
+
+    return np
+
+
+def _numpy_dtype(np: Any, sampletype: str | None) -> Any:
+    """Translate a libmseed sample type code to a numpy dtype."""
+    nptype = {
+        "i": np.int32,
+        "f": np.float32,
+        "d": np.float64,
+        "t": "S1",  # 1-byte strings for text data
+    }
+
+    if sampletype not in nptype:
+        raise ValueError(f"Unknown sample type: {sampletype}")
+
+    return np.dtype(nptype[sampletype])
 
 
 class MS3RecordPtr:
@@ -384,7 +418,8 @@ class MS3TraceSeg:
         view exists, but the samples are only valid until the trace list is next
         changed: adding data can move a segment's buffer, and packing with
         ``remove_packed=True`` releases it.  Copy the samples to keep them across
-        such calls.
+        such calls, or use :meth:`take_np_datasamples` to detach the buffer
+        itself.
 
         The returned view can be used directly with slicing and indexing
         from `0` to `MS3TraceSeg.numsamples - 1`.
@@ -458,45 +493,68 @@ class MS3TraceSeg:
         A view of the data samples in a buffer owned by the trace list is
         returned, with the same lifetime as :attr:`datasamples`: the trace list
         is held by the view, but the samples are only valid until the trace list
-        is next changed.
+        is next changed.  See :meth:`take_np_datasamples` for a numpy array that
+        outlives the trace list instead.
         """
-        try:
-            import numpy as np
-        except ImportError:
-            raise ImportError(
-                "numpy is not installed. Install numpy or this package with [numpy] optional dependency"
-            ) from None
+        np = _require_numpy()
 
         if self._seg.numsamples <= 0:
             return np.array([])  # Empty array
 
-        sampletype = self.sampletype
-
-        # Translate libmseed sample type to numpy type
-        nptype = {
-            "i": np.int32,
-            "f": np.float32,
-            "d": np.float64,
-            "t": "S1",  # 1-byte strings for text data
-        }
-
-        if sampletype not in nptype:
-            raise ValueError(f"Unknown sample type: {sampletype}")
+        dtype = _numpy_dtype(np, self.sampletype)
 
         # Create numpy array view from CFFI buffer
-        return np.frombuffer(self.datasamples, dtype=nptype[sampletype])
+        return np.frombuffer(self.datasamples, dtype=dtype)
+
+    def take_np_datasamples(self) -> Any:
+        """Return data samples as a numpy array, taking ownership of the buffer (no copy)
+
+        Unlike :attr:`np_datasamples`, the returned array has no dependency on
+        the trace list: the segment's data buffer is detached and handed to the
+        array's memoryview, which is freed once the array is garbage collected.
+        Afterwards `numsamples` is 0 while `samplecnt` is unchanged, so a second
+        call returns an empty array rather than the same buffer again, and
+        :meth:`unpack_recordlist` can still decode fresh samples if a record
+        list is available.
+
+        Any view taken earlier from :attr:`datasamples` or :attr:`np_datasamples`
+        still addresses this buffer, so it stays valid only as long as the
+        array returned here does; dropping the array while such a view is
+        still around leaves that view referring to freed memory.
+        """
+        np = _require_numpy()
+
+        if self._seg.numsamples <= 0:
+            return np.array([])  # Empty array
+
+        numsamples = self._seg.numsamples
+        dtype = _numpy_dtype(np, self.sampletype)
+        nbytes = numsamples * dtype.itemsize
+
+        # Windows preallocates buffer growth in blocks, so the segment's
+        # buffer can be larger than its samples; shrink it to size so the
+        # array doesn't retain the unused tail for its entire lifetime.
+        if self._seg.datasize > nbytes:
+            shrunk = clibmseed.libmseed_memory.realloc(self._seg.datasamples, nbytes)
+            if shrunk:
+                self._seg.datasamples = shrunk
+
+        ptr = ffi.cast("char *", self._seg.datasamples)
+        view = owning_memoryview(ptr, nbytes)
+
+        # Detach the buffer from the segment now that the array owns it
+        self._seg.datasamples = ffi.NULL
+        self._seg.datasize = 0
+        self._seg.numsamples = 0
+
+        return np.frombuffer(view, dtype=dtype)
 
     def create_numpy_array_from_recordlist(self) -> Any:
         """Return data samples as a numpy array unpacked from the record list
 
         The numpy array returned is an independent copy of the data samples.
         """
-        try:
-            import numpy as np
-        except ImportError:
-            raise ImportError(
-                "numpy is not installed. Install numpy or this package with [numpy] optional dependency"
-            ) from None
+        np = _require_numpy()
 
         if self.recordlist is None:
             raise ValueError(
@@ -507,20 +565,10 @@ class MS3TraceSeg:
             return np.array([])  # Empty array
 
         (_, sample_type) = self.sample_size_type
-
-        # Translate libmseed sample type to numpy type
-        nptype = {
-            "i": np.int32,
-            "f": np.float32,
-            "d": np.float64,
-            "t": "S1",  # 1-byte strings for text data
-        }
-
-        if sample_type not in nptype:
-            raise ValueError(f"Unknown sample type: {sample_type}")
+        dtype = _numpy_dtype(np, sample_type)
 
         # Create numpy array of the correct type and size
-        array = np.empty(self.samplecnt, dtype=nptype[sample_type])
+        array = np.empty(self.samplecnt, dtype=dtype)
 
         # Unpack data samples into the array
         self.unpack_recordlist(buffer=array)

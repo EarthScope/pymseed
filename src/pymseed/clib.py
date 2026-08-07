@@ -5,7 +5,14 @@ Core library interface for pymseed using CFFI
 
 from typing import Any
 
-__all__ = ["ffi", "clibmseed", "buffer_pointer", "cdata_to_string", "owned_memoryview"]
+__all__ = [
+    "ffi",
+    "clibmseed",
+    "buffer_pointer",
+    "cdata_to_string",
+    "owned_memoryview",
+    "owning_memoryview",
+]
 
 try:
     # This is the correct pattern: import the ffi and lib objects
@@ -89,6 +96,33 @@ def owned_memoryview(ptr: Any, nbytes: int, format: str, owner: Any) -> memoryvi
     pinned = ffi.gc(ptr, lambda _ptr, _owner=owner: None)
 
     return memoryview(ffi.buffer(pinned, nbytes)).cast(format)
+
+
+def owning_memoryview(ptr: Any, nbytes: int) -> memoryview:
+    """
+    Return a memoryview of `nbytes` at `ptr` that frees the memory itself.
+
+    Unlike `owned_memoryview()`, which keeps an existing owner alive, this is
+    for a buffer that libmseed allocated and no longer tracks: `ptr` must have
+    come from `libmseed_memory.malloc`/`realloc`, since the destructor releases
+    it with `libmseed_memory.free`. Used to hand a decoded sample buffer to
+    Python without copying it, once the caller has detached it from libmseed's
+    own structures.
+
+    Passing `nbytes` to `ffi.gc()` as its `size` hint lets interpreters that
+    don't refcount, e.g. PyPy, weigh this allocation properly when deciding
+    when to collect it.
+
+    Args:
+        ptr: CFFI pointer to the first element, from libmseed's allocator
+        nbytes: Length of the memory at `ptr`
+
+    Returns:
+        A memoryview of the elements at `ptr`, owning that memory.
+    """
+    freed = ffi.gc(ptr, clibmseed.libmseed_memory.free, size=nbytes)
+
+    return memoryview(ffi.buffer(freed, nbytes))
 
 
 def cdata_to_string(cdata: Any, encoding: str = "utf-8") -> str | None:

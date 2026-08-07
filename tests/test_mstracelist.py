@@ -1400,6 +1400,167 @@ def test_np_datasamples_view_holds_the_trace_list():
     assert np.array_equal(view, np.array(samples, dtype=np.int32))
 
 
+def test_take_np_datasamples_matches_np_datasamples_for_every_sample_type():
+    """The taken array must carry the same values as the equivalent view."""
+    np = pytest.importorskip("numpy")
+
+    for sample_type, data, dtype in (
+        ("i", list(range(1000)), np.int32),
+        ("f", [1.5, 2.5, 3.5], np.float32),
+        ("d", [1.5, 2.5, 3.5], np.float64),
+        ("t", "hello", "S1"),
+    ):
+        traces = MS3TraceList()
+        traces.add_data(
+            sourceid="FDSN:XX_TEST__B_S_X",
+            data_samples=data,
+            sample_type=sample_type,
+            sample_rate=100.0,
+            starttime_str="2024-01-01T00:00:00Z",
+        )
+        seg = traces[0][0]
+        expected = seg.np_datasamples.copy()
+
+        taken = seg.take_np_datasamples()
+
+        assert taken.dtype == np.dtype(dtype)
+        assert np.array_equal(taken, expected)
+        assert seg.numsamples == 0
+        assert seg.datasamples == memoryview(b"")
+
+
+def test_take_np_datasamples_releases_preallocation_slack():
+    """Taking a preallocated buffer yields an exact-size array with intact samples."""
+    pytest.importorskip("numpy")
+    from pymseed.clib import clibmseed
+
+    # Force the block-growth path libmseed normally reserves for Windows, so
+    # the segment's buffer ends up larger than its samples on every platform.
+    original_block_size = clibmseed.libmseed_prealloc_block_size
+    clibmseed.libmseed_prealloc_block_size = 1048576
+    try:
+        traces = MS3TraceList()
+        traces.add_data(
+            sourceid="FDSN:XX_TEST__B_S_X",
+            data_samples=[1, 2, 3, 4, 5],
+            sample_type="i",
+            sample_rate=100.0,
+            starttime_str="2024-01-01T00:00:00Z",
+        )
+        # Append contiguous samples to grow the existing segment; only
+        # growth goes through the preallocating path.
+        traces.add_data(
+            sourceid="FDSN:XX_TEST__B_S_X",
+            data_samples=[6, 7, 8],
+            sample_type="i",
+            sample_rate=100.0,
+            starttime_str="2024-01-01T00:00:00.05Z",
+        )
+        seg = traces[0][0]
+        assert seg.datasize > seg.numsamples * 4
+
+        taken = seg.take_np_datasamples()
+    finally:
+        clibmseed.libmseed_prealloc_block_size = original_block_size
+
+    assert taken.nbytes == 8 * 4
+    assert taken.tolist() == [1, 2, 3, 4, 5, 6, 7, 8]
+    taken[0] = 42
+    assert taken[0] == 42
+
+
+def test_take_np_datasamples_on_empty_segment_returns_empty_array():
+    """Header-only data has no buffer to take; the call must not raise."""
+    np = pytest.importorskip("numpy")
+
+    traces = MS3TraceList.from_file(test_path3, unpack_data=False)
+    seg = traces[0][0]
+
+    taken = seg.take_np_datasamples()
+
+    assert taken.size == 0
+    assert isinstance(taken, np.ndarray)
+
+
+def test_take_np_datasamples_second_call_returns_empty_array():
+    """Once taken, a segment's buffer cannot be taken again."""
+    pytest.importorskip("numpy")
+
+    traces = MS3TraceList()
+    traces.add_data(
+        sourceid="FDSN:XX_TEST__B_S_X",
+        data_samples=[1, 2, 3, 4, 5],
+        sample_type="i",
+        sample_rate=100.0,
+        starttime_str="2024-01-01T00:00:00Z",
+    )
+    seg = traces[0][0]
+
+    first = seg.take_np_datasamples()
+    second = seg.take_np_datasamples()
+
+    assert first.size == 5
+    assert second.size == 0
+
+
+def test_take_np_datasamples_does_not_hold_the_trace_list():
+    """Unlike np_datasamples, the taken array owns its memory outright, so the
+    trace list is free to be collected as soon as it is no longer referenced.
+    """
+    pytest.importorskip("numpy")
+    samples = list(range(1000))
+
+    def _take():
+        traces = MS3TraceList()
+        traces.add_data(
+            sourceid="FDSN:XX_TEST__B_S_X",
+            data_samples=samples,
+            sample_type="i",
+            sample_rate=100.0,
+            starttime_str="2024-01-01T00:00:00Z",
+        )
+        return traces[0][0].take_np_datasamples(), weakref.ref(traces)
+
+    taken, reference = _take()
+    assert_released(reference)
+
+    # Churn the heap so a freed buffer would read back as recycled memory
+    _churn = [bytearray(8192) for _ in range(2000)]
+    assert taken.tolist() == samples
+
+
+def test_take_np_datasamples_survives_tracelist_close():
+    """The taken array must remain valid and writable after close()."""
+    np = pytest.importorskip("numpy")
+
+    traces = MS3TraceList.from_file(test_path3, unpack_data=True)
+    taken = [seg.take_np_datasamples() for tid in traces for seg in tid]
+    traces.close()
+
+    _churn = [bytearray(8192) for _ in range(2000)]
+    for samples in taken:
+        samples[0] = 42
+        assert samples[0] == 42
+        assert isinstance(samples, np.ndarray)
+
+
+def test_take_np_datasamples_can_be_refilled_from_the_record_list():
+    """A taken segment can decode its samples again from the record list."""
+    np = pytest.importorskip("numpy")
+
+    traces = MS3TraceList.from_file(test_path3, record_list=True)
+    seg = traces[0][0]
+    seg.unpack_recordlist()
+    expected = seg.np_datasamples.copy()
+
+    taken = seg.take_np_datasamples()
+    assert np.array_equal(taken, expected)
+    assert seg.numsamples == 0
+
+    seg.unpack_recordlist()
+    assert np.array_equal(seg.np_datasamples, expected)
+
+
 def _packed_tracelist():
     """A trace list that has been through pack(), for the cycle tests below."""
     traces = MS3TraceList()

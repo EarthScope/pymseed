@@ -182,6 +182,20 @@ typedef struct MS3TraceList {
   uint64_t           prngstate;
 } MS3TraceList;
 
+// Memory management function pointers, used to release buffers that
+// libmseed allocated (e.g. MS3TraceSeg.datasamples) with the same allocator
+typedef struct LIBMSEED_MEMORY {
+  void *(*malloc) (size_t);
+  void *(*realloc) (void *, size_t);
+  void (*free) (void *);
+} LIBMSEED_MEMORY;
+
+extern LIBMSEED_MEMORY libmseed_memory;
+
+// Block size libmseed rounds segment buffer growth up to, e.g. 1 MiB on
+// Windows, 0 (disabled, growth is exact) elsewhere
+extern size_t libmseed_prealloc_block_size;
+
 typedef struct MS3Tolerance
 {
   double (*time) (const MS3Record *msr);

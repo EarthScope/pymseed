@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Add `MS3TraceSeg.take_np_datasamples()`, transferring a segment's decoded
+  sample buffer to a numpy array with no copy, so the array has no dependency
+  on the trace list and can outlive it.
+
 ## [0.9.4] - 2026-08-05
 
 - libmseed updated to v3.5.4.  Including:
