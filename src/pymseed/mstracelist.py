@@ -557,7 +557,7 @@ class MS3TraceSeg:
         This makes a second pass over the source, re-reading each record; for a
         file, reading with ``unpack_data=True`` and calling
         :meth:`take_np_datasamples` is usually faster.  The record list is still
-        preferable to decode only some segments, or into a caller's buffer.
+        preferable to decode only some segments, or into a caller's own buffer.
         """
         np = _require_numpy()
 
