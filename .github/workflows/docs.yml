@@ -26,9 +26,10 @@ jobs:
         with:
           enable-cache: true
           python-version: "3.12"
+          activate-environment: true
 
       - name: Install pymseed with docs dependencies
-        run: uv pip install --system .[docs]
+        run: uv pip install .[docs]
 
       - name: Sanity check the built extension
         run: python -c "import pymseed; print(pymseed.__version__)"
@@ -75,9 +76,10 @@ jobs:
         with:
           enable-cache: true
           python-version: "3.12"
+          activate-environment: true
 
       - name: Install pymseed with docs dependencies
-        run: uv pip install --system .[docs]
+        run: uv pip install .[docs]
 
       - name: Check links
         run: sphinx-build -b linkcheck docs docs/_build/linkcheck
