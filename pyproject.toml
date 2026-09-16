@@ -81,7 +81,7 @@ all = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/EarthScope/pymseed"
+Homepage = "https://earthscope.github.io/pymseed"
 Repository = "https://github.com/EarthScope/pymseed"
 Issues = "https://github.com/EarthScope/pymseed/issues"
 Documentation = "https://earthscope.github.io/pymseed"

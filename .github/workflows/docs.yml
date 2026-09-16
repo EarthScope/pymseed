@@ -25,6 +25,7 @@ jobs:
         uses: astral-sh/setup-uv@v10.1.0
         with:
           enable-cache: true
+          python-version: "3.12"
 
       - name: Install pymseed with docs dependencies
         run: uv pip install --system .[docs]
@@ -73,6 +74,7 @@ jobs:
         uses: astral-sh/setup-uv@v10.1.0
         with:
           enable-cache: true
+          python-version: "3.12"
 
       - name: Install pymseed with docs dependencies
         run: uv pip install --system .[docs]
