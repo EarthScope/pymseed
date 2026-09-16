@@ -174,15 +174,9 @@ with ThreadPoolExecutor(max_workers=4, initializer=configure_logging) as executo
 
 The package functionality and exposed API are designed to support the most
 common use cases of reading and writing miniSEED data using `libmseed`.
-Extensions of data handling beyond the functionality of the library are
-out-of-scope for this package.  Furthermore, the naming of functions, classes,
-arguments, etc. often follows the naming used in the library in order to
-reference their fundamentals at the C level if needed; even though this leaves
-some names distinctly non-Pythonic.
-
-In a nutshell, the goal of this package is to provide just enough of a Python
-layer to `libmseed` to handle the most common cases of miniSEED data without
-needing to know any of the C-level details.
+The naming of functions, classes, arguments, etc. often follows the naming
+used in the library in order to reference their fundamentals at the C level
+if needed; even though this leaves some names distinctly non-Pythonic.
 
 ## License
 
