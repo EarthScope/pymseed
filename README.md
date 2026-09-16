@@ -1,5 +1,7 @@
 # pymseed - a Python package to read and write miniSEED formatted data
 
+[![Documentation](https://img.shields.io/badge/docs-earthscope.github.io/pymseed-blue)](https://earthscope.github.io/pymseed/)
+
 The pymseed package supports reading and writing of miniSEED formatted data.
 Both [miniSEED version 2](https://fdsn.org/pdf/SEEDManual_V2.4.pdf)
 (defined in the SEED standard) and [miniSEED version 3](https://docs.fdsn.org/projects/miniseed3)
@@ -21,7 +23,9 @@ e.g. `pip install pymseed[dev]`.
 
 ## Example usage
 
-Working programs for a variety of use cases can be found in the
+See the [full documentation](https://earthscope.github.io/pymseed/) for a
+tutorial and complete API reference. Working programs for a variety of use
+cases can be found in the
 [examples](https://github.com/EarthScope/pymseed/tree/main/examples) directory of the repository.
 
 Read a file and print details from each record:

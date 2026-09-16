@@ -62,7 +62,11 @@ dev = [
 # Documentation dependencies
 docs = [
     "sphinx>=9.0.0",
-    "sphinx-rtd-theme>=3.0.0",
+    "myst-parser>=5.0.0",
+    "furo",
+    "sphinx-copybutton",
+    "pymseed[numpy]",
+    "pymseed[jsonschema]",
 ]
 
 # Release/publishing dependencies (for maintainers only)
@@ -80,6 +84,7 @@ all = [
 Homepage = "https://github.com/EarthScope/pymseed"
 Repository = "https://github.com/EarthScope/pymseed"
 Issues = "https://github.com/EarthScope/pymseed/issues"
+Documentation = "https://earthscope.github.io/pymseed"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

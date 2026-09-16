@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.6] - 2026-09-16
+
+### Added
+
+- Significant documentation updates to numerous docstrings.
+- Autobuild documentation to GitHub Pages.
+
 ## [0.9.5] - 2026-08-07
 
 - Add `MS3TraceSeg.take_np_datasamples()`, transferring a segment's decoded

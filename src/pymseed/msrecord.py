@@ -472,7 +472,7 @@ class MS3Record:
         precision of microseconds is common, along with .0001 second resolution.
 
         Returns:
-            Nanoseconds since Unix epoch (1970-01-01T00:00:00Z)
+            int: Nanoseconds since Unix epoch (1970-01-01T00:00:00Z)
 
         Example:
             >>> from pymseed import MS3Record
@@ -1138,12 +1138,13 @@ class MS3Record:
         access to the internal buffer without copying data.
 
         The view type depends on the data encoding:
+
         - Integer data (Steim1/2, int16/32): memoryview of 32-bit integers
         - Float32 data: memoryview of 32-bit floats
         - Float64 data: memoryview of 64-bit floats
         - Text data: memoryview of bytes
 
-        Important:
+        Note:
             The returned view is only valid while this MS3Record exists.
             If data is needed beyond the record's lifetime, make a copy.
 
@@ -1217,7 +1218,7 @@ class MS3Record:
             ImportError: If NumPy is not installed
             ValueError: If sample type is unknown or unsupported
 
-        Important:
+        Note:
             Requires NumPy to be installed. The returned array is only valid
             while this MS3Record exists. For permanent storage, make a copy.
 
@@ -1640,6 +1641,7 @@ class MS3Record:
         Examples:
             >>> from pymseed import MS3Record, DataEncoding
             >>> import warnings
+            >>> from typing import Any
 
             >>> # Write to file
             >>> def file_handler(record: bytes, file_handle: Any):
@@ -2082,7 +2084,7 @@ class MS3Record:
             Every record header in the buffer is parsed even when a filter is
             active; libmseed provides no way to skip a record without first
             reading its header.  Matching is done in C
-            (:c:func:`msr3_matchselect`) and data samples of rejected records
+            (``msr3_matchselect``) and data samples of rejected records
             are never decoded, but the per-record loop remains in Python.
 
         Examples:
@@ -2255,7 +2257,7 @@ class MS3Record:
             Every record header in the stream is parsed even when a filter is
             active; libmseed provides no way to skip a record without first
             reading its header.  Matching is done in C
-            (:c:func:`msr3_matchselect`) and data samples of rejected records
+            (``msr3_matchselect``) and data samples of rejected records
             are never decoded, but the per-record loop remains in Python.
 
         Examples:

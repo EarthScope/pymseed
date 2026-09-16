@@ -12,7 +12,7 @@ class PymseedError(RuntimeError):
     of which are :class:`ValueError`\\ s in the Python-stdlib sense
     ("right type, wrong value").
 
-    Concrete pymseed errors (:class:`MiniSEEDError`, :class:`NoSuchSourceID`,
+    Concrete pymseed errors (:class:`MiniSEEDError`, ``NoSuchSourceID``,
     …) all derive from this class. Future additions should also inherit
     from it so callers do not have to grow ``except (A, B, C, …)`` tuples.
     """

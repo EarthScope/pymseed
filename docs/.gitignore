@@ -1,0 +1,5 @@
+# Build output
+_build/
+
+# autosummary-generated stub pages
+api/generated/

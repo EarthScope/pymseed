@@ -258,8 +258,8 @@ class MS3RecordValidator:
     run validation.
 
     Args:
-        source: A record source iterable: :class:`_BufferSource`,
-            :class:`_FileSource`, or :class:`_FileLikeSource`. Use
+        source: A record source iterable: ``_BufferSource``,
+            ``_FileSource``, or ``_FileLikeSource``. Use
             :meth:`from_buffer`, :meth:`from_file`, or :meth:`from_filelike`
             instead of constructing directly.
         return_trace_list: If True, build and return an MS3TraceList.
@@ -488,12 +488,14 @@ class MS3RecordValidator:
         """Validate records and return accumulated errors and a trace list.
 
         Returns:
-            A tuple of (errors, traces):
-            - errors: List of ``ValidationError`` instances describing errors
-              and warnings encountered during parsing.
-            - traces: ``MS3TraceList`` built from all successfully parsed records.
-              Records with validation warnings are included. ``None`` if
-              ``return_trace_list=False``.
+            tuple[list[ValidationError], MS3TraceList | None]: A two-item tuple.
+
+            The first item is a list of ``ValidationError`` instances describing
+            errors and warnings encountered during parsing.
+
+            The second item is an ``MS3TraceList`` built from all successfully
+            parsed records; records with validation warnings are included. It
+            is ``None`` if ``return_trace_list=False``.
 
         Note:
             Validation stops when:

@@ -44,6 +44,21 @@ pip install pymseed[release]
 
 This provides build and twine for package building and PyPI publishing.
 
+# Building documentation
+
+## Install the docs dependencies
+python3 -m pip install --editable '.[docs]'
+
+## Build the HTML site
+sphinx-build -W -b html docs docs/_build/html
+
+then open docs/_build/html/index.html
+
+## Run the tutorial and docstring doctests
+sphinx-build -b doctest docs docs/_build/doctest
+
+Published at https://earthscope.github.io/pymseed/ by the Documentation
+GitHub Action on every push to main.
 
 # Building distribution packages
 

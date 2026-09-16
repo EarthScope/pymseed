@@ -4,7 +4,7 @@ recursive-include cffi_module/libmseed *
 recursive-exclude cffi_module/libmseed *.o *.a *.lib *.so *.dll *.pyd
 
 # Include examples
-recursive-include examples *.py
+recursive-include examples *.py *.mseed
 
 # Include test data
 recursive-include tests/data *

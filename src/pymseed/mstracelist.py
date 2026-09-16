@@ -129,7 +129,9 @@ class MS3RecordPtr:
         if not hasattr(self, "_msrecord"):
             # libmseed leaves msr->record unset unless the source bytes outlive the
             # read, as they do for a buffer-sourced entry held by the trace list.
-            self._msrecord = MS3Record(recordptr=self._ptr.msr, owner=self._parent_tracelist)
+            self._msrecord = MS3Record(
+                recordptr=self._ptr.msr, owner=self._parent_tracelist
+            )
         return self._msrecord
 
     @property
@@ -158,6 +160,7 @@ class MS3RecordList:
     """Wrapper around CFFI MS3RecordList structure
 
     This class supports list-like access to the record pointers:
+
     - len(record_list) returns the number of records
     - record_list[i] returns the i-th record pointer
     - record_list[start:end] returns a slice of record pointers
@@ -188,7 +191,9 @@ class MS3RecordList:
             ]
 
         newline = "\n"
-        return f"MS3RecordList(recordcnt: {len(self)}\n{newline.join(formatted_lines)}\n)"
+        return (
+            f"MS3RecordList(recordcnt: {len(self)}\n{newline.join(formatted_lines)}\n)"
+        )
 
     def __str__(self) -> str:
         def indent_str(thing):
@@ -282,7 +287,9 @@ class MS3TraceSeg:
         if self.numsamples > 0:
             if len(self.datasamples) > 5:
                 # Create array representation with ellipsis inside: [1,2,3,4,5,...]
-                first_samples = ", ".join(str(sample) for sample in list(self.datasamples[:5]))
+                first_samples = ", ".join(
+                    str(sample) for sample in list(self.datasamples[:5])
+                )
                 sample_preview = f"[{first_samples}, ...]"
             else:
                 sample_preview = str(list(self.datasamples))
@@ -327,7 +334,7 @@ class MS3TraceSeg:
 
         Returns the sentinel strings ``"ERROR"`` or ``"UNSET"`` when the
         underlying nanosecond timestamp is the corresponding libmseed
-        sentinel, mirroring :meth:`MS3Record.starttime_str`.
+        sentinel, mirroring :meth:`~pymseed.MS3Record.starttime_str`.
         """
         if self._seg.starttime == clibmseed.NSTERROR:
             return "ERROR"
@@ -355,7 +362,7 @@ class MS3TraceSeg:
 
         Returns the sentinel strings ``"ERROR"`` or ``"UNSET"`` when the
         underlying nanosecond timestamp is the corresponding libmseed
-        sentinel, mirroring :meth:`MS3Record.endtime_str`.
+        sentinel, mirroring :meth:`~pymseed.MS3Record.endtime_str`.
         """
         if self._seg.endtime == clibmseed.NSTERROR:
             return "ERROR"
@@ -380,7 +387,7 @@ class MS3TraceSeg:
         or None if no update time is recorded for this segment.
 
         libmseed records this for segments added through :class:`MS3TraceList`,
-        and :meth:`MS3TraceList.generate` compares it against the system clock
+        and :meth:`~pymseed.MS3TraceList.generate` compares it against the system clock
         to decide which segments ``flush_idle_seconds`` flushes.  Compare with
         :func:`pymseed.system_time` to measure how long a segment has been
         idle, e.g. in a rolling buffer.
@@ -424,7 +431,7 @@ class MS3TraceSeg:
         The returned view can be used directly with slicing and indexing
         from `0` to `MS3TraceSeg.numsamples - 1`.
 
-        The view can efficiently be copied to a _python list_ using:
+        The view can efficiently be copied to a Python list using::
 
             data_samples = MS3TraceSeg.datasamples[:]
         """
@@ -476,7 +483,9 @@ class MS3TraceSeg:
         It is not guaranteed to be correct for any other records in the list.
         """
         if not self._seg.recordlist:
-            raise ValueError("No record list available to determine sample size and type")
+            raise ValueError(
+                "No record list available to determine sample size and type"
+            )
 
         # Get the first record
         first_record_ptr = self._seg.recordlist.first
@@ -625,27 +634,24 @@ class MS3TraceSeg:
             Basic workflow illustrating how to use unpack_recordlist():
 
             >>> from pymseed import MS3TraceList
-
-            Basic unpacking to internal memory:
             >>> traces = MS3TraceList.from_file("examples/example_data.mseed", record_list=True)
             >>> len(traces)
             3
             >>> # Before unpacking, the data samples are not available
             >>> for traceid in traces:
             ...     for segment in traceid:
-            ...         assert(segment.datasamples == memoryview(b''))
-            ...         assert(segment.numsamples == 0)
-
+            ...         assert segment.datasamples == memoryview(b'')
+            ...         assert segment.numsamples == 0
             >>> # After unpacking, the data samples are available
             >>> for traceid in traces:
             ...     for segment in traceid:
             ...         count = segment.unpack_recordlist()
-            ...         assert(segment.numsamples == segment.samplecnt)
-            ...         assert(len(segment.datasamples) == segment.numsamples)
+            ...         assert segment.numsamples == segment.samplecnt
+            ...         assert len(segment.datasamples) == segment.numsamples
 
-            Advanced example of unpacking data to a numpy array:
-            Note: this example is for illustration only.  If numpy arrays are desired
-            use the provided create_numpy_array_from_recordlist() or np_datasamples() instead.
+            Advanced example of unpacking data to a numpy array. This is for
+            illustration only; if numpy arrays are desired, use
+            create_numpy_array_from_recordlist() or np_datasamples() instead.
 
             >>> # For doctest conditional skipping, unneeded for real code
             >>> try:
@@ -653,56 +659,47 @@ class MS3TraceSeg:
             ...     HAS_NUMPY = True
             ... except ImportError:
             ...     HAS_NUMPY = False
-
             >>> if HAS_NUMPY:
             ...     traces = MS3TraceList.from_file("examples/example_data.mseed", record_list=True)
             ...     for traceid in traces:
             ...         for segment in traceid:
             ...             # Get the sample size and type from the first record in the record list
             ...             (size, sample_type) = segment.sample_size_type
-            ...
             ...             if sample_type == "i":
             ...                 # Create a numpy array to hold the unpacked data
             ...                 numpy_array = np.zeros(segment.samplecnt, dtype=np.int32)
-            ...
             ...                 # Unpack the data directly into our array
             ...                 count = segment.unpack_recordlist(numpy_array)
-            ...
             ...                 # Check that the array is not all zeros
             ...                 assert not np.all(numpy_array == 0), "Numpy array is all zeros (should not happen)"
-            ...
             ...             # Other sample types would need different numpy array types
 
-            # Advanced example of unpacking data to an Apache Arrow array using pyarrow
+            Advanced example of unpacking data to an Apache Arrow array using
+            pyarrow, illustrating the same caller-provided-buffer pattern:
+
             >>> # For doctest conditional skipping, unneeded for real code
             >>> try:
             ...     import pyarrow as pa
             ...     HAS_PYARROW = True
             ... except ImportError:
             ...     HAS_PYARROW = False
-
             >>> if HAS_PYARROW:
             ...     traces = MS3TraceList.from_file("examples/example_data.mseed", record_list=True)
             ...     for traceid in traces:
             ...         for segment in traceid:
             ...             # Get the sample size and type from the first record in the record list
             ...             (size, sample_type) = segment.sample_size_type
-            ...
             ...             if sample_type == "i":
             ...                 # Create an arrow array to hold the unpacked data
             ...                 arrow_array = pa.array([0] * segment.samplecnt, type=pa.int32())
-            ...
             ...                 # Get the data buffer for direct writing. Buffers that
             ...                 # arrow allocated itself are mutable; an imported one
             ...                 # (e.g. pa.py_buffer(bytes)) is not and is rejected.
             ...                 array_bitmap, array_buffer = arrow_array.buffers()
-            ...
             ...                 # Unpack the data directly into our array buffer
             ...                 count = segment.unpack_recordlist(array_buffer)
-            ...
             ...                 # Check that the array has no nulls (all values are valid)
             ...                 assert arrow_array.null_count == 0, "Arrow array has nulls (should not happen)"
-            ...
             ...             # Other sample types would need different pyarrow array types
 
             The point of the advanced examples is to illustrate how to use the pattern
@@ -765,6 +762,7 @@ class MS3TraceID:
     """Wrapper around CFFI MS3TraceID structure
 
     This class supports list-like access to the trace segments:
+
     - len(traceid) returns the number of segments
     - traceid[i] returns the i-th segment
     - traceid[start:end] returns a slice of segments
@@ -923,52 +921,60 @@ class MS3TraceID:
 class MS3TraceList:
     """A container for a list of traces read from miniSEED
 
-    If `file_name` is specified miniSEED will be read from the file.
+    If ``file_name`` is specified miniSEED will be read from the file.
 
-    If `unpack_data` is True, the data samples will be decoded.
+    If ``unpack_data`` is True, the data samples will be decoded.
 
-    If `sourceid`, `starttime`, or `endtime` are specified, only records
-    matching those criteria will be included in the trace list.  `sourceid`
+    If ``sourceid``, ``starttime``, or ``endtime`` are specified, only records
+    matching those criteria will be included in the trace list.  ``sourceid``
     is a glob pattern matched against the record source ID (e.g.
     ``"FDSN:IU_COLA_*"``); set to ``None`` to match all source IDs.
-    `starttime` and `endtime` are formatted date-time strings
+    ``starttime`` and ``endtime`` are formatted date-time strings
     (e.g. ``"2024-01-01T00:00:00Z"``); set either to ``None`` for an
     open-ended time window, set both to ``None`` to match all time.
 
-    If `skip_not_data` is True, bytes from the input stream will be skipped
+    If ``skip_not_data`` is True, bytes from the input stream will be skipped
     until a record is found.
 
-    If `validate_crc` is True, the CRC will be validated if contained in
+    If ``validate_crc`` is True, the CRC will be validated if contained in
     the record (legacy miniSEED v2 contains no CRCs).  The CRC provides an
     internal integrity check of the record contents.
 
     The overall structure of the trace list list of trace IDs, each of which
     contains a list of trace segments illustrated as follows:
+
     - TraceList
+
       - TraceID
+
         - Trace Segment
         - Trace Segment
         - Trace Segment
         - ...
+
       - TraceID
+
         - Trace Segment
         - Trace Segment
         - ...
+
       - ...
 
     TraceIDs can be accessed via indexing and slicing:
-    - `traces[0]` returns the first TraceID
-    - `traces[1:3]` returns a slice of the TraceIDs
-    - `for traceid in traces:` iterates over all TraceIDs
-    - `sourceid in traces` tests for a source ID, see `get_traceid()`
+
+    - ``traces[0]`` returns the first TraceID
+    - ``traces[1:3]`` returns a slice of the TraceIDs
+    - ``for traceid in traces:`` iterates over all TraceIDs
+    - ``sourceid in traces`` tests for a source ID, see ``get_traceid()``
 
     Trace Segments can be accessed via indexing and slicing:
-    - `traceid[0]` returns the first Trace Segment
-    - `traceid[1:3]` returns a slice of the Trace Segments
-    - `for segment in traceid:` iterates over all Trace Segments
+
+    - ``traceid[0]`` returns the first Trace Segment
+    - ``traceid[1:3]`` returns a slice of the Trace Segments
+    - ``for segment in traceid:`` iterates over all Trace Segments
 
     Example usage iterating over the trace list:
-    ```
+
     >>> from pymseed import MS3TraceList
 
     >>> for traceid in MS3TraceList.from_file("examples/example_data.mseed"):
@@ -986,7 +992,7 @@ class MS3TraceList:
       2010-02-27T06:50:00.069539Z - 2010-02-27T07:59:59.069538Z, 1.0 sps, 4200 samples
 
     Example using source ID and time-window selection:
-    ```
+
     >>> traces = MS3TraceList.from_file(
     ...     "examples/example_data.mseed",
     ...     sourceid="FDSN:IU_COLA_00_L_H_Z",
@@ -1000,18 +1006,13 @@ class MS3TraceList:
     >>> traces[0][0].samplecnt
     1963
 
-    ```
-
     The trace list, its samples, and the sources held for any record lists are
     released when it is garbage collected.  Call :meth:`close`, or use the
     trace list as a context manager, to release them at a known point instead:
 
-    ```
     >>> with MS3TraceList.from_file("examples/example_data.mseed") as traces:
     ...     print(len(traces))
     3
-
-    ```
     """
 
     def __init__(
@@ -1104,7 +1105,8 @@ class MS3TraceList:
         Idempotent: safe to call multiple times.
 
         .. warning::
-            Every :class:`MS3TraceID`, :class:`MS3TraceSeg`, record list, and
+            Every :class:`~pymseed.mstracelist.MS3TraceID`,
+            :class:`~pymseed.mstracelist.MS3TraceSeg`, record list, and
             data sample view obtained from this trace list is invalidated.
             Reading one after this call reads freed memory.  The trace list
             itself reports the closure, raising :class:`ValueError` for any
@@ -1146,7 +1148,9 @@ class MS3TraceList:
             ]
 
         newline = "\n"
-        return f"MS3TraceList(numtraceids: {len(self)}\n{newline.join(formatted_lines)}\n)"
+        return (
+            f"MS3TraceList(numtraceids: {len(self)}\n{newline.join(formatted_lines)}\n)"
+        )
 
     def __str__(self) -> str:
         if self._mstl == ffi.NULL:
@@ -1169,7 +1173,9 @@ class MS3TraceList:
             ]
 
         newline = "\n"
-        return f"Trace list with {len(self)} trace IDs\n{newline.join(formatted_lines)}\n"
+        return (
+            f"Trace list with {len(self)} trace IDs\n{newline.join(formatted_lines)}\n"
+        )
 
     def __len__(self) -> int:
         """Return number of trace IDs in the list"""
@@ -1320,7 +1326,7 @@ class MS3TraceList:
 
             unpack_data: If True, decode data samples immediately. If False, data
                 samples remain packed and must be unpacked later with
-                `unpack_recordlist()`. Default: False
+                :meth:`~pymseed.mstracelist.MS3TraceSeg.unpack_recordlist`. Default: False
 
             sourceid: Source ID glob pattern to select matching records
                 (e.g. ``"FDSN:IU_COLA_*"``). None matches all source IDs.
@@ -1423,7 +1429,9 @@ class MS3TraceList:
         if isinstance(file_name, os.PathLike):
             file_name = os.fspath(file_name)
         elif not isinstance(file_name, str):
-            raise TypeError(f"file_name must be str or os.PathLike; got {type(file_name).__name__}")
+            raise TypeError(
+                f"file_name must be str or os.PathLike; got {type(file_name).__name__}"
+            )
 
         ensure_thread_logging()
 
@@ -1502,7 +1510,7 @@ class MS3TraceList:
 
             unpack_data: If True, decode data samples immediately. If False, data
                 samples remain packed and must be unpacked later with
-                `unpack_recordlist()`. Default: False
+                :meth:`~pymseed.mstracelist.MS3TraceSeg.unpack_recordlist`. Default: False
 
             sourceid: Source ID glob pattern to select matching records
                 (e.g. ``"FDSN:IU_COLA_*"``). None matches all source IDs.
@@ -1696,7 +1704,7 @@ class MS3TraceList:
             ``record_list=True`` is supported and produces the same
             per-record metadata as :meth:`add_file` / :meth:`add_buffer`
             (source ID, start/end times, record length, encoding, etc.),
-            **but** :meth:`MS3TraceSeg.unpack_recordlist` cannot be used on
+            **but** :meth:`~pymseed.mstracelist.MS3TraceSeg.unpack_recordlist` cannot be used on
             the resulting record list as the original source bytes do not persist.
             The per-record references to those bytes are cleared, so
             :attr:`MS3Record.record` and :attr:`MS3Record.record_mv` also raise
@@ -1726,7 +1734,7 @@ class MS3TraceList:
             record_list: If True, maintain a per-segment list of original
                 records (source ID, times, reclen, encoding, etc.).
                 See the "Record list limitation" note above:
-                :meth:`unpack_recordlist` cannot be used on the resulting
+                :meth:`~pymseed.mstracelist.MS3TraceSeg.unpack_recordlist` cannot be used on the resulting
                 list because the source bytes do not persist.  Default: False.
 
             skip_not_data: If True, skip non-data records instead of raising
@@ -1819,7 +1827,10 @@ class MS3TraceList:
                 verbose=verbose,
             ):
                 if has_selections:
-                    if clibmseed.msr3_matchselect(selections_ptr, msr._msr, ffi.NULL) == ffi.NULL:
+                    if (
+                        clibmseed.msr3_matchselect(selections_ptr, msr._msr, ffi.NULL)
+                        == ffi.NULL
+                    ):
                         continue
                     if unpack_data:
                         msr.unpack_data(verbose=verbose)
@@ -2056,6 +2067,7 @@ class MS3TraceList:
                 future release.
 
             encoding: Data encoding format for compression. Options include:
+
                 - DataEncoding.STEIM1: Steim-1 compression (default, good general purpose for 32-bit ints)
                 - DataEncoding.STEIM2: Steim-2 compression
                 - DataEncoding.INT16: 16-bit integers (no compression)
@@ -2108,7 +2120,7 @@ class MS3TraceList:
             - The handler function is called once for each complete record generated
             - For large datasets, consider using streaming approaches with multiple pack() calls
 
-        See also:
+        See Also:
             - to_file()
         """
         # Issue deprecation warning
@@ -2133,7 +2145,9 @@ class MS3TraceList:
         # remaining records, and re-raise once packing returns.
         handler_error: list[BaseException] = []
 
-        def record_handler_wrapper(record: Any, record_length: int, _handlerdata: Any) -> None:
+        def record_handler_wrapper(
+            record: Any, record_length: int, _handlerdata: Any
+        ) -> None:
             """Callback function for mstl3_pack()"""
             if handler_error:
                 return
@@ -2161,7 +2175,11 @@ class MS3TraceList:
 
         packed_samples = ffi.new("int64_t *")
 
-        c_extra = ffi.new("char[]", extra_headers.encode("utf-8")) if extra_headers else ffi.NULL
+        c_extra = (
+            ffi.new("char[]", extra_headers.encode("utf-8"))
+            if extra_headers
+            else ffi.NULL
+        )
 
         packed_records = clibmseed.mstl3_pack_ppupdate_flushidle(
             self._mstl,
@@ -2219,6 +2237,7 @@ class MS3TraceList:
                 future release.
 
             encoding: Data encoding format for compression. Options include:
+
                 - DataEncoding.STEIM1: Steim-1 compression (default, good
                   general purpose for 32-bit ints)
                 - DataEncoding.STEIM2: Steim-2 compression
@@ -2229,9 +2248,8 @@ class MS3TraceList:
                 - DataEncoding.TEXT: Text encoding (UTF-8)
 
             format_version: miniSEED format version (2 or 3). If None, uses
-                library default. Version 2 is legacy format, version 3 is latest
-                standard. Version 2 is legacy format, version 3 is latest
-                standard.
+                library default. Version 2 is legacy format, version 3 is the
+                latest standard.
 
             extra_headers: Optional extra header fields to include.
                 Must be valid JSON string.
@@ -2320,7 +2338,7 @@ class MS3TraceList:
             ones are still possible: 1 sample/second fills a 4096-byte STEIM2
             record in about 110 minutes, a 512-byte one in about 12 minutes.
             Choose a smaller N when bounding output latency matters more than
-            filling records.  :attr:`MS3TraceSeg.update_time` reports the time
+            filling records.  :attr:`~pymseed.mstracelist.MS3TraceSeg.update_time` reports the time
             a segment was last updated, which is the value N is compared
             against.
 
@@ -2334,7 +2352,7 @@ class MS3TraceList:
             and the output consistent, handling per-record failures inside the
             loop.
 
-        See also:
+        See Also:
             - to_file()
         """
         remove_packed = _resolve_alias(
@@ -2388,7 +2406,11 @@ class MS3TraceList:
         if format_version == 2:
             flags |= clibmseed.MSF_PACKVER2
 
-        c_extra = ffi.new("char[]", extra_headers.encode("utf-8")) if extra_headers else ffi.NULL
+        c_extra = (
+            ffi.new("char[]", extra_headers.encode("utf-8"))
+            if extra_headers
+            else ffi.NULL
+        )
 
         packer = clibmseed.mstl3_pack_init(
             self._mstl,
@@ -2463,6 +2485,7 @@ class MS3TraceList:
                 future release.
 
             encoding: Data encoding format for compression. Options include:
+
                 - DataEncoding.STEIM1: Steim-1 compression (default, good
                   general purpose for 32-bit ints)
                 - DataEncoding.STEIM2: Steim-2 compression
@@ -2473,8 +2496,8 @@ class MS3TraceList:
                 - DataEncoding.TEXT: Text encoding (UTF-8)
 
             format_version: miniSEED format version (2 or 3). If None, uses
-                library default. Version 2 is legacy format, version 3 is latest
-                standard.
+                library default. Version 2 is legacy format, version 3 is the
+                latest standard.
 
             verbose: Verbosity level for libmseed output (0=quiet, 1=info,
                 2=detailed). Default is 0 (quiet).
@@ -2522,7 +2545,7 @@ class MS3TraceList:
             This method is more convenient and efficient than using generate()
             and writing to a file with a file handler.
 
-        See also:
+        See Also:
             - generate(): Lower-level method to create miniSEED records
             - add_data(): Add time series data to the trace list
             - from_file(): Read miniSEED data from file
@@ -2534,7 +2557,9 @@ class MS3TraceList:
         if isinstance(filename, os.PathLike):
             filename = os.fspath(filename)
         elif not isinstance(filename, str):
-            raise TypeError(f"filename must be str or os.PathLike; got {type(filename).__name__}")
+            raise TypeError(
+                f"filename must be str or os.PathLike; got {type(filename).__name__}"
+            )
 
         check_encoding(encoding)
         self._check_open()

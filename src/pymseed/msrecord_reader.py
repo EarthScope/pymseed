@@ -62,41 +62,41 @@ class MS3RecordReader:
               closed by :meth:`close`, ``__exit__``, or ``__del__``, and
               the caller is responsible for closing it.
 
-        start_byte_offset (int, optional): Start byte offset in the input bytes stream.
+        start_byte_offset (int): Start byte offset in the input bytes stream.
             Defaults to 0.
 
-        end_byte_offset (int, optional): End byte offset in the input bytes stream.
+        end_byte_offset (int): End byte offset in the input bytes stream.
             Defaults to 0, which means read until the end of the stream.  A range
             ending part way through a record raises :class:`MiniSEEDError` after
             the records that fit within it, as a truncated stream does.
 
-        unpack_data (bool, optional): Whether to decode/unpack the data samples from
+        unpack_data (bool): Whether to decode/unpack the data samples from
             the records. If False, only metadata is parsed and data remains in
             compressed format. Defaults to False for better performance when only
             metadata is needed.
 
-        sourceid (str, optional): Source ID glob pattern to select matching
+        sourceid (str): Source ID glob pattern to select matching
             records (e.g. ``"FDSN:IU_COLA_*"``). None matches all source IDs.
             Defaults to None.
 
-        starttime (str, optional): Start of time window as a formatted date-time
+        starttime (str): Start of time window as a formatted date-time
             string (e.g. ``"2024-01-01T00:00:00Z"``). Only records containing
             data after this time are returned. None means open start.
             Defaults to None.
 
-        endtime (str, optional): End of time window as a formatted date-time
+        endtime (str): End of time window as a formatted date-time
             string. Only records containing data before this time are returned.
             None means open end. Defaults to None.
 
-        skip_not_data (bool, optional): Whether to skip non-data bytes in the input
+        skip_not_data (bool): Whether to skip non-data bytes in the input
             stream until a valid miniSEED record is found. Useful for reading from
             streams that may contain other data mixed with miniSEED records.
             Defaults to False.
 
-        validate_crc (bool, optional): If True, validate CRC checksums when present in records.
+        validate_crc (bool): If True, validate CRC checksums when present in records.
             miniSEED v3 records contain CRCs, but v2 records do not. Default is True.
 
-        verbose (int, optional): Verbosity level for for libmseed operations. Higher values
+        verbose (int): Verbosity level for for libmseed operations. Higher values
             produce more detailed output. 0 = no output, 1+ = increasing verbosity.
             Defaults to 0 (silent).
 

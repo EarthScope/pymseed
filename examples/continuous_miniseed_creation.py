@@ -4,7 +4,7 @@ Generate miniSEED from a continuous stream of data using a rolling buffer.
 
 This program illustrates the use of an MS3TraceList to function as a temporary,
 or transient, data buffer for a continuous stream of data, and using
-MS3TraceList.pack() to continuously generate miniSEED output.
+MS3TraceList.generate() to continuously generate miniSEED output.
 
 This pattern is useful for generating miniSEED output from a continuous stream
 of data from any arbitrary source in a manner that creates full miniSEED records

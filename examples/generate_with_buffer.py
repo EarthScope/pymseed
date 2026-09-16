@@ -5,7 +5,7 @@ buffer of potentially multi-channel data.
 
 This pattern of usage is particularly useful for applications that need to:
 a) generate miniSEED in a continuous stream for an unknown (long) duration,
-   i.e. real-time streams.
+   i.e. real-time streams.  See the `continuous_miniseed_creation.py` example.
 b) generate miniSEED from a large volume of data while avoiding the need to
    have it all in memory.
 
@@ -22,7 +22,6 @@ The general pattern is (writing bytes to a file for example):
 
     # Generate filled records during regular data flow
     for record in traces.generate(flush_data=False,
-                                  flush_idle_seconds=60,
                                   remove_packed=True):
         # Write the record (bytes) to the output file
         output_file.write(record)
@@ -114,7 +113,6 @@ for _ in range(10):
         format_version=format_version,
         max_record_length=max_record_length,
         flush_data=False,
-        flush_idle_seconds=60,
         remove_packed=True,
     ):
         output_file.write(record)

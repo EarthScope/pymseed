@@ -13,25 +13,36 @@ from .clib import clibmseed
 class DataEncoding(IntEnum):
     """Data encoding format codes"""
 
-    TEXT = clibmseed.DE_TEXT  # Text encoding (UTF-8)
-    INT16 = clibmseed.DE_INT16  # 16-bit integer
-    INT32 = clibmseed.DE_INT32  # 32-bit integer
-    FLOAT32 = clibmseed.DE_FLOAT32  # 32-bit float (IEEE)
-    FLOAT64 = clibmseed.DE_FLOAT64  # 64-bit float (IEEE)
-    STEIM1 = clibmseed.DE_STEIM1  # Steim-1 compressed 32-bit integers
-    STEIM2 = clibmseed.DE_STEIM2  # Steim-2 compressed 32-bit integers
-
-    # Legacy encodings supported by libmseed for decoding only
+    #: Text encoding (UTF-8)
+    TEXT = clibmseed.DE_TEXT
+    #: 16-bit integer
+    INT16 = clibmseed.DE_INT16
+    #: 32-bit integer
+    INT32 = clibmseed.DE_INT32
+    #: 32-bit float (IEEE)
+    FLOAT32 = clibmseed.DE_FLOAT32
+    #: 64-bit float (IEEE)
+    FLOAT64 = clibmseed.DE_FLOAT64
+    #: Steim-1 compressed 32-bit integers
+    STEIM1 = clibmseed.DE_STEIM1
+    #: Steim-2 compressed 32-bit integers
+    STEIM2 = clibmseed.DE_STEIM2
+    #: Legacy GEOSCOPE 24-bit integer (decoding only)
     GEOSCOPE24 = clibmseed.DE_GEOSCOPE24
+    #: Legacy GEOSCOPE 16-bit gain ranged, 3-bit exponent (decoding only)
     GEOSCOPE163 = clibmseed.DE_GEOSCOPE163
+    #: Legacy GEOSCOPE 16-bit gain ranged, 4-bit exponent (decoding only)
     GEOSCOPE164 = clibmseed.DE_GEOSCOPE164
+    #: Legacy CDSN 16-bit gain ranged (decoding only)
     CDSN = clibmseed.DE_CDSN
+    #: Legacy SRO 16-bit gain ranged (decoding only)
     SRO = clibmseed.DE_SRO
+    #: Legacy DWWSSN 16-bit gain ranged (decoding only)
     DWWSSN = clibmseed.DE_DWWSSN
 
 
 class TimeFormat(IntEnum):
-    """Time format codes for ms_nstime2timestr() and ms_nstime2timestrz()"""
+    """Time format codes for :func:`~pymseed.nstime2timestr`"""
 
     #: ``YYYY-MM-DDThh:mm:ss.sssssssss``, ISO 8601 in month-day format
     ISOMONTHDAY = clibmseed.ISOMONTHDAY
@@ -54,7 +65,7 @@ class TimeFormat(IntEnum):
 
 
 class SubSecond(IntEnum):
-    """Subsecond resolution codes for ms_nstime2timestr() and ms_nstime2timestrz()"""
+    """Subsecond resolution codes for :func:`~pymseed.nstime2timestr`"""
 
     #: No subseconds
     NONE = clibmseed.NONE

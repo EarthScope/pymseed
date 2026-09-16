@@ -1,17 +1,14 @@
 #!/usr/bin/env python3
 """
-Read miniSEED files and access data samples as NumPy arrays.
+Read miniSEED files and assemble independent traces using NumPy arrays.
 
 This example demonstrates how to:
 - Read miniSEED files using pymseed and create a trace list
-- Extract data samples as NumPy arrays without duplicating data
+- Extract data samples as NumPy arrays without copying data
 - Access basic trace metadata
 
-The strategy used to avoid duplicating the data samples requires
-reading the data from files twice.  Once to create the trace list
-using a record list to maintain pointers to the stored records.
-Then a second time to extract the data samples directly into
-allocated NumPy arrays.
+The result is a collection of trace data with no dependency
+on any pymseed data structures.
 
 Usage:
 > python read_numpy.py [file1.mseed] [file2.mseed] ...
@@ -28,26 +25,26 @@ import numpy as np
 from pymseed import MS3TraceList, sourceid2nslc
 
 
-def read_traces_to_numpy(input_files):
+def read_traces(input_files):
     """Read miniSEED files and return list of trace data with NumPy arrays."""
     trace_data = []
     traces = MS3TraceList()
 
-    # Read all files, explicitly not unpacking data samples and creating a record list
+    # Read all files
     for filename in input_files:
         print(f"Reading: {filename}")
         try:
-            traces.add_file(filename, unpack_data=False, record_list=True)
+            traces.add_file(filename, unpack_data=True)
         except Exception as e:
             print(f"Warning: Could not read {filename}: {e}")
             continue
 
-    # Extract data for each trace segment, creating a NumPy array from the record list
+    # Extract data for each trace segment
     for trace_id in traces:
         for segment in trace_id:
             try:
-                # Create and populate a NumPy array from the record list
-                data_array = segment.create_numpy_array_from_recordlist()
+                # Take ownership of the data sample array
+                data_array = segment.take_np_datasamples()
 
                 # Organize trace information
                 trace_entry = {
@@ -70,8 +67,9 @@ def read_traces_to_numpy(input_files):
 
 
 if __name__ == "__main__":
-    # Simple argparse setup
-    parser = argparse.ArgumentParser(description="Read miniSEED files and convert to NumPy arrays")
+    parser = argparse.ArgumentParser(
+        description="Read miniSEED files and assemble independent traces"
+    )
     parser.add_argument("files", nargs="*", help="miniSEED files to read")
     args = parser.parse_args()
 
@@ -82,8 +80,7 @@ if __name__ == "__main__":
 
     input_files = args.files
 
-    # Read traces and convert to NumPy arrays
-    trace_data = read_traces_to_numpy(input_files)
+    trace_data = read_traces(input_files)
 
     if not trace_data:
         sys.exit("No trace data found")
