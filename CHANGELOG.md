@@ -8,78 +8,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
-- Raise `ValueError` instead of reading freed memory when a borrowed
-  `MS3Record` is invalidated by a later parse error or by closing its reader.
-- Attach only an operation's own libmseed messages to `MiniSEEDError`,
-  instead of leftover messages from an earlier, unrelated call.
-- Keep an `MS3Record` alive while views of its samples or raw record exist.
-- Treat empty input as containing no records for every reader; previously
-  `MS3Record.from_file()` and `MS3TraceList.from_file()`/`add_file()` raised
-  on an empty file while the buffer and file-like readers did not.
-- Raise `ValueError` when using an `MS3TraceID`, `MS3TraceSeg`,
-  `MS3RecordList` or `MS3RecordPtr` after its `MS3TraceList` is closed,
-  instead of reading freed memory.
-- Fix an unraisable `AttributeError` from `MS3Record.__del__()` when
-  construction fails before allocation, e.g. an invalid keyword argument.
-- `MANIFEST.in` referenced the nonexistent `development.txt` instead of
-  `development.md`.
+- Using a record after its reader, buffer or trace list is closed, or after a
+  later parse error, now raises `ValueError` instead of reading freed memory.
+  This covers `MS3Record`, `MS3TraceID`, `MS3TraceSeg`, `MS3RecordList` and
+  `MS3RecordPtr`.
+- Sample and raw-record views now keep their `MS3Record` alive.
+- `MiniSEEDError` only includes libmseed messages from the failing call.
+- An empty file is read as containing no records by every reader.
+  Previously `MS3Record.from_file()` and `MS3TraceList.from_file()`/`add_file()`
+  raised an error.
+- Fix a spurious `AttributeError` warning when `MS3Record()` construction fails.
 
 ### Added
-- CI workflow running the test suite and linters on pushes and pull requests.
-- Add Contributing sections to README.md and development.md.
-- Add missing type annotations flagged by mypy.
-- Ship `py.typed` so type checkers treat pymseed's own annotations as authoritative.
-- Link PyPI and conda-forge package pages, and show the version, in the docs.
-
-### Removed
-- Unused `NoSuchSourceID` exception.
-- `MS3Record`'s internal `recordptr`/`owns`/`owner` constructor parameters;
-  the public constructor is now `MS3Record(reclen=None, encoding=None)`.
-- The no-op `skip_not_data` option on `MS3TraceList.add_filelike()` /
-  `from_filelike()`; it never reached the parser.
+- Type annotations and a `py.typed` marker for type checkers.
+- Contributing sections in README.md and development.md.
+- Links to the PyPI and conda-forge pages, and the version, in the docs.
 
 ### Changed
-- Update GitHub Actions to current versions and harden release/docs workflows.
-- `MS3RecordReader`, `MS3Record.from_buffer()`/`from_filelike()`/`parse()`/
-  `parse_into()`/`generate()`/`to_file()`, and the matching `MS3TraceList`
-  methods now take their options as keyword-only arguments.
-- `MS3RecordReader`/`MS3Record.iter_records()` reject `bool` as a file
-  descriptor source; `True`/`False` previously read fd 1/0.
-- `MS3Record.set_extra_header()` raises `TypeError`, not `ValueError`, for
-  an unsupported value type.
-- `validate_extra_headers()`/`valid_extra_headers()` accept `os.PathLike`
-  for `schema_file`, and `generate()`/`MS3TraceList`'s buffer parameters
-  accept any buffer-protocol object rather than only `list`/`bytes`.
-- Empty `np_datasamples`/`take_np_datasamples`/
-  `create_numpy_array_from_recordlist` results use the known sample type's
-  dtype rather than numpy's `float64` default.
-- `with_datasamples()` raises `ValueError` for a text-sample sequence item
-  that isn't exactly one byte, instead of raising `IndexError` for an empty
-  string or silently truncating a multibyte character.
-- Require `setuptools>=77` for the PEP 639 `license = "Apache-2.0"` metadata.
-- Speed up record iteration by skipping `__init__` for borrowed,
-  non-owning `MS3Record` wrappers.
-- Speed up `MS3Record.from_filelike()` by reusing the buffer export across
-  records and sizing chunk reads to what the parser reports as missing.
-- Speed up `with_datasamples()` numeric conversion by trying a direct CFFI
-  array build before falling back to per-element conversion.
-- Speed up `MS3RecordValidator.validate()` by caching extra-header
-  validation results per distinct extra-header JSON string.
-- Speed up `MS3RecordValidator.validate()`'s log-message draining by
-  fetching the thread-local pop buffer once per call instead of per drain.
-- Restructure validator and add_data branching for type narrowing.
-- Consolidate duplicated argument checks and time formatting into util helpers.
-- Simplify MS3Record sample handling, extra header access and packing.
-- Deduplicate trace list container, repr and file-like reading code.
-- Simplify validator record sources and error accumulation.
-- Remove dead code, stale comments and obsolete lint ignores.
+- Options to `MS3RecordReader`, `MS3Record.from_buffer()`/`from_filelike()`/
+  `parse()`/`parse_into()`/`generate()`/`to_file()`, and the matching
+  `MS3TraceList` methods are now keyword-only.
+- `MS3Record.set_extra_header()` raises `TypeError` for an unsupported value type.
+- `with_datasamples()` raises `ValueError` for a text sample that is not
+  exactly one byte.
+- `MS3RecordReader`/`MS3Record.iter_records()` reject `bool` as a file descriptor.
+- `validate_extra_headers()`/`valid_extra_headers()` accept `os.PathLike`, and
+  buffer parameters accept any buffer-protocol object.
+- Empty numpy sample arrays use the record's sample dtype instead of `float64`.
+- Faster record iteration, `MS3Record.from_filelike()`, `with_datasamples()`
+  and `MS3RecordValidator.validate()`.
+- Building from source requires `setuptools>=77`.
 
-### Removed deprecated functionality
+### Removed
 - `MS3Record.pack()` and `MS3TraceList.pack()`; use `generate()`.
 - Deprecated parameter aliases: `MS3TraceList.add_data()` `start_time_str`,
   `start_time`, `start_time_seconds`; `MS3TraceList.generate()` `record_length`
   and `removed_packed`; `MS3TraceList.to_file()` `max_reclen`;
   `MS3RecordReader()` `input`.
+- The internal `recordptr`/`owns`/`owner` parameters of `MS3Record()`.
+- The `skip_not_data` option of `MS3TraceList.add_filelike()`/`from_filelike()`,
+  which had no effect.
+- The unused `NoSuchSourceID` exception.
 
 ## [0.9.6] - 2026-09-16
 
@@ -502,7 +471,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - MS3Record class for individual records
 - CFFI-based bindings to libmseed
 
-[Unreleased]: https://github.com/EarthScope/pymseed/compare/v0.0.5...HEAD
+[Unreleased]: https://github.com/EarthScope/pymseed/compare/v0.9.6...HEAD
 [0.9.6]: https://github.com/EarthScope/pymseed/releases/tag/v0.9.6
 [0.9.5]: https://github.com/EarthScope/pymseed/releases/tag/v0.9.5
 [0.9.4]: https://github.com/EarthScope/pymseed/releases/tag/v0.9.4
