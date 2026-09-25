@@ -13,13 +13,13 @@ over it.
 
 ## Installation
 
-Install from PyPI:
+Install from [PyPI](https://pypi.org/project/pymseed/):
 
 ```bash
 pip install pymseed
 ```
 
-Or from conda-forge:
+Or from [conda-forge](https://anaconda.org/conda-forge/pymseed):
 
 ```bash
 conda install -c conda-forge pymseed

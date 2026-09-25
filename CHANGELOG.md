@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add Contributing sections to README.md and development.md.
 - Add missing type annotations flagged by mypy.
 - Ship `py.typed` so type checkers treat pymseed's own annotations as authoritative.
+- Link PyPI and conda-forge package pages, and show the version, in the docs.
 
 ### Removed
 - Unused `NoSuchSourceID` exception.

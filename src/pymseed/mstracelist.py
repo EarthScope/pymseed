@@ -125,7 +125,7 @@ class MS3RecordPtr:
         """Return a constructed MS3Record.
 
         Borrowed from this entry: reading it after the trace list is closed
-        raises :class:`ValueError` (see :meth:`_msr_for_borrower`).
+        raises :class:`ValueError` (see ``_msr_for_borrower()``).
         """
         if not hasattr(self, "_msrecord"):
             # libmseed leaves msr->record unset unless the source bytes outlive the

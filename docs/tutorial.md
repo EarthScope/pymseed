@@ -6,13 +6,13 @@ handling errors in threaded code.
 
 ## Prerequisites
 
-Install pymseed before you begin:
+Install pymseed before you begin, from [PyPI](https://pypi.org/project/pymseed/):
 
 ```bash
 pip install pymseed
 ```
 
-Or from conda-forge:
+Or from [conda-forge](https://anaconda.org/conda-forge/pymseed):
 
 ```bash
 conda install -c conda-forge pymseed

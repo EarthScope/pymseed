@@ -208,7 +208,7 @@ def get_error_messages() -> list[str]:
     After calling this function, the registry will be empty.
 
     Every pymseed entry point clears the registry before it runs (see
-    :func:`begin_operation`), so this returns messages from the most recent
+    ``begin_operation()``), so this returns messages from the most recent
     pymseed operation on the calling thread, not from any operation before it.
 
     When more than ``max_messages`` messages have accumulated, libmseed
