@@ -1482,10 +1482,13 @@ class MS3Record:
             MS3TraceList.add_data(): Add data samples to a trace list
         """
         # A multi-dimensional buffer is flattened when shared zero-copy, while
-        # len() gives only its first dimension.
+        # len() gives only its first dimension.  Reused below for the format
+        # check, so a buffer-protocol object is not wrapped in a memoryview twice.
         try:
-            ndim = memoryview(data_samples).ndim
+            mv = memoryview(data_samples)
+            ndim = mv.ndim
         except TypeError:
+            mv = None
             ndim = 1
 
         if ndim != 1:
@@ -1503,20 +1506,27 @@ class MS3Record:
             if sample_type in _NUMERIC_SAMPLE_SPECS:
                 ctype, itemsize, convert = _NUMERIC_SAMPLE_SPECS[sample_type]
                 try:
-                    mv = memoryview(data_samples)
-                    if mv.format == sample_type and mv.itemsize == itemsize:
-                        # Compatible format - safe to zero-copy. The export must stay
-                        # bound for the whole context to keep the source pinned.
-                        buffer_export = ffi.from_buffer(data_samples)
-                        sample_array = ffi.cast(f"{ctype} *", buffer_export)
-                    else:
+                    if mv is None or mv.format != sample_type or mv.itemsize != itemsize:
                         raise ValueError("Incompatible buffer format")
+                    # Compatible format - safe to zero-copy. The export must stay
+                    # bound for the whole context to keep the source pinned.
+                    buffer_export = ffi.from_buffer(data_samples)
+                    sample_array = ffi.cast(f"{ctype} *", buffer_export)
                 except (TypeError, ValueError, BufferError):
                     # Not a buffer, or one that cannot be shared as it is
-                    # (incompatible format, not contiguous) - need conversion
-                    sample_array = ffi.new(
-                        f"{ctype}[]", [convert(sample) for sample in data_samples]
-                    )
+                    # (incompatible format, not contiguous) - need conversion.
+                    # CFFI accepts a list/tuple directly when every element is
+                    # already an appropriately-ranged int (or float, for a
+                    # double/float array), which is the common case and avoids
+                    # a per-element Python call; anything it rejects (e.g. a
+                    # float for an int array, or a non-list/tuple sequence)
+                    # falls back to explicit per-element conversion.
+                    try:
+                        sample_array = ffi.new(f"{ctype}[]", data_samples)
+                    except TypeError:
+                        sample_array = ffi.new(
+                            f"{ctype}[]", [convert(sample) for sample in data_samples]
+                        )
 
                 self._msr.datasamples = sample_array
                 self._msr.numsamples = len(data_samples)

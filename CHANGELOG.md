@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   non-owning `MS3Record` wrappers.
 - Speed up `MS3Record.from_filelike()` by reusing the buffer export across
   records and sizing chunk reads to what the parser reports as missing.
+- Speed up `with_datasamples()` numeric conversion by trying a direct CFFI
+  array build before falling back to per-element conversion.
 - Restructure validator and add_data branching for type narrowing.
 - Consolidate duplicated argument checks and time formatting into util helpers.
 - Simplify MS3Record sample handling, extra header access and packing.
