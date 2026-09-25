@@ -72,8 +72,4 @@ jobs:
         run: ruff check src/ tests/
 
       - name: Run mypy
-        # Informational only for now: pyproject.toml enables strict mypy
-        # options that the codebase does not yet fully satisfy. Surface the
-        # output in the log without failing the build.
         run: mypy src/pymseed
-        continue-on-error: true
