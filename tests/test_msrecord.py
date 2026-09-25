@@ -1155,16 +1155,16 @@ class TestBorrowedRecordLifetime:
             path = f.name
 
         try:
-            reader = MS3Record.from_file(path)
-            first = reader.read()
-            assert first.sourceid
+            with MS3Record.from_file(path) as reader:
+                first = reader.read()
+                assert first.sourceid
 
-            with pytest.raises(MiniSEEDError, match="CRC"):
-                reader.read()
+                with pytest.raises(MiniSEEDError, match="CRC"):
+                    reader.read()
 
-            _churn_heap()
-            with pytest.raises(ValueError, match="no longer valid"):
-                first.sourceid
+                _churn_heap()
+                with pytest.raises(ValueError, match="no longer valid"):
+                    first.sourceid
         finally:
             os.unlink(path)
 
