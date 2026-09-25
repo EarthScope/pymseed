@@ -108,16 +108,21 @@ class TestLoggingCapture:
             get_error_messages()
 
     def _emit_error_message(self) -> list[str]:
-        """Force libmseed to emit and store one real error message."""
-        from pymseed import MS3Record
+        """Force libmseed to emit one real error message.
+
+        MiniSEEDError drains the registry itself (see logging.begin_operation()),
+        so the message is returned from the exception rather than a later
+        get_error_messages() call, which would see an empty registry.
+        """
+        from pymseed import MiniSEEDError, MS3Record
 
         clear_error_messages()
         try:
             for _ in MS3Record.from_buffer(get_corrupted_record()):
                 pass
-        except Exception:
-            pass
-        return get_error_messages()
+        except MiniSEEDError as exc:
+            return exc.error_messages
+        return []
 
     def test_prefix_retained_when_not_replaced(self) -> None:
         """A prefix left in place by a None argument must stay valid.
@@ -163,21 +168,23 @@ class TestLoggingCapture:
         assert count == 0
 
     def test_capture_error_from_corrupted_record(self) -> None:
-        """Test that parsing corrupted miniSEED data generates captured errors."""
+        """Test that parsing corrupted miniSEED data generates captured errors.
+
+        MiniSEEDError drains the registry itself, so the messages are on the
+        exception rather than a later get_error_messages() call.
+        """
         from pymseed import MiniSEEDError, MS3Record
 
-        # Clear any existing messages
         clear_error_messages()
 
         # Get a corrupted record that will trigger CRC error
         corrupted_data = get_corrupted_record()
 
-        with pytest.raises(MiniSEEDError):
+        with pytest.raises(MiniSEEDError) as excinfo:
             for _ in MS3Record.from_buffer(corrupted_data, unpack_data=True):
                 pass
 
-        # Check that error messages were captured
-        messages = get_error_messages()
+        messages = excinfo.value.error_messages
 
         # We should have at least one error message
         assert len(messages) >= 1
@@ -196,18 +203,18 @@ class TestLoggingCapture:
         # Get corrupted data
         corrupted_data = get_corrupted_record()
 
-        # Generate multiple errors by trying to parse corrupted data multiple times
+        # Generate multiple errors by trying to parse corrupted data multiple
+        # times, collecting each exception's own captured messages.
+        captured: list[str] = []
         for _ in range(3):
             try:
                 for _ in MS3Record.from_buffer(corrupted_data, unpack_data=True):
                     pass
-            except MiniSEEDError:
-                pass
-
-        messages = get_error_messages()
+            except MiniSEEDError as exc:
+                captured.extend(exc.error_messages)
 
         # Should have captured messages from all three attempts
-        assert len(messages) >= 3
+        assert len(captured) >= 3
 
     def test_captured_messages_are_oldest_first(self) -> None:
         """Messages are returned in the order libmseed generated them.
@@ -230,59 +237,49 @@ class TestLoggingCapture:
 
         clear_error_messages()
 
+        # Each MiniSEEDError drains the registry itself, so collect from the
+        # exceptions in order rather than from a get_error_messages() call
+        # made after both attempts.
+        messages: list[str] = []
         for corrupted in (first, second):
-            with pytest.raises(MiniSEEDError):
+            with pytest.raises(MiniSEEDError) as excinfo:
                 for _ in MS3Record.from_buffer(corrupted, unpack_data=True):
                     pass
-
-        messages = get_error_messages()
+            messages.extend(excinfo.value.error_messages)
 
         assert len(messages) == 2
         assert "IU_COLA" in messages[0]
         assert "XX_SIN" in messages[1]
 
     def test_clear_removes_all_messages(self) -> None:
-        """Test that clear_error_messages removes all messages."""
+        """MiniSEEDError drains the registry itself (see begin_operation()),
+        so nothing is left behind for clear_error_messages() to remove."""
         from pymseed import MiniSEEDError, MS3Record
 
-        # Get corrupted data
         corrupted_data = get_corrupted_record()
 
-        # Generate some error messages
-        try:
+        with pytest.raises(MiniSEEDError) as excinfo:
             for _ in MS3Record.from_buffer(corrupted_data, unpack_data=True):
                 pass
-        except MiniSEEDError:
-            pass
+        assert excinfo.value.error_messages
 
-        # Clear them
-        cleared = clear_error_messages()
-        assert cleared >= 1
-
-        # Verify empty
-        messages = get_error_messages()
-        assert messages == []
+        # Registry was already drained by the exception itself.
+        assert clear_error_messages() == 0
+        assert get_error_messages() == []
 
     def test_get_error_messages_removes_messages(self) -> None:
-        """Test that getting messages removes them from the registry."""
+        """get_error_messages() empties the registry as it reads it; since
+        MiniSEEDError already drained it, calling again returns nothing."""
         from pymseed import MiniSEEDError, MS3Record
 
         clear_error_messages()
 
-        # Get corrupted data
         corrupted_data = get_corrupted_record()
 
-        # Generate an error
-        try:
+        with pytest.raises(MiniSEEDError) as excinfo:
             for _ in MS3Record.from_buffer(corrupted_data, unpack_data=True):
                 pass
-        except MiniSEEDError:
-            pass
+        assert len(excinfo.value.error_messages) >= 1
 
-        # Get messages
-        messages = get_error_messages()
-        assert len(messages) >= 1
-
-        # Getting again should return empty list
-        messages2 = get_error_messages()
-        assert messages2 == []
+        # Nothing left in the registry to fetch.
+        assert get_error_messages() == []

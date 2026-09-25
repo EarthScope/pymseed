@@ -24,10 +24,10 @@ from ._extra_headers_jsonschema import (
     validator_for_extra_headers_schema,
 )
 from ._json import json_dumps_minified, json_loads
-from .clib import buffer_pointer, clibmseed, ffi
+from .clib import buffer_pointer, clibmseed, ffi, owned_memoryview
 from .definitions import SubSecond, TimeFormat
 from .exceptions import MiniSEEDError
-from .logging import ensure_thread_logging
+from .logging import begin_operation
 from .selections import build_selections
 from .util import (
     SAMPLE_FORMATS,
@@ -117,8 +117,11 @@ class _SharedRecordStruct:
     the iterator and every wrapper referring to it are gone.
 
     An escaped wrapper reflects whatever the shared struct holds when it is read,
-    so this keeps such access memory-safe; it does not retain the record as it
-    was at the iteration step that produced it.
+    so it does not retain the record as it was at the iteration step that
+    produced it. ``msr3_parse()`` frees the struct outright on a failed parse
+    past the header stage, rather than reusing it for the next record; a
+    wrapper yielded before that point raises :class:`ValueError` instead of
+    reading the freed memory (see :meth:`MS3Record._borrow`).
     """
 
     __slots__ = ("_msr_ptr", "_source")
@@ -127,6 +130,21 @@ class _SharedRecordStruct:
         self._msr_ptr = msr_ptr
         # Keeps the parsed-from buffer alive; msr->record points into it.
         self._source = source
+
+    def _msr_for_borrower(self) -> Any:
+        """Return the struct currently held, for a borrowed MS3Record to read.
+
+        Raises :class:`ValueError` once the struct has been freed, which
+        happens when parsing fails past the header stage, or when this
+        object itself is freed (see __del__).
+        """
+        ptr = self._msr_ptr[0]
+        if ptr == ffi.NULL:
+            raise ValueError(
+                "record is no longer valid: parsing failed or finished for "
+                "the generator that produced it"
+            )
+        return ptr
 
     def __del__(self) -> None:
         if sys.is_finalizing():
@@ -138,6 +156,38 @@ class _SharedRecordStruct:
         except (AttributeError, TypeError):
             # Module-teardown race, as in MS3Record.__del__.
             pass
+
+
+def _borrowed_msr(self: MS3Record) -> Any:
+    """``_msr`` implementation for a borrowed, guarded MS3Record subclass.
+
+    Re-reads the pointer from the owner on every access rather than caching
+    it, so a struct freed or reused since this wrapper was yielded is caught
+    instead of read. See ``MS3Record._borrow()``.
+    """
+    return self._owner._msr_for_borrower()
+
+
+# One guarded subclass per distinct MS3Record subclass, created on first
+# borrow and reused after. The property shadows the `_msr` slot inherited
+# from the base class (a subclass's class attribute takes precedence over an
+# inherited slot descriptor of the same name).
+_borrowed_record_classes: dict[type, type] = {}
+
+
+def _borrowed_class(cls: type) -> type:
+    guarded = _borrowed_record_classes.get(cls)
+    if guarded is None:
+        guarded = type(
+            f"_Borrowed{cls.__name__}",
+            (cls,),
+            {
+                "__slots__": (),
+                "_msr": property(_borrowed_msr),
+            },
+        )
+        _borrowed_record_classes[cls] = guarded
+    return guarded
 
 
 class MS3Record:
@@ -211,43 +261,33 @@ class MS3Record:
         "_raw_reclen",
     )
 
-    def __init__(
-        self,
-        reclen: int | None = None,
-        encoding: int | None = None,
-        recordptr: Any = None,
-        owns: bool = False,
-        owner: Any = None,
-    ) -> None:
-        """
-        Initialize MS3Record wrapper.
+    # Declared explicitly so mypy infers Any rather than None: __init__ always
+    # sets it to None, but _wrap()/_borrow() set it to the owning object.
+    _owner: Any
 
-        Creates a new miniSEED record or wraps an existing one. When creating
-        a new record, the structure is initialized with default values that
-        can be overridden by the optional parameters.
+    def __init__(self, reclen: int | None = None, encoding: int | None = None) -> None:
+        """
+        Initialize a new, empty MS3Record.
+
+        The structure is initialized with library defaults, which the
+        optional parameters override.
 
         Args:
-            reclen: Maximum record length in bytes. Common values are 512, 4096
-                   (miniSEED v2 default) bytes. If None, uses library default.
+            reclen: Maximum record length in bytes. Common values are 512 and
+                   4096. If None, uses library default.
             encoding: Data encoding format code. Common values:
                     DataEncoding.TEXT, DataEncoding.STEIM1, DataEncoding.STEIM2,
                     DataEncoding.FLOAT32, DataEncoding.FLOAT64. If None, uses library default.
-            recordptr: Internal C structure pointer. Only used when wrapping
-                      existing parsed records. Should not be set by users.
-            owns: Whether this Python wrapper takes ownership of ``recordptr``
-                 and is responsible for freeing it via ``msr3_free`` on
-                 finalization. Ignored when ``recordptr`` is ``None`` (a
-                 freshly allocated record is always owned by its wrapper).
-                 Internal use only.
-            owner: Object whose lifetime must cover this record's C memory —
-                 the source buffer, the reader, or the trace list that owns the
-                 struct. Held as a strong reference so the memory cannot be
-                 released while this wrapper still refers to it.
-                 Internal use only.
+
+        Raises:
+            ValueError: If ``reclen`` or ``encoding`` is outside its valid range
+                (see the :attr:`reclen` and :attr:`encoding` setters).
+            MiniSEEDError: If the underlying libmseed allocation fails.
 
         Note:
-            Most users should create records with MS3Record() and set properties
-            like sourceid, starttime, and samprate before packing data.
+            To read an existing record instead of creating one, use
+            :meth:`from_file`, :meth:`from_buffer`, :meth:`from_filelike`, or
+            :meth:`parse`.
 
         Example:
             >>> # Create empty record
@@ -260,40 +300,58 @@ class MS3Record:
             >>> msr = MS3Record(encoding=11, reclen=4096)
 
         """
-        if recordptr is not None:
-            # Wrap an existing record structure; ownership is caller-declared.
-            self._msr = recordptr
-            self._msr_allocated = owns
-        else:
-            # Allocate a new record; the wrapper always owns what it allocates.
-            self._msr = clibmseed.msr3_init(ffi.NULL)
-            self._msr_allocated = True
+        self._msr = clibmseed.msr3_init(ffi.NULL)
+        if self._msr == ffi.NULL:
+            raise MiniSEEDError(clibmseed.MS_GENERROR, "Error allocating MS3Record")
+        self._msr_allocated = True
 
-            # Set values if provided
-            if reclen is not None:
-                self._msr.reclen = reclen
-            if encoding is not None:
-                self._msr.encoding = encoding
+        # Route through the validating setters rather than the raw fields.
+        if reclen is not None:
+            self.reclen = reclen
+        if encoding is not None:
+            self.encoding = encoding
 
         self._pin_raw_reclen()
 
-        self._owner = owner
+        self._owner = None
+
+    @classmethod
+    def _wrap(cls, recordptr: Any, *, owns: bool = False, owner: Any = None) -> MS3Record:
+        """Wrap an existing C struct directly, bypassing __init__.
+
+        `owns=True` (used by :meth:`parse`) means this instance frees
+        `recordptr` itself via ``msr3_free`` on finalization. `owns=False` is
+        a foreign, non-owning view with no lifetime guard of its own — used
+        only by tests exercising ``parse_into()``'s ownership check; the
+        common non-owning case (an iterator's shared struct, or a trace
+        list's) goes through :meth:`_borrow` instead, which does guard.
+        A subclass's ``__init__`` does not run for a wrapped instance.
+        """
+        obj = cls.__new__(cls)
+        obj._msr = recordptr
+        obj._msr_allocated = owns
+        obj._raw_reclen = recordptr.reclen if recordptr.record != ffi.NULL else None
+        obj._owner = owner
+        return obj
 
     @classmethod
     def _borrow(cls, recordptr: Any, owner: Any) -> MS3Record:
-        """Wrap a non-owned record struct from an iterator's shared struct.
+        """Wrap a non-owned record struct borrowed from `owner`.
 
-        Equivalent to ``cls(recordptr=recordptr, owner=owner)`` but skips
-        ``__init__``'s branching, which matters in the tight per-record loops
-        of ``from_buffer``, ``_iter_filelike``, and ``MS3RecordReader.read``.
-        Falls back to the normal constructor for a subclass, so an overridden
-        ``__init__`` still runs.
+        Skips ``__init__``'s branching, which matters in the tight
+        per-record loops of ``from_buffer``, ``_iter_filelike``, and
+        ``MS3RecordReader.read``; a subclass's ``__init__`` does not run
+        for a borrowed instance either.
+
+        `owner` must implement ``_msr_for_borrower()``, returning the live
+        struct pointer or raising :class:`ValueError` once it is no longer
+        valid (see ``_SharedRecordStruct``, ``MS3RecordReader``, and
+        ``mstracelist.MS3RecordPtr``). The returned instance reads through
+        that method on every ``_msr`` access instead of caching the
+        pointer, so it cannot read memory `owner` has already released.
         """
-        if cls is not MS3Record:
-            return cls(recordptr=recordptr, owner=owner)
-
-        obj = cls.__new__(cls)
-        obj._msr = recordptr
+        guarded = _borrowed_class(cls)
+        obj: MS3Record = object.__new__(guarded)
         obj._msr_allocated = False
         obj._raw_reclen = recordptr.reclen if recordptr.record != ffi.NULL else None
         obj._owner = owner
@@ -302,7 +360,16 @@ class MS3Record:
     def __del__(self) -> None:
         if sys.is_finalizing():
             return
-        if self._msr and self._msr_allocated:
+        try:
+            # `_msr_allocated` first: for a borrowed instance it is always
+            # False, so the (guarded) `_msr` property is never evaluated here,
+            # even if its owner has already released the struct.
+            allocated_and_msr = self._msr_allocated and self._msr
+        except AttributeError:
+            # __init__ raised before setting these (e.g. a rejected keyword
+            # argument): there is nothing allocated yet to free.
+            return
+        if allocated_and_msr:
             try:
                 msr_ptr = ffi.new("MS3Record **")
                 msr_ptr[0] = self._msr
@@ -380,20 +447,19 @@ class MS3Record:
         The record is returned as it was parsed, whatever ``reclen`` has been
         set to since.
 
-        The memoryview references C memory owned by this MS3Record and
-        does not keep it alive on its own. The caller must keep this
-        MS3Record reachable for as long as the memoryview is used, and
-        must not perform any operation on the record (re-parsing,
-        repacking, freeing) that could invalidate the buffer. Copy with
-        ``bytes(...)`` or ``.tobytes()`` to detach from the underlying
-        record.
+        The memoryview holds a reference to this MS3Record, keeping its C
+        memory alive for as long as the view is used. It is still tied to
+        this record's current state: re-parsing, repacking, or freeing the
+        record invalidates the underlying bytes even though the view itself
+        stays reachable. Copy with ``bytes(...)`` or ``.tobytes()`` to
+        detach from the underlying record.
         """
         if self._msr.record == ffi.NULL:
             raise ValueError("No raw record available")
 
         reclen = self._msr.reclen if self._raw_reclen is None else self._raw_reclen
 
-        return memoryview(ffi.buffer(self._msr.record, reclen))
+        return owned_memoryview(self._msr.record, reclen, "B", self)
 
     @property
     def reclen(self) -> int:
@@ -950,8 +1016,9 @@ class MS3Record:
             value: Value to set, can be a boolean, number, or string.
 
         Raises:
-            TypeError: If ptr is not a str
-            ValueError: If the header value cannot be set or type is unsupported
+            TypeError: If ptr is not a str, or value is not one of the
+                supported types.
+            ValueError: If the header value cannot be set.
 
         Examples:
             >>> from pymseed import MS3Record
@@ -962,7 +1029,7 @@ class MS3Record:
             >>> msr.set_extra_header("/Operator/Battery/Status", "CHARGING")
 
         See Also:
-            merge_extra_header(): Apply a JSON Merge Patch to extra headers
+            merge_extra_headers(): Apply a JSON Merge Patch to extra headers
         """
         check_str("ptr", ptr)
 
@@ -984,7 +1051,7 @@ class MS3Record:
             type_code = b"s"
             c_value = ffi.new("char[]", value.encode("utf-8"))
         else:
-            raise ValueError(f"Unsupported value type: {type(value)}")
+            raise TypeError(f"Unsupported value type: {type(value).__name__}")
 
         c_ptr = ffi.new("char[]", ptr.encode("utf-8"))
 
@@ -999,11 +1066,10 @@ class MS3Record:
         A JSON Merge Patch can be used to create, update, or delete extra headers.
 
         Args:
-            value: Dictionary of JSON Merge Patch to apply
+            value: JSON Merge Patch to apply, serialized as a string
 
         Raises:
-            ValueError: If the header value cannot be set, is unsupported, or
-                cannot be serialized to JSON
+            ValueError: If ``value`` is not valid JSON, or the patch cannot be applied
 
         Examples:
             >>> from pymseed import MS3Record
@@ -1038,7 +1104,7 @@ class MS3Record:
             raise ValueError(f"Error merging extra header: {status}")
 
     def validate_extra_headers(
-        self, schema_id: str = "FDSN-v1.0", schema_file: str | None = None
+        self, schema_id: str = "FDSN-v1.0", schema_file: str | os.PathLike[str] | None = None
     ) -> list[JsonSchemaValidationError]:
         """Validate the extra headers against a JSON Schema
 
@@ -1053,7 +1119,8 @@ class MS3Record:
 
         Args:
             schema_id: ID of the known schema to use, defaults to "FDSN-v1.0"
-            schema_file: Path to specific schema file to use, defaults to None
+            schema_file: Path to specific schema file to use, accepting
+                ``str`` or any :class:`os.PathLike`. Defaults to None.
 
         Returns:
             A list of ``jsonschema_rs.ValidationError`` instances, empty if no errors.
@@ -1112,13 +1179,13 @@ class MS3Record:
                     raise ImportError(_IMPORT_ERROR_MESSAGE)
                 raise ValueError(f"Cannot validate extra headers: {load_error}")
         else:
-            with open(schema_file, "rb") as fh:
+            with open(check_path("schema_file", schema_file), "rb") as fh:
                 validator = validator_for_extra_headers_schema(json_loads(fh.read()))
 
         return list(validator.iter_errors(json_loads(self.extra)))
 
     def valid_extra_headers(
-        self, schema_id: str = "FDSN-v1.0", schema_file: str | None = None
+        self, schema_id: str = "FDSN-v1.0", schema_file: str | os.PathLike[str] | None = None
     ) -> bool:
         """Check if the extra headers are valid
 
@@ -1219,8 +1286,8 @@ class MS3Record:
         fmt, itemsize = SAMPLE_FORMATS[sampletype]
 
         ptr = ffi.cast("char *", self._msr.datasamples)
-        buffer = ffi.buffer(ptr, self._msr.numsamples * itemsize)
-        return memoryview(buffer).cast(fmt)
+        nbytes = self._msr.numsamples * itemsize
+        return owned_memoryview(ptr, nbytes, fmt, self)
 
     @property
     def np_datasamples(self) -> Any:
@@ -1270,10 +1337,13 @@ class MS3Record:
         """
         np = require_numpy()
 
+        sampletype = self.sampletype
         if self._msr.numsamples <= 0:
-            return np.array([])  # Empty array
+            # Use the known sample type's dtype where available, rather than
+            # numpy's float64 default, so a caller checking dtype isn't misled.
+            return np.array([], dtype=numpy_dtype(np, sampletype) if sampletype else None)
 
-        dtype = numpy_dtype(np, self.sampletype)
+        dtype = numpy_dtype(np, sampletype)
 
         # Create numpy array view from CFFI buffer
         return np.frombuffer(self.datasamples, dtype=dtype)
@@ -1392,7 +1462,7 @@ class MS3Record:
         Raises:
             MiniSEEDError: If unpacking fails
         """
-        ensure_thread_logging()
+        begin_operation()
 
         samples_unpacked = clibmseed.msr3_unpack_data(self._msr, verbose)
 
@@ -1458,8 +1528,8 @@ class MS3Record:
             ...     print (f"Record has {msr.numsamples} samples of type {msr.sampletype}")
             Record has 4 samples of type f
 
-            # Setting text data can be a string, bytes, bytearray, or a sequenced
-            # that is convergted to byte characters.  Text data is always copied.
+            # Setting text data can be a string, bytes, bytearray, or a sequence
+            # that is converted to byte characters.  Text data is always copied.
 
             >>> text_samples = "This is a log entry"
             >>> msr.sourceid = "FDSN:XX_TEST__L_O_G"
@@ -1542,7 +1612,13 @@ class MS3Record:
                     byte_values = []
                     for sample in data_samples:
                         if isinstance(sample, str):
-                            byte_values.append(sample.encode("utf-8")[0])
+                            encoded = sample.encode("utf-8")
+                            if len(encoded) != 1:
+                                raise ValueError(
+                                    "Text data samples given as a sequence of str must each "
+                                    f"encode to exactly one byte; got {sample!r}"
+                                )
+                            byte_values.append(encoded[0])
                         else:
                             byte_values.append(int(sample) & 0xFF)
                     text_bytes = bytes(byte_values)
@@ -1568,8 +1644,9 @@ class MS3Record:
 
     def generate(
         self,
-        data_samples: list[int] | list[float] | list[str] | None = None,
+        data_samples: Any = None,
         sample_type: str | None = None,
+        *,
         verbose: int = 0,
     ) -> Iterator[bytes]:
         """Create miniSEED record(s) using parameters from the record.
@@ -1640,12 +1717,12 @@ class MS3Record:
 
     def _generate(
         self,
-        data_samples: list[int] | list[float] | list[str] | None,
+        data_samples: Any,
         sample_type: str | None,
         verbose: int,
     ) -> Iterator[bytes]:
         """Generator body for :meth:`generate`. Assumes arguments are validated."""
-        ensure_thread_logging()
+        begin_operation()
 
         flags = clibmseed.MSF_FLUSHDATA  # Always flush data when packing
 
@@ -1685,6 +1762,7 @@ class MS3Record:
     def to_file(
         self,
         filename: str | os.PathLike[str],
+        *,
         overwrite: bool = False,
         verbose: int = 0,
     ) -> int:
@@ -1714,7 +1792,7 @@ class MS3Record:
         """
         filename = check_path("filename", filename)
 
-        ensure_thread_logging()
+        begin_operation()
 
         # Convert filename to bytes (C string)
         c_filename = ffi.new("char[]", os.fsencode(filename))
@@ -1771,8 +1849,8 @@ class MS3Record:
 
         Note:
             A filter that matches nothing yields no records rather than
-            raising.  A file that contains no miniSEED at all is still an
-            error.
+            raising, and so does an empty file.  Non-empty content that
+            isn't miniSEED still raises.
 
             A file ending part way through a record, or with bytes remaining
             that are too few for one, raises :class:`MiniSEEDError` after the
@@ -1824,6 +1902,7 @@ class MS3Record:
     def from_buffer(
         cls,
         buffer: Any,
+        *,
         unpack_data: bool = False,
         sourceid: str | None = None,
         starttime: str | None = None,
@@ -1926,7 +2005,7 @@ class MS3Record:
             parse(): Parse a single record from a buffer (owns the C struct)
             from_file(): Iterate over records in a file
         """
-        ensure_thread_logging()
+        begin_operation()
 
         msr_ptr = ffi.new("MS3Record **")
         buf_ptr = buffer_pointer(buffer)
@@ -2003,6 +2082,7 @@ class MS3Record:
     def from_filelike(
         cls,
         fh: Any,
+        *,
         chunk_size: int = 65536,
         unpack_data: bool = False,
         sourceid: str | None = None,
@@ -2111,7 +2191,7 @@ class MS3Record:
         verbose: int,
     ) -> Iterator[MS3Record]:
         """Generator behind from_filelike(), which validates the arguments."""
-        ensure_thread_logging()
+        begin_operation()
 
         msr_ptr = ffi.new("MS3Record **")
 
@@ -2272,6 +2352,7 @@ class MS3Record:
     def parse(
         cls,
         buffer: Any,
+        *,
         unpack_data: bool = False,
         validate_crc: bool = True,
         verbose: int = 0,
@@ -2324,7 +2405,7 @@ class MS3Record:
         See Also:
             from_buffer(): Iterate over multiple records in a buffer
         """
-        ensure_thread_logging()
+        begin_operation()
 
         buf_ptr = buffer_pointer(buffer)
         msr_ptr = ffi.new("MS3Record **")
@@ -2340,13 +2421,14 @@ class MS3Record:
         if status == clibmseed.MS_NOERROR:
             # msr->record points into `buffer` rather than a copy, so the record
             # must keep it alive to stay self-contained.
-            return cls(recordptr=msr_ptr[0], owns=True, owner=buf_ptr)
+            return cls._wrap(msr_ptr[0], owns=True, owner=buf_ptr)
 
         raise MiniSEEDError(status, _parse_error_message(status))
 
     def parse_into(
         self,
         buffer: Any,
+        *,
         unpack_data: bool = False,
         validate_crc: bool = True,
         verbose: int = 0,
@@ -2409,7 +2491,7 @@ class MS3Record:
                 "MS3Record()."
             )
 
-        ensure_thread_logging()
+        begin_operation()
 
         buf_ptr = buffer_pointer(buffer)
         msr_ptr = ffi.new("MS3Record **")

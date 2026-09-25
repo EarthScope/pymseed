@@ -247,6 +247,46 @@ def test_msrecord_nosuchfile():
             msreader.read()
 
 
+def test_msrecord_reader_empty_file_yields_no_records(tmp_path):
+    """An empty file has no records, matching from_buffer()/from_filelike()
+    on empty input, rather than raising MS_NOTSEED."""
+    empty = tmp_path / "empty.mseed3"
+    empty.write_bytes(b"")
+
+    assert list(MS3Record.from_file(str(empty))) == []
+
+
+def test_msrecord_reader_empty_fd_yields_no_records(tmp_path):
+    """The empty-file case also applies to a file descriptor source."""
+    empty = tmp_path / "empty.mseed3"
+    empty.write_bytes(b"")
+
+    fd = os.open(str(empty), os.O_RDONLY)
+    try:
+        assert list(MS3Record.from_file(fd)) == []
+    finally:
+        os.close(fd)
+
+
+def test_msrecord_reader_empty_pipe_yields_no_records():
+    """A pipe closed by the writer without any data is also empty input."""
+    read_fd, write_fd = os.pipe()
+    os.close(write_fd)
+    try:
+        assert list(MS3Record.from_file(read_fd)) == []
+    finally:
+        os.close(read_fd)
+
+
+def test_msrecord_reader_nonempty_garbage_still_raises(tmp_path):
+    """Non-empty content that isn't miniSEED still raises, unlike empty input."""
+    garbage = tmp_path / "garbage.mseed3"
+    garbage.write_bytes(b"not miniseed data, but also not empty" * 3)
+
+    with pytest.raises(MiniSEEDError, match="No miniSEED data detected"):
+        list(MS3Record.from_file(str(garbage)))
+
+
 def test_msrecord_reader_accepts_pathlike_source():
     # pathlib.Path (and any os.PathLike) is converted via os.fspath() rather
     # than reaching the path branch as a non-string and crashing on `.encode()`.
@@ -300,9 +340,19 @@ def test_msrecord_reader_rejects_invalid_source_types():
     # TypeError before any C resources are allocated.
     from pymseed import MS3RecordReader
 
-    for bad in (b"some/path", None, ["a", "b"], 3.14, {"x": 1}):
+    # bool is a subclass of int; True/False must not silently read fd 1/0.
+    for bad in (b"some/path", None, ["a", "b"], 3.14, {"x": 1}, True, False):
         with pytest.raises(TypeError, match="source must be"):
             MS3RecordReader(bad)
+
+
+def test_msrecord_reader_options_are_keyword_only():
+    """Every option after `source` must be keyword-only, so a positional
+    argument fails fast with TypeError rather than being silently misread."""
+    from pymseed import MS3RecordReader
+
+    with pytest.raises(TypeError):
+        MS3RecordReader(test_path3, 0)  # start_byte_offset positionally
 
 
 def test_msrecord_reader_handles_surrogateescape_paths(tmp_path):

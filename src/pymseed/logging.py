@@ -139,6 +139,19 @@ def ensure_thread_logging() -> None:
     configure_logging(*_inherited_config)
 
 
+def begin_operation() -> None:
+    """Prepare the calling thread's log registry for a new pymseed operation.
+
+    Ensures logging is configured (see :func:`ensure_thread_logging`) and
+    clears any messages left over from a previous operation, so a
+    :class:`~pymseed.MiniSEEDError` raised here carries only diagnostics from
+    this call rather than a stale one. Called at the start of every pymseed
+    entry point that can produce libmseed log messages.
+    """
+    ensure_thread_logging()
+    clear_error_messages()
+
+
 def clear_error_messages() -> int:
     """
     Clear all log messages from the registry without returning them.
@@ -193,6 +206,10 @@ def get_error_messages() -> list[str]:
 
     Messages are popped from the registry and returned as a list of strings.
     After calling this function, the registry will be empty.
+
+    Every pymseed entry point clears the registry before it runs (see
+    :func:`begin_operation`), so this returns messages from the most recent
+    pymseed operation on the calling thread, not from any operation before it.
 
     When more than ``max_messages`` messages have accumulated, libmseed
     discards the earliest, so a long-running operation returns only its

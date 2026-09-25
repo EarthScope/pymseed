@@ -21,7 +21,7 @@ from .clib import (
 )
 from .definitions import DataEncoding, SubSecond, TimeFormat
 from .exceptions import MiniSEEDError
-from .logging import ensure_thread_logging
+from .logging import begin_operation
 from .msrecord import MS3Record
 from .selections import build_selections
 from .util import (
@@ -85,13 +85,21 @@ class MS3RecordPtr:
     was read from, by :attr:`filename` and :attr:`fileoffset` for a file or by
     an internal pointer for a buffer, and exposes the parsed header as
     :attr:`record` without decoding the data samples.
+
+    Invalidated when the owning :class:`MS3TraceList` is closed; using it
+    afterward raises :class:`ValueError` instead of reading freed memory.
     """
 
-    def __init__(self, cffi_ptr: Any, parent_tracelist: Any = None) -> None:
-        self._ptr = cffi_ptr
+    def __init__(self, cffi_ptr: Any, parent_tracelist: Any) -> None:
+        self._ptr_raw = cffi_ptr
         # The referenced structure is owned by the trace list; hold a reference
         # so it cannot be freed while this wrapper is in use.
         self._parent_tracelist = parent_tracelist
+
+    @property
+    def _ptr(self) -> Any:
+        self._parent_tracelist._check_open()
+        return self._ptr_raw
 
     def __repr__(self) -> str:
         return (
@@ -114,12 +122,20 @@ class MS3RecordPtr:
 
     @property
     def record(self) -> MS3Record:
-        """Return a constructed MS3Record"""
+        """Return a constructed MS3Record.
+
+        Borrowed from this entry: reading it after the trace list is closed
+        raises :class:`ValueError` (see :meth:`_msr_for_borrower`).
+        """
         if not hasattr(self, "_msrecord"):
             # libmseed leaves msr->record unset unless the source bytes outlive the
             # read, as they do for a buffer-sourced entry held by the trace list.
-            self._msrecord = MS3Record(recordptr=self._ptr.msr, owner=self._parent_tracelist)
+            self._msrecord = MS3Record._borrow(self._ptr.msr, self)
         return self._msrecord
+
+    def _msr_for_borrower(self) -> Any:
+        """Return the record struct, for the MS3Record built by `record`."""
+        return self._ptr.msr
 
     @property
     def filename(self) -> str | None:
@@ -152,13 +168,21 @@ class MS3RecordList:
     - record_list[i] returns the i-th record pointer
     - record_list[start:end] returns a slice of record pointers
     - for record_ptr in record_list: iterates over all record pointers
+
+    Invalidated when the owning :class:`MS3TraceList` is closed; using it
+    afterward raises :class:`ValueError` instead of reading freed memory.
     """
 
-    def __init__(self, cffi_ptr: Any, parent_tracelist: Any = None) -> None:
-        self._list = cffi_ptr
+    def __init__(self, cffi_ptr: Any, parent_tracelist: Any) -> None:
+        self._list_raw = cffi_ptr
         # The referenced structure is owned by the trace list; hold a reference
         # so it cannot be freed while this wrapper is in use.
         self._parent_tracelist = parent_tracelist
+
+    @property
+    def _list(self) -> Any:
+        self._parent_tracelist._check_open()
+        return self._list_raw
 
     def __repr__(self) -> str:
         lines = "\n".join(_summary_lines(self, repr))
@@ -200,14 +224,20 @@ class MS3TraceSeg:
     gap or overlap, or a change of sample rate, starts a new segment.  Data
     samples are available as :attr:`datasamples` when the trace list was read
     with ``unpack_data=True``, or after :meth:`unpack_recordlist`.
+
+    Invalidated when the owning :class:`MS3TraceList` is closed; using it
+    afterward raises :class:`ValueError` instead of reading freed memory.
     """
 
-    def __init__(
-        self, cffi_ptr: Any, parent_id_ptr: Any = None, parent_tracelist: Any = None
-    ) -> None:
-        self._seg = cffi_ptr
-        self._parent_id = parent_id_ptr  # Reference to parent MS3TraceID
+    def __init__(self, cffi_ptr: Any, parent_traceid: Any, parent_tracelist: Any) -> None:
+        self._seg_raw = cffi_ptr
+        self._parent_traceid = parent_traceid  # Reference to parent MS3TraceID
         self._parent_tracelist = parent_tracelist  # Reference to parent MS3TraceList
+
+    @property
+    def _seg(self) -> Any:
+        self._parent_tracelist._check_open()
+        return self._seg_raw
 
     def __repr__(self) -> str:
         preview = sample_preview(self.datasamples) if self.numsamples > 0 else "[]"
@@ -230,7 +260,7 @@ class MS3TraceSeg:
             f"start: {self.starttime_str(timeformat=TimeFormat.ISOMONTHDAY_DOY_Z)}, "
             f"end: {self.endtime_str(timeformat=TimeFormat.ISOMONTHDAY_DOY_Z)}, "
             f"samprate: {self.samprate}, "
-            f"samples: {self.samplecnt} "
+            f"samples: {self.samplecnt}"
         )
 
     @property
@@ -401,10 +431,13 @@ class MS3TraceSeg:
         """
         np = require_numpy()
 
+        sampletype = self.sampletype
         if self._seg.numsamples <= 0:
-            return np.array([])  # Empty array
+            # Use the known sample type's dtype where available, rather than
+            # numpy's float64 default, so a caller checking dtype isn't misled.
+            return np.array([], dtype=numpy_dtype(np, sampletype) if sampletype else None)
 
-        dtype = numpy_dtype(np, self.sampletype)
+        dtype = numpy_dtype(np, sampletype)
 
         # Create numpy array view from CFFI buffer
         return np.frombuffer(self.datasamples, dtype=dtype)
@@ -428,7 +461,10 @@ class MS3TraceSeg:
         np = require_numpy()
 
         if self._seg.numsamples <= 0:
-            return np.array([])  # Empty array
+            # Use the known sample type's dtype where available, rather than
+            # numpy's float64 default, so a caller checking dtype isn't misled.
+            sampletype = self.sampletype
+            return np.array([], dtype=numpy_dtype(np, sampletype) if sampletype else None)
 
         numsamples = self._seg.numsamples
         dtype = numpy_dtype(np, self.sampletype)
@@ -470,7 +506,14 @@ class MS3TraceSeg:
             )
 
         if self.samplecnt <= 0:
-            return np.array([])  # Empty array
+            # Use the known sample type's dtype where available, rather than
+            # numpy's float64 default, so a caller checking dtype isn't misled.
+            try:
+                _, sample_type = self.sample_size_type
+                dtype = numpy_dtype(np, sample_type)
+            except ValueError:
+                dtype = None
+            return np.array([], dtype=dtype)
 
         (_, sample_type) = self.sample_size_type
         dtype = numpy_dtype(np, sample_type)
@@ -483,7 +526,7 @@ class MS3TraceSeg:
 
         return array
 
-    def unpack_recordlist(self, buffer: Any = None, verbose: int = 0) -> int:
+    def unpack_recordlist(self, buffer: Any = None, *, verbose: int = 0) -> int:
         """Unpack data samples from miniSEED record list into accessible format
 
         This method decodes data samples from the original miniSEED records that were
@@ -616,7 +659,7 @@ class MS3TraceSeg:
             buffer_size = len(buffer_ptr)
 
         status = clibmseed.mstl3_unpack_recordlist(
-            self._parent_id,
+            self._parent_traceid._id,
             self._seg,
             buffer_ptr,
             buffer_size,
@@ -660,11 +703,19 @@ class MS3TraceID:
     - traceid[i] returns the i-th segment
     - traceid[start:end] returns a slice of segments
     - for segment in traceid: iterates over all segments
+
+    Invalidated when the owning :class:`MS3TraceList` is closed; using it
+    afterward raises :class:`ValueError` instead of reading freed memory.
     """
 
-    def __init__(self, cffi_ptr: Any, parent_tracelist: Any = None) -> None:
-        self._id = cffi_ptr
+    def __init__(self, cffi_ptr: Any, parent_tracelist: Any) -> None:
+        self._id_raw = cffi_ptr
         self._parent_tracelist = parent_tracelist
+
+    @property
+    def _id(self) -> Any:
+        self._parent_tracelist._check_open()
+        return self._id_raw
 
     def __repr__(self) -> str:
         lines = "\n".join(_summary_lines(self, repr))
@@ -695,7 +746,7 @@ class MS3TraceID:
         """Return iterator over segments"""
         current_segment = self._id.first
         while current_segment != ffi.NULL:
-            yield MS3TraceSeg(current_segment, self._id, self._parent_tracelist)
+            yield MS3TraceSeg(current_segment, self, self._parent_tracelist)
             current_segment = current_segment.next
 
     def __getitem__(self, key: int | slice) -> Any:
@@ -781,8 +832,8 @@ class MS3TraceList:
     the record (legacy miniSEED v2 contains no CRCs).  The CRC provides an
     internal integrity check of the record contents.
 
-    The overall structure of the trace list list of trace IDs, each of which
-    contains a list of trace segments illustrated as follows:
+    The overall structure of the trace list is a list of trace IDs, each of
+    which contains a list of trace segments illustrated as follows:
 
     - TraceList
 
@@ -859,7 +910,8 @@ class MS3TraceList:
     def __init__(
         self,
         file_name: str | os.PathLike[str] | None = None,
-        buffer: bytes | None = None,
+        buffer: Any = None,
+        *,
         unpack_data: bool = False,
         sourceid: str | None = None,
         starttime: str | None = None,
@@ -1082,6 +1134,7 @@ class MS3TraceList:
     def add_file(
         self,
         file_name: str | os.PathLike[str],
+        *,
         unpack_data: bool = False,
         sourceid: str | None = None,
         starttime: str | None = None,
@@ -1207,7 +1260,7 @@ class MS3TraceList:
         """
         file_name = check_path("file_name", file_name)
 
-        ensure_thread_logging()
+        begin_operation()
 
         # Store file name for reference and use in record lists.  Sharing one
         # buffer per path also lets unpack_recordlist() match entries by
@@ -1235,6 +1288,16 @@ class MS3TraceList:
         mstl_ptr = ffi.new("MS3TraceList **")
         mstl_ptr[0] = self._mstl
 
+        # An empty regular file has no records to add, matching add_buffer()
+        # on an empty buffer; skip the read rather than let it raise
+        # MS_NOTSEED. A stat failure (e.g. a nonexistent path) is left for
+        # the read call below to report as it normally would.
+        try:
+            if os.stat(file_name).st_size == 0:
+                return
+        except OSError:
+            pass
+
         # Build selections, if sourceid, starttime, or endtime are specified
         selections_ptr, free_selections = build_selections(sourceid, starttime, endtime)
 
@@ -1257,7 +1320,8 @@ class MS3TraceList:
 
     def add_buffer(
         self,
-        buffer: bytes,
+        buffer: Any,
+        *,
         unpack_data: bool = False,
         sourceid: str | None = None,
         starttime: str | None = None,
@@ -1401,7 +1465,7 @@ class MS3TraceList:
         mstl_ptr = ffi.new("MS3TraceList **")
         mstl_ptr[0] = self._mstl
 
-        ensure_thread_logging()
+        begin_operation()
 
         buffer_ptr = buffer_pointer(buffer)
         buffer_length = len(buffer_ptr)
@@ -1436,13 +1500,13 @@ class MS3TraceList:
     def add_filelike(
         self,
         fh: Any,
+        *,
         chunk_size: int = 65536,
         unpack_data: bool = False,
         sourceid: str | None = None,
         starttime: str | None = None,
         endtime: str | None = None,
         record_list: bool = False,
-        skip_not_data: bool = False,
         validate_crc: bool = True,
         split_version: bool = False,
         verbose: int = 0,
@@ -1502,9 +1566,6 @@ class MS3TraceList:
                 See the "Record list limitation" note above:
                 :meth:`~pymseed.mstracelist.MS3TraceSeg.unpack_recordlist` cannot be used on the resulting
                 list because the source bytes do not persist.  Default: False.
-
-            skip_not_data: If True, skip non-data records instead of raising
-                an error. Default: False.
 
             validate_crc: If True, validate CRC checksums when present
                 (miniSEED v3 only). Default: True.
@@ -1566,10 +1627,10 @@ class MS3TraceList:
         self._check_open()
 
         flags = clibmseed.MSF_PPUPDATETIME | parse_flags(
-            validate_crc=validate_crc, skip_not_data=skip_not_data, record_list=record_list
+            validate_crc=validate_crc, record_list=record_list
         )
 
-        ensure_thread_logging()
+        begin_operation()
 
         # A handle for the record entries in a record list, reused for each record
         pprecptr = ffi.new("MS3RecordPtr **") if record_list else ffi.NULL
@@ -1600,6 +1661,7 @@ class MS3TraceList:
         data_samples: Any,
         sample_type: str,
         sample_rate: float,
+        *,
         starttime_str: str | None = None,
         starttime: int | None = None,
         starttime_seconds: float | None = None,
@@ -1686,7 +1748,7 @@ class MS3TraceList:
 
         self._check_open()
 
-        ensure_thread_logging()
+        begin_operation()
 
         # Create an MS3Record to hold the data
         msr = MS3Record()
@@ -1727,6 +1789,7 @@ class MS3TraceList:
 
     def generate(
         self,
+        *,
         max_record_length: int = 4096,
         encoding: DataEncoding = DataEncoding.STEIM1,
         format_version: int | None = None,
@@ -1769,7 +1832,7 @@ class MS3TraceList:
 
             flush_data: If True, forces creation of records for all
                 data, even if it doesn't fill a complete record. If False, data
-                samplesat the end of traces may be held in internal buffers.
+                samples at the end of traces may be held in internal buffers.
                 Default is True.
 
             flush_idle_seconds: If > 0, forces flushing of data segments that
@@ -1891,7 +1954,7 @@ class MS3TraceList:
     ) -> Iterator[bytes]:
         """Generator body for :meth:`generate`. Kept private so the public
         wrapper can validate arguments eagerly before the first yield."""
-        ensure_thread_logging()
+        begin_operation()
 
         flags = 0
 
@@ -1942,6 +2005,7 @@ class MS3TraceList:
     def to_file(
         self,
         filename: str | os.PathLike[str],
+        *,
         overwrite: bool = False,
         max_record_length: int = 4096,
         encoding: DataEncoding = DataEncoding.STEIM1,
@@ -2042,7 +2106,7 @@ class MS3TraceList:
         check_encoding(encoding)
         self._check_open()
 
-        ensure_thread_logging()
+        begin_operation()
 
         # Convert filename to bytes (C string).
         c_filename = ffi.new("char[]", os.fsencode(filename))

@@ -19,13 +19,32 @@ from pymseed import (
     MS3RecordValidator,
     MS3TraceList,
     clear_error_messages,
+    clibmseed,
     configure_logging,
+    ffi,
     get_error_messages,
 )
 
 # Path to test data
 TEST_DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 TEST_MSEED3_FILE = os.path.join(TEST_DATA_DIR, "testdata-COLA-signal.mseed3")
+
+
+def _leave_crc_warning_in_registry(data: bytes) -> None:
+    """Parse `data` via the raw C API, bypassing MiniSEEDError's drain.
+
+    MiniSEEDError now drains the calling thread's registry as soon as it is
+    raised (see logging.begin_operation()), so a test exercising the
+    registry itself across threads needs a message left behind by a call
+    that never raises. Calling msr3_parse() directly does that: the CRC
+    warning lands in the registry the same as it would for any pymseed
+    entry point, but nothing here pops it.
+    """
+    buf_ptr = ffi.from_buffer(data)
+    msr_ptr = ffi.new("MS3Record **")
+    clibmseed.msr3_parse(buf_ptr, len(data), msr_ptr, clibmseed.MSF_VALIDATECRC, 0)
+    if msr_ptr[0] != ffi.NULL:
+        clibmseed.msr3_free(msr_ptr)
 
 
 def get_test_files(count: int = 20) -> list[str]:
@@ -213,14 +232,15 @@ class TestThreadedLogging:
             configure_logging(error_prefix=error_prefix)
             clear_error_messages()
 
-            # Trigger an error by parsing corrupted data
+            # Trigger an error by parsing corrupted data. MiniSEEDError
+            # drains the registry itself, so read the messages off the
+            # exception rather than a later get_error_messages() call.
+            messages: list[str] = []
             try:
                 for _ in MS3Record.from_buffer(corrupted_data, unpack_data=True):
                     pass
-            except MiniSEEDError:
-                pass
-
-            messages = get_error_messages()
+            except MiniSEEDError as exc:
+                messages = exc.error_messages
 
             with results_lock:
                 results[thread_id] = {
@@ -357,15 +377,13 @@ class TestLoggingIsolation:
 
     def test_messages_isolated_between_threads(self) -> None:
         """Test that error messages don't leak between threads."""
-        from pymseed import MiniSEEDError, MS3Record
-
         corrupted_data = get_corrupted_record()
         barrier = threading.Barrier(2)
         results: dict[int, list[str]] = {}
         results_lock = threading.Lock()
 
         def thread_work(thread_id: int, should_error: bool) -> None:
-            """Thread that may or may not generate errors."""
+            """Thread that may or may not leave a message in the registry."""
             configure_logging(error_prefix=f"[T{thread_id}] ")
             clear_error_messages()
 
@@ -373,12 +391,9 @@ class TestLoggingIsolation:
             barrier.wait()
 
             if should_error:
-                # Generate error
-                try:
-                    for _ in MS3Record.from_buffer(corrupted_data, unpack_data=True):
-                        pass
-                except MiniSEEDError:
-                    pass
+                # Leave a message in the registry without an exception
+                # draining it (see _leave_crc_warning_in_registry).
+                _leave_crc_warning_in_registry(corrupted_data)
 
             # Small delay to let other thread potentially pollute
             import time
@@ -405,24 +420,19 @@ class TestLoggingIsolation:
 
     def test_clear_only_affects_current_thread(self) -> None:
         """Test that clear_error_messages only clears current thread's messages."""
-        from pymseed import MiniSEEDError, MS3Record
-
         corrupted_data = get_corrupted_record()
         barrier = threading.Barrier(2)
         results: dict[int, list[str]] = {}
         results_lock = threading.Lock()
 
         def thread_work(thread_id: int, should_clear: bool) -> None:
-            """Thread that generates errors and optionally clears them."""
+            """Thread that leaves a message and optionally clears it."""
             configure_logging(error_prefix=f"[T{thread_id}] ")
             clear_error_messages()
 
-            # Both threads generate errors
-            try:
-                for _ in MS3Record.from_buffer(corrupted_data, unpack_data=True):
-                    pass
-            except MiniSEEDError:
-                pass
+            # Both threads leave a message in the registry, without an
+            # exception draining it (see _leave_crc_warning_in_registry).
+            _leave_crc_warning_in_registry(corrupted_data)
 
             # Synchronize before clear/get
             barrier.wait()
@@ -471,12 +481,13 @@ class TestUnconfiguredThreadLogging:
         captured: dict[str, Any] = {}
 
         def worker() -> None:
-            # Deliberately does NOT call configure_logging()
+            # Deliberately does NOT call configure_logging(). MiniSEEDError
+            # drains the registry itself, so read messages off the
+            # exception rather than a later get_error_messages() call.
             try:
                 MS3Record.parse(corrupted, validate_crc=True)
-            except MiniSEEDError:
-                pass
-            captured["messages"] = get_error_messages()
+            except MiniSEEDError as exc:
+                captured["messages"] = exc.error_messages
 
         thread = threading.Thread(target=worker)
         thread.start()

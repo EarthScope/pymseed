@@ -10,7 +10,7 @@ from typing import Any
 
 from .clib import clibmseed, ffi
 from .exceptions import MiniSEEDError
-from .logging import ensure_thread_logging
+from .logging import begin_operation
 from .msrecord import MS3Record, _truncated_source_message
 from .selections import build_selections
 from .util import parse_flags
@@ -19,7 +19,7 @@ from .util import parse_flags
 class MS3RecordReader:
     """Read miniSEED records from a file or file descriptor.
 
-    Use MS3Record.from_file() instead of this class directly.
+    Usually created via :meth:`MS3Record.from_file` rather than directly.
 
     This class provides a Python interface for reading miniSEED records from
     files or file descriptors.
@@ -94,7 +94,7 @@ class MS3RecordReader:
         validate_crc (bool): If True, validate CRC checksums when present in records.
             miniSEED v3 records contain CRCs, but v2 records do not. Default is True.
 
-        verbose (int): Verbosity level for for libmseed operations. Higher values
+        verbose (int): Verbosity level for libmseed operations. Higher values
             produce more detailed output. 0 = no output, 1+ = increasing verbosity.
             Defaults to 0 (silent).
 
@@ -158,6 +158,7 @@ class MS3RecordReader:
     def __init__(
         self,
         source: str | os.PathLike[str] | int,
+        *,
         start_byte_offset: int = 0,
         end_byte_offset: int = 0,
         unpack_data: bool = False,
@@ -168,7 +169,7 @@ class MS3RecordReader:
         validate_crc: bool = True,
         verbose: int = 0,
     ) -> None:
-        ensure_thread_logging()
+        begin_operation()
 
         self._msfp_ptr = ffi.new("MS3FileParam **")
         self._msr_ptr = ffi.new("MS3Record **")
@@ -176,9 +177,18 @@ class MS3RecordReader:
         self._free_selections: Callable[[], None] | None = None
         self.stream_name = ffi.NULL
         self.verbose = verbose
+        # Whether a record has ever been returned; distinguishes empty input
+        # (no records) from non-miniSEED content encountered later.
+        self._read_any = False
 
-        # Validate and normalize source
-        if isinstance(source, os.PathLike):
+        # Validate and normalize source. bool is a subclass of int but is
+        # rejected explicitly: True/False as a file descriptor would silently
+        # read fd 1/0 rather than signal a type mistake.
+        if isinstance(source, bool):
+            raise TypeError(
+                f"source must be str, int (file descriptor), or os.PathLike; got {type(source).__name__}"
+            )
+        elif isinstance(source, os.PathLike):
             source = os.fspath(source)
         elif not isinstance(source, (str, int)):
             raise TypeError(
@@ -261,6 +271,17 @@ class MS3RecordReader:
         """Iterator protocol - allows the reader to be used in for loops."""
         return self
 
+    def _msr_for_borrower(self) -> Any:
+        """Return the struct currently held, for a borrowed MS3Record to read.
+
+        Raises :class:`ValueError` once the reader has moved past the record
+        (the next :meth:`read` call reuses the same struct) or been closed.
+        """
+        ptr = self._msr_ptr[0]
+        if ptr == ffi.NULL:
+            raise ValueError("record is no longer valid: the reader has moved past it or is closed")
+        return ptr
+
     def read(self) -> MS3Record | None:
         """Read the next miniSEED record from the file or file descriptor.
 
@@ -289,9 +310,17 @@ class MS3RecordReader:
         )
 
         if status == clibmseed.MS_NOERROR:
+            self._read_any = True
             # Hold the reader so its struct cannot be freed by garbage collection
             # while this record is still referenced.
             return MS3Record._borrow(self._msr_ptr[0], self)
+        if status == clibmseed.MS_NOTSEED and not self._read_any:
+            # Nothing has been read yet, and nothing not-miniSEED was
+            # detected either: an empty source has no records to report,
+            # matching from_buffer()/from_filelike() on empty input.
+            msfp = self._msfp_ptr[0]
+            if msfp != ffi.NULL and msfp.readlength == 0:
+                return None
         if status == clibmseed.MS_ENDOFFILE:
             # libmseed returns MS_ENDOFFILE for both a clean end of stream and a
             # record the stream ends part way through; unconsumed bytes left

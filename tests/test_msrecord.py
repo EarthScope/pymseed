@@ -26,6 +26,27 @@ def _churn_heap():
     return [bytearray(4096) for _ in range(3000)]
 
 
+def test_msrecord_constructor_validates_reclen_and_encoding():
+    """reclen/encoding go through the same validating setters as post-construction
+    assignment, rather than writing the raw C fields unchecked."""
+    with pytest.raises(ValueError, match="reclen"):
+        MS3Record(reclen=0)
+
+    with pytest.raises(ValueError, match="encoding"):
+        MS3Record(encoding=300)
+
+    msr = MS3Record(reclen=512, encoding=11)
+    assert msr.reclen == 512
+    assert msr.encoding == 11
+
+
+def test_msrecord_constructor_has_no_internal_wrapping_parameters():
+    """recordptr/owns/owner are internal (see MS3Record._wrap/_borrow) and
+    are not part of the public constructor."""
+    with pytest.raises(TypeError):
+        MS3Record(recordptr=None)
+
+
 def test_msrecord_time_str_sentinels():
     """A fresh MS3Record has NSTUNSET timestamps; starttime_str/endtime_str
     must surface that as the ``"UNSET"`` sentinel rather than falling
@@ -153,6 +174,10 @@ def test_msrecord_extra_header():
     with pytest.raises(ValueError):
         msr.set_extra_header("Invalid/JSON/Pointer", "Value")
 
+    # Unsupported value type: a type mistake, not a bad value
+    with pytest.raises(TypeError, match="Unsupported value type"):
+        msr.set_extra_header("/New/Header/List", [1, 2, 3])
+
     # Test merging, replacing the existing value
     msr.merge_extra_headers('{"FDSN": {"Time": {"Quality": 80}}}')
     assert msr.get_extra_header("/FDSN/Time/Quality") == 80
@@ -244,6 +269,24 @@ def test_with_datasamples_rejects_multidimensional():
         with pytest.raises(ValueError, match="one-dimensional"):
             with msr.with_datasamples(data, sample_type):
                 pass
+
+
+def test_with_datasamples_text_sequence_rejects_non_single_byte_strings():
+    """Each str item in a text-sample sequence must encode to exactly one
+    byte: an empty string used to raise IndexError, and a multibyte
+    character was silently truncated to its first byte."""
+    msr = MS3Record()
+    msr.sourceid = "FDSN:XX_TEST__L_O_G"
+    msr.samprate = 0
+
+    for bad in (["a", "", "c"], ["a", "é", "c"]):  # "" and multibyte "é"
+        with pytest.raises(ValueError, match="exactly one byte"):
+            with msr.with_datasamples(bad, "t"):
+                pass
+
+    # A sequence of genuine single-byte strings still works.
+    with msr.with_datasamples(["a", "b", "c"], "t"):
+        assert bytes(msr.datasamples) == b"abc"
 
 
 def test_with_datasamples_accepts_one_dimensional():
@@ -801,7 +844,7 @@ class TestMS3RecordParse:
 
         # Establish a real owner and a borrowed view into the same C struct.
         owner = MS3Record.parse(buf)
-        view = MS3Record(recordptr=owner._msr)  # owns=False by default
+        view = MS3Record._wrap(owner._msr)  # owns=False by default
         assert view._msr_allocated is False
 
         with pytest.raises(ValueError, match="own"):
@@ -812,7 +855,7 @@ class TestMS3RecordParse:
         assert owner.samplecnt == 500
 
     def test_parse_owns_record(self):
-        """parse() returns an owning record; non-recordptr construction also owns."""
+        """parse() returns an owning record; the default constructor also owns."""
         with open(test_pack3, "rb") as f:
             buf = f.read()
 
@@ -825,13 +868,14 @@ class TestMS3RecordParse:
         assert fresh._msr_allocated is True
 
         # Wrapping an existing pointer without owns=True is a non-owning view
-        # (the default for callers like from_buffer / from_filelike / readers).
-        view = MS3Record(recordptr=parsed._msr)
+        # (the common case for from_buffer / from_filelike / readers, though
+        # those go through the guarded _borrow() rather than _wrap()).
+        view = MS3Record._wrap(parsed._msr)
         assert view._msr_allocated is False
 
         # Explicit owns=True flag flips ownership for the recordptr case.
         # NOTE: we don't actually free here — just assert the flag plumbs through.
-        flagged = MS3Record(recordptr=parsed._msr, owns=True)
+        flagged = MS3Record._wrap(parsed._msr, owns=True)
         assert flagged._msr_allocated is True
         # Defuse the duplicate-free that would otherwise happen at GC: parsed
         # holds the real ownership; clear the test wrappers' flags before exit.
@@ -1032,6 +1076,97 @@ class TestMS3RecordParse:
         """Raise MiniSEEDError on empty buffer."""
         with pytest.raises(MiniSEEDError):
             MS3Record.parse(b"")
+
+    def test_parse_options_are_keyword_only(self):
+        """Every option after `buffer` must be keyword-only."""
+        with open(test_pack3, "rb") as f:
+            buf = f.read()
+
+        with pytest.raises(TypeError):
+            MS3Record.parse(buf, True)  # unpack_data positionally
+
+
+class TestBorrowedRecordLifetime:
+    """A record yielded by from_buffer/from_filelike/MS3RecordReader shares a
+    C struct with its source (see MS3Record._borrow). Once that struct is
+    freed or reused — by a later parse failure, or by closing the reader —
+    accessing the earlier wrapper must raise ValueError rather than read the
+    freed or repurposed memory."""
+
+    @staticmethod
+    def _corrupt_second_record(path):
+        """Return bytes for two concatenated records, the second CRC-corrupted."""
+        with open(path, "rb") as f:
+            data = bytearray(f.read())
+        first_len = MS3Record.parse(bytes(data)).reclen
+        second_len = MS3Record.parse(bytes(data[first_len:])).reclen
+        second_start = first_len
+        data[second_start + 100] ^= 0xFF
+        return bytes(data[: first_len + second_len])
+
+    def test_from_buffer_invalidates_earlier_record_on_later_parse_error(self):
+        buf = self._corrupt_second_record(test_repack3_output)
+
+        gen = MS3Record.from_buffer(buf, validate_crc=True)
+        first = next(gen)
+        assert first.sourceid  # struct is live and readable
+
+        with pytest.raises(MiniSEEDError, match="CRC"):
+            next(gen)
+
+        _churn_heap()
+        with pytest.raises(ValueError, match="no longer valid"):
+            first.sourceid
+
+    def test_from_filelike_invalidates_earlier_record_on_later_parse_error(self):
+        import io
+
+        buf = self._corrupt_second_record(test_repack3_output)
+
+        gen = MS3Record.from_filelike(io.BytesIO(buf), validate_crc=True)
+        first = next(gen)
+        assert first.sourceid
+
+        with pytest.raises(MiniSEEDError, match="CRC"):
+            next(gen)
+
+        _churn_heap()
+        with pytest.raises(ValueError, match="no longer valid"):
+            first.sourceid
+
+    def test_reader_close_invalidates_previously_read_record(self):
+        reader = MS3Record.from_file(test_repack3_output)
+        first = reader.read()
+        assert first.sourceid
+
+        reader.close()
+
+        _churn_heap()
+        with pytest.raises(ValueError, match="no longer valid"):
+            first.sourceid
+
+    def test_reader_parse_error_invalidates_previously_read_record(self):
+        buf = self._corrupt_second_record(test_repack3_output)
+
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(suffix=".mseed3", delete=False) as f:
+            f.write(buf)
+            path = f.name
+
+        try:
+            reader = MS3Record.from_file(path)
+            first = reader.read()
+            assert first.sourceid
+
+            with pytest.raises(MiniSEEDError, match="CRC"):
+                reader.read()
+
+            _churn_heap()
+            with pytest.raises(ValueError, match="no longer valid"):
+                first.sourceid
+        finally:
+            os.unlink(path)
 
 
 class TestHeaderOnlyMS3Record:

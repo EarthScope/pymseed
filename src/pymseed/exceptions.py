@@ -1,3 +1,5 @@
+from typing import Any
+
 from .clib import clibmseed
 from .logging import get_error_messages
 from .util import error_string
@@ -8,13 +10,13 @@ class PymseedError(RuntimeError):
 
     Inherits from :class:`RuntimeError` because most concrete pymseed errors
     describe runtime/I/O/data conditions — bad CRC, unexpected end of file,
-    wrong record length, libmseed allocation failure, missing trace ID — none
-    of which are :class:`ValueError`\\ s in the Python-stdlib sense
-    ("right type, wrong value").
+    wrong record length, libmseed allocation failure — none of which are
+    :class:`ValueError`\\ s in the Python-stdlib sense ("right type, wrong
+    value").
 
-    Concrete pymseed errors (:class:`MiniSEEDError`, ``NoSuchSourceID``,
-    …) all derive from this class. Future additions should also inherit
-    from it so callers do not have to grow ``except (A, B, C, …)`` tuples.
+    Concrete pymseed errors (:class:`MiniSEEDError`, …) all derive from
+    this class. Future additions should also inherit from it so callers do
+    not have to grow ``except (A, B, C, …)`` tuples.
     """
 
 
@@ -36,10 +38,14 @@ class MiniSEEDError(PymseedError):
         self.status_code = status_code
         self.message = message
 
-        # Drain libmseed's per-thread log registry for generic errors so the
-        # exception carries the underlying diagnostic context. Must run
-        # BEFORE _render() because the renderer reads `self.error_messages`.
-        if status_code == clibmseed.MS_GENERROR:
+        # Drain libmseed's per-thread log registry so the exception carries
+        # the underlying diagnostic context. Every pymseed entry point clears
+        # the registry before it runs (see logging.begin_operation()), so
+        # what's drained here belongs to the operation that raised this error.
+        # Must run BEFORE _render() because the renderer reads this for
+        # MS_GENERROR. Skipped for MS_NOERROR, which is never raised as an
+        # error but is a valid status_code value.
+        if status_code != clibmseed.MS_NOERROR:
             self.error_messages = get_error_messages()
         else:
             self.error_messages = []
@@ -49,6 +55,16 @@ class MiniSEEDError(PymseedError):
 
     def __str__(self) -> str:
         return self._rendered
+
+    def __reduce__(self) -> tuple[Any, tuple[Any, ...]]:
+        """Support pickling without draining the unpickling thread's registry.
+
+        The default reduction re-runs ``__init__(status_code, message)``,
+        which would drain whatever happens to be in the registry on the
+        thread that unpickles this exception. Restore the already-rendered
+        state instead.
+        """
+        return (_restore_miniseed_error, (self.status_code, self.message, self.error_messages))
 
     def _render(self) -> str:
         library_message: str | None
@@ -71,14 +87,15 @@ class MiniSEEDError(PymseedError):
         return library_message
 
 
-class NoSuchSourceID(PymseedError):
-    """Exception for non-existent trace source IDs."""
-
-    sourceid: str
-
-    def __init__(self, sourceid: str) -> None:
-        super().__init__(sourceid)
-        self.sourceid = sourceid
-
-    def __str__(self) -> str:
-        return f"Source ID not found: {self.sourceid}"
+def _restore_miniseed_error(
+    status_code: int, message: str | None, error_messages: list[str]
+) -> MiniSEEDError:
+    """Rebuild a :class:`MiniSEEDError` from pickled state without touching
+    the current thread's libmseed log registry. See ``__reduce__``."""
+    exc = MiniSEEDError.__new__(MiniSEEDError)
+    Exception.__init__(exc, status_code, message)
+    exc.status_code = status_code
+    exc.message = message
+    exc.error_messages = error_messages
+    exc._rendered = exc._render()
+    return exc

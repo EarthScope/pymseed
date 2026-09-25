@@ -20,7 +20,6 @@ import pytest
 
 from pymseed import MiniSEEDError, PymseedError
 from pymseed.clib import clibmseed
-from pymseed.exceptions import NoSuchSourceID
 
 
 class TestPymseedErrorHierarchy:
@@ -31,39 +30,32 @@ class TestPymseedErrorHierarchy:
         assert issubclass(MiniSEEDError, PymseedError)
         assert isinstance(MiniSEEDError(-1, "x"), PymseedError)
 
-    def test_no_such_source_id_is_pymseed_error(self) -> None:
-        assert issubclass(NoSuchSourceID, PymseedError)
-        assert isinstance(NoSuchSourceID("foo"), PymseedError)
-
     def test_pymseed_error_is_runtime_error(self) -> None:
         # The base intentionally inherits from RuntimeError because the
         # concrete subclasses describe runtime / I/O / data-corruption
-        # conditions (bad CRC, EOF, wrong length, allocation failure,
-        # missing source ID) rather than "right type, wrong value" inputs
-        # that ValueError is meant for. This was a deliberate breaking
-        # change from ValueError; callers catching `except ValueError`
-        # to pick up pymseed errors must now use PymseedError (preferred)
-        # or RuntimeError.
+        # conditions (bad CRC, EOF, wrong length, allocation failure)
+        # rather than "right type, wrong value" inputs that ValueError is
+        # meant for. This was a deliberate breaking change from ValueError;
+        # callers catching `except ValueError` to pick up pymseed errors
+        # must now use PymseedError (preferred) or RuntimeError.
         assert issubclass(PymseedError, RuntimeError)
         assert isinstance(MiniSEEDError(-1, "x"), RuntimeError)
-        assert isinstance(NoSuchSourceID("foo"), RuntimeError)
 
         # Make the breaking change explicit: pymseed errors are no longer
         # ValueError. Regression-protect anyone tempted to "fix" the base.
         assert not issubclass(PymseedError, ValueError)
         assert not isinstance(MiniSEEDError(-1, "x"), ValueError)
-        assert not isinstance(NoSuchSourceID("foo"), ValueError)
 
     def test_single_except_catches_all_pymseed_errors(self) -> None:
         # The whole point of the base class: one except clause catches every
         # concrete subclass.
-        for exc in (MiniSEEDError(-1, "x"), NoSuchSourceID("foo")):
-            try:
-                raise exc
-            except PymseedError as caught:
-                assert caught is exc
-            else:
-                pytest.fail(f"PymseedError did not catch {type(exc).__name__}")
+        exc = MiniSEEDError(-1, "x")
+        try:
+            raise exc
+        except PymseedError as caught:
+            assert caught is exc
+        else:
+            pytest.fail(f"PymseedError did not catch {type(exc).__name__}")
 
 
 class TestMiniSEEDError:
@@ -196,20 +188,44 @@ class TestMiniSEEDError:
         assert clone.error_messages is not original.error_messages
 
 
-class TestNoSuchSourceID:
-    def test_args_match_constructor_arguments(self) -> None:
-        exc = NoSuchSourceID("FDSN:XX_TEST__B_H_Z")
-        assert exc.args == ("FDSN:XX_TEST__B_H_Z",)
-        assert exc.sourceid == "FDSN:XX_TEST__B_H_Z"
+class TestMiniSEEDErrorDraining:
+    """MiniSEEDError drains the log registry for any non-success status, and
+    every pymseed entry point clears it first (logging.begin_operation()), so
+    an error never carries diagnostics left over from an earlier, unrelated
+    call. See CHANGELOG entry for the bug this regresses."""
 
-    def test_repr_shows_constructor_arguments(self) -> None:
-        exc = NoSuchSourceID("FDSN:XX_TEST__B_H_Z")
-        assert "FDSN:XX_TEST__B_H_Z" in repr(exc)
+    def test_negative_non_generic_status_captures_its_own_messages(self) -> None:
+        import os
 
-    def test_pickle_roundtrip(self) -> None:
-        original = NoSuchSourceID("FDSN:XX_TEST__B_H_Z")
-        for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
-            restored = pickle.loads(pickle.dumps(original, protocol))
-            assert type(restored) is NoSuchSourceID
-            assert restored.args == original.args
-            assert restored.sourceid == original.sourceid
+        from pymseed import MS3Record
+
+        with open(os.path.join("tests", "data", "testdata-COLA-signal.mseed3"), "rb") as f:
+            record = bytearray(f.read(512))
+        record[100] ^= 0xFF  # corrupt the payload to trip CRC validation
+
+        with pytest.raises(MiniSEEDError) as excinfo:
+            MS3Record.parse(bytes(record), validate_crc=True)
+
+        exc = excinfo.value
+        assert exc.status_code == clibmseed.MS_INVALIDCRC
+        assert exc.error_messages
+        assert any("CRC" in msg for msg in exc.error_messages)
+
+    def test_unrelated_later_error_does_not_carry_a_stale_message(self) -> None:
+        import os
+
+        from pymseed import MS3Record, MS3TraceList
+
+        with open(os.path.join("tests", "data", "testdata-COLA-signal.mseed3"), "rb") as f:
+            record = bytearray(f.read(512))
+        record[100] ^= 0xFF
+
+        with pytest.raises(MiniSEEDError) as first:
+            MS3Record.parse(bytes(record), validate_crc=True)
+        assert first.value.error_messages  # precondition: it did leave a message
+
+        # A later, unrelated failure must not carry the CRC message above.
+        with pytest.raises(MiniSEEDError) as second:
+            MS3TraceList().add_file("/nonexistent/file-for-pymseed-tests.mseed")
+
+        assert not any("CRC" in msg for msg in second.value.error_messages)

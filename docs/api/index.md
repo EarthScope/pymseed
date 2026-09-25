@@ -106,3 +106,11 @@ conversion rules and the error cases.
 
    Modulus value for nanosecond time calculations (nanoseconds per second).
 ```
+
+## CFFI layer
+
+`pymseed.ffi` and `pymseed.clibmseed` give direct access to the CFFI-generated
+bindings for libmseed's C API. They are an escape hatch for calling library
+functions pymseed does not itself wrap, not part of the documented Python
+API: their surface follows the bundled libmseed C headers and is not covered
+by pymseed's own API stability guarantees.

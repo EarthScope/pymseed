@@ -605,6 +605,31 @@ def test_tracelist_rejects_use_after_close(tmp_path):
     assert not (tmp_path / "out.mseed").exists()
 
 
+def test_tracelist_objects_reject_use_after_close():
+    """MS3TraceID, MS3TraceSeg, MS3RecordList, MS3RecordPtr, and the MS3Record
+    from MS3RecordPtr.record all read through to the trace list's own open
+    check, so using one obtained before close() raises ValueError afterward
+    instead of reading the freed C structs."""
+    traces = MS3TraceList.from_file(test_path3, record_list=True, unpack_data=True)
+    traceid = traces[0]
+    segment = traceid[0]
+    recordlist = segment.recordlist
+    recordptr = next(iter(recordlist))
+    record = recordptr.record  # cached on recordptr; must be guarded too
+
+    traces.close()
+
+    for call in (
+        lambda: traceid.sourceid,
+        lambda: segment.samprate,
+        lambda: len(recordlist),
+        lambda: recordptr.fileoffset,
+        lambda: record.sourceid,
+    ):
+        with pytest.raises(ValueError, match="closed MS3TraceList"):
+            call()
+
+
 def test_tracelist_context_manager():
     """A with block closes the trace list on exit, including on an exception."""
     with MS3TraceList(file_name=test_path3, unpack_data=True) as traces:
@@ -1268,7 +1293,7 @@ def test_take_np_datasamples_on_empty_segment_returns_empty_array():
 
 def test_take_np_datasamples_second_call_returns_empty_array():
     """Once taken, a segment's buffer cannot be taken again."""
-    pytest.importorskip("numpy")
+    np = pytest.importorskip("numpy")
 
     traces = MS3TraceList()
     traces.add_data(
@@ -1285,6 +1310,9 @@ def test_take_np_datasamples_second_call_returns_empty_array():
 
     assert first.size == 5
     assert second.size == 0
+    # The sample type is still known ('i'), so the empty array must not
+    # fall back to numpy's float64 default.
+    assert second.dtype == first.dtype == np.dtype(np.int32)
 
 
 def test_take_np_datasamples_does_not_hold_the_trace_list():
@@ -1674,6 +1702,45 @@ def test_mstracelist_to_file(tmp_path):
 def test_mstracelist_nosuchfile():
     with pytest.raises(MiniSEEDError):
         MS3TraceList("NOSUCHFILE")
+
+
+def test_mstracelist_empty_file_yields_no_traces(tmp_path):
+    """An empty file has no traces, matching add_buffer() on empty input,
+    rather than raising MS_NOTSEED."""
+    empty = tmp_path / "empty.mseed3"
+    empty.write_bytes(b"")
+
+    assert len(MS3TraceList.from_file(str(empty))) == 0
+
+    # add_file() on an already-open trace list is the same code path.
+    traces = MS3TraceList()
+    traces.add_file(str(empty))
+    assert len(traces) == 0
+
+
+def test_mstracelist_nonempty_garbage_still_raises(tmp_path):
+    """Non-empty content that isn't miniSEED still raises, unlike empty input."""
+    garbage = tmp_path / "garbage.mseed3"
+    garbage.write_bytes(b"not miniseed data, but also not empty" * 3)
+
+    with pytest.raises(MiniSEEDError, match="No miniSEED data detected"):
+        MS3TraceList.from_file(str(garbage))
+
+
+def test_mstracelist_options_are_keyword_only():
+    """Every option after the primary source argument must be keyword-only."""
+    with pytest.raises(TypeError):
+        MS3TraceList(test_path3, None, True)  # unpack_data positionally
+
+    with pytest.raises(TypeError):
+        MS3TraceList().add_file(test_path3, True)  # unpack_data positionally
+
+
+def test_mstracelist_add_filelike_no_longer_accepts_skip_not_data():
+    """skip_not_data was a no-op for add_filelike (it never reached the
+    parser) and has been removed rather than documented as inert."""
+    with pytest.raises(TypeError):
+        MS3TraceList().add_filelike(io.BytesIO(b""), skip_not_data=True)
 
 
 # ---------------------------------------------------------------------------

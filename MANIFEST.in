@@ -10,7 +10,7 @@ recursive-include examples *.py *.mseed
 recursive-include tests/data *
 
 # Include development files
-include development.txt
+include development.md
 
 # Standard files already included by default
 include LICENSE

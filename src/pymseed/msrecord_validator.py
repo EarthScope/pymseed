@@ -20,8 +20,8 @@ from .clib import buffer_pointer, clibmseed, ffi
 from .logging import (
     _drain_error_messages,
     _thread_local_rlog_buf,
+    begin_operation,
     clear_error_messages,
-    ensure_thread_logging,
 )
 from .mstracelist import MS3TraceList
 from .util import check_chunk_size, check_filelike, check_path, nstime2timestr, system_time
@@ -508,7 +508,7 @@ class MS3RecordValidator:
             caller can distinguish "couldn't open the source" from
             "source opened but contained bad records".
         """
-        ensure_thread_logging()
+        begin_operation()
 
         # Fetched once rather than per drain call, since this loop can run
         # over millions of records.
