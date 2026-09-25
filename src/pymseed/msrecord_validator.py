@@ -24,6 +24,12 @@ from .util import check_chunk_size, check_filelike, check_path, nstime2timestr, 
 # Default read chunk size for the file and file-like record sources (10 MiB)
 DEFAULT_CHUNK_SIZE = 10_485_760
 
+# Maximum distinct extra-header strings cached per validate() call. Real data
+# commonly repeats a small handful of extra-header payloads across many
+# records, so caching their validation result avoids re-validating identical
+# JSON; the cap bounds memory for a source with many distinct payloads.
+_EH_CACHE_LIMIT = 1024
+
 # (buf_ptr, absolute_offset, record_length) for a detected record, or
 # (None, absolute_offset, reason) describing why a source stopped early
 _RecordTuple = tuple[Any, int, int] | tuple[None, int, str]
@@ -537,6 +543,10 @@ class MS3RecordValidator:
                 raise ValueError(f"Unknown schema_id: {self._extra_headers_schema}")
             _eh_validator, _eh_load_error = load_extra_headers_validator(self._extra_headers_schema)
 
+        # Extra-header JSON string -> the error messages it produces, for this
+        # validate() call only. See _EH_CACHE_LIMIT.
+        _eh_cache: dict[str, tuple[str, ...]] = {}
+
         try:
             for buf_ptr, offset, info in self._source:
                 # A source signals no whole record with a reason string instead
@@ -634,15 +644,6 @@ class MS3RecordValidator:
                                 if msr.extra != ffi.NULL
                                 else ""
                             )
-                            if extra_str:
-                                for ve in _eh_validator.iter_errors(json_loads(extra_str)):
-                                    record_error(
-                                        offset,
-                                        f"Extra headers validation error: {ve.message} at {ve.instance_path}",
-                                        sourceid=sourceid,
-                                        starttime=msr.starttime,
-                                        reclen=record_length,
-                                    )
                         except Exception as e:
                             record_error(
                                 offset,
@@ -651,6 +652,33 @@ class MS3RecordValidator:
                                 starttime=msr.starttime,
                                 reclen=record_length,
                             )
+                        else:
+                            if extra_str:
+                                # Real sources repeat the same handful of extra-header
+                                # payloads across many records; validate each distinct
+                                # one once and replay its result for the rest.
+                                cached_messages = _eh_cache.get(extra_str)
+                                if cached_messages is None:
+                                    try:
+                                        cached_messages = tuple(
+                                            f"Extra headers validation error: {ve.message} at {ve.instance_path}"
+                                            for ve in _eh_validator.iter_errors(
+                                                json_loads(extra_str)
+                                            )
+                                        )
+                                    except Exception as e:
+                                        cached_messages = (f"Extra headers validation error: {e}",)
+                                    if len(_eh_cache) < _EH_CACHE_LIMIT:
+                                        _eh_cache[extra_str] = cached_messages
+
+                                for msg in cached_messages:
+                                    record_error(
+                                        offset,
+                                        msg,
+                                        sourceid=sourceid,
+                                        starttime=msr.starttime,
+                                        reclen=record_length,
+                                    )
 
                 # Step 5: Add record to trace list
                 if tracelist is not None:
