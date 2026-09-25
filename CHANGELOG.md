@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add missing type annotations flagged by mypy.
 
 ### Changed
+- Speed up record iteration by skipping `__init__` for borrowed,
+  non-owning `MS3Record` wrappers.
 - Restructure validator and add_data branching for type narrowing.
 - Consolidate duplicated argument checks and time formatting into util helpers.
 - Simplify MS3Record sample handling, extra header access and packing.

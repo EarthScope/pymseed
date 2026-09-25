@@ -279,6 +279,26 @@ class MS3Record:
 
         self._owner = owner
 
+    @classmethod
+    def _borrow(cls, recordptr: Any, owner: Any) -> MS3Record:
+        """Wrap a non-owned record struct from an iterator's shared struct.
+
+        Equivalent to ``cls(recordptr=recordptr, owner=owner)`` but skips
+        ``__init__``'s branching, which matters in the tight per-record loops
+        of ``from_buffer``, ``_iter_filelike``, and ``MS3RecordReader.read``.
+        Falls back to the normal constructor for a subclass, so an overridden
+        ``__init__`` still runs.
+        """
+        if cls is not MS3Record:
+            return cls(recordptr=recordptr, owner=owner)
+
+        obj = cls.__new__(cls)
+        obj._msr = recordptr
+        obj._msr_allocated = False
+        obj._raw_reclen = recordptr.reclen if recordptr.record != ffi.NULL else None
+        obj._owner = owner
+        return obj
+
     def __del__(self) -> None:
         if sys.is_finalizing():
             return
@@ -1954,7 +1974,7 @@ class MS3Record:
                     ):
                         continue
 
-                    yield cls(recordptr=msr_ptr[0], owner=struct)
+                    yield cls._borrow(msr_ptr[0], struct)
                 elif status > 0:
                     # A record was detected but the buffer ends before it does
                     raise MiniSEEDError(
@@ -2132,7 +2152,7 @@ class MS3Record:
                         ):
                             continue
 
-                        yield cls(recordptr=msr_ptr[0], owner=struct)
+                        yield cls._borrow(msr_ptr[0], struct)
                         continue
                     elif status > 0:
                         pass  # need more data; fall through to read

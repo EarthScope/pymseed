@@ -291,7 +291,7 @@ class MS3RecordReader:
         if status == clibmseed.MS_NOERROR:
             # Hold the reader so its struct cannot be freed by garbage collection
             # while this record is still referenced.
-            return MS3Record(recordptr=self._msr_ptr[0], owner=self)
+            return MS3Record._borrow(self._msr_ptr[0], self)
         if status == clibmseed.MS_ENDOFFILE:
             # libmseed returns MS_ENDOFFILE for both a clean end of stream and a
             # record the stream ends part way through; unconsumed bytes left
