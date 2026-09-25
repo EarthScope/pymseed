@@ -2120,6 +2120,7 @@ class MS3Record:
         )
 
         buf = bytearray()
+        buf_ptr: Any = None  # CFFI export over `buf`, valid until buf is next mutated
         offset = 0
         eof = False
         parsed_any = False
@@ -2130,7 +2131,8 @@ class MS3Record:
                 remaining = len(buf) - offset
 
                 if remaining >= clibmseed.MINRECLEN:
-                    buf_ptr = ffi.from_buffer(buf)
+                    if buf_ptr is None:
+                        buf_ptr = ffi.from_buffer(buf)
                     # Once the stream is exhausted libmseed can size a version 2
                     # record carrying no Blockette 1000 from what is left.
                     status = clibmseed.msr3_parse(
@@ -2140,7 +2142,6 @@ class MS3Record:
                         flags | (clibmseed.MSF_ATENDOFFILE if eof else 0),
                         verbose,
                     )
-                    buf_ptr = None  # release buffer export before any modification
                     needed = status if status > 0 else 0
 
                     if status == clibmseed.MS_NOERROR:
@@ -2171,12 +2172,17 @@ class MS3Record:
                         _truncated_source_message("stream", remaining, needed),
                     )
 
+                # Drop the export before mutating the bytearray below
+                buf_ptr = None
+
                 # Compact consumed bytes before reading more
                 if offset > 0:
                     del buf[:offset]
                     offset = 0
 
-                chunk = fh.read(chunk_size)
+                # Read at least as much as msr3_parse() said is still needed, so a
+                # record larger than chunk_size is not re-parsed once per chunk.
+                chunk = fh.read(max(chunk_size, needed))
                 if chunk:
                     buf.extend(chunk)
                 else:
