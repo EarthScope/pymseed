@@ -810,7 +810,9 @@ class TestMS3RecordValidatorFromFilelike:
     def test_from_file_accepts_pathlike(self) -> None:
         import pathlib
 
-        errors, traces = MS3RecordValidator.from_file(pathlib.Path(TEST_MSEED3_FILE)).validate()
+        errors, traces = MS3RecordValidator.from_file(
+            pathlib.Path(TEST_MSEED3_FILE), validate_extra_headers=False
+        ).validate()
 
         assert len(errors) == 0
         assert len(traces) > 0

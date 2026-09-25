@@ -43,20 +43,20 @@ numpy = ["numpy>=1.24.0"]
 # jsonschema-rs validates miniSEED3 extra headers against FDSN schemas
 jsonschema = ["jsonschema-rs>=0.35.0"]
 
-# Testing with numpy
+# Testing with numpy and jsonschema
 test = [
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
+    "pytest-markdown-docs>=0.9.0",
     "pymseed[numpy]",
+    "pymseed[jsonschema]",
 ]
 
 dev = [
     "pymseed[test]",
-    "pytest-markdown-docs>=0.9.0",
     "ruff>=0.1.0",
     "mypy>=1.0.0",
     "pre-commit>=3.0.0",
-    "pymseed[jsonschema]",
 ]
 
 # Documentation dependencies

@@ -44,7 +44,7 @@ jobs:
           activate-environment: true
 
       - name: Install pymseed with test dependencies
-        run: uv pip install .[test]
+        run: uv pip install -e .[test]
 
       - name: Sanity check the built extension
         run: python -c "import pymseed; print(pymseed.__version__)"
