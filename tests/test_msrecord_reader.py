@@ -378,39 +378,6 @@ def test_msrecord_reader_repr_with_file_descriptor():
         os.close(fd)
 
 
-def test_msrecord_reader_input_kwarg_is_deprecated_alias():
-    # Passing the legacy `input=` keyword must still work but emit a
-    # DeprecationWarning pointing users at the new `source=` name.
-    from pymseed import MS3RecordReader
-
-    with pytest.warns(DeprecationWarning, match="'input' is a deprecated alias"):
-        reader = MS3RecordReader(input=test_path3)
-    try:
-        msr = reader.read()
-        assert msr is not None
-    finally:
-        reader.close()
-
-    with pytest.raises(TypeError, match="missing required argument"):
-        MS3RecordReader()
-
-
-def test_msrecord_reader_rejects_source_and_input_together():
-    """Supplying both must not silently discard one of them."""
-    from pymseed import MS3RecordReader
-
-    with pytest.raises(TypeError, match="both 'source' and its deprecated alias"):
-        MS3RecordReader(source=test_path3, input="nonexistent.mseed")
-
-    # Also when source is positional
-    with pytest.raises(TypeError, match="both 'source' and its deprecated alias"):
-        MS3RecordReader(test_path3, input="nonexistent.mseed")
-
-    # Reaching the reader through MS3Record.from_file() is no different
-    with pytest.raises(TypeError, match="both 'source' and its deprecated alias"):
-        MS3Record.from_file(test_path3, input="nonexistent.mseed")
-
-
 def test_msrecord_reader_rejects_use_after_close():
     # Reading or iterating after close() must not silently resurrect the
     # underlying libmseed file param (which would re-open the file from the

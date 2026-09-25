@@ -5,7 +5,6 @@ Core miniSEED file reader implementation for pymseed.
 
 import os
 import sys
-import warnings
 from collections.abc import Callable
 from typing import Any
 
@@ -14,8 +13,6 @@ from .exceptions import MiniSEEDError
 from .logging import ensure_thread_logging
 from .msrecord import MS3Record, _truncated_source_message
 from .selections import build_selections
-
-_INPUT_SENTINEL: Any = object()
 
 
 class MS3RecordReader:
@@ -100,13 +97,8 @@ class MS3RecordReader:
             produce more detailed output. 0 = no output, 1+ = increasing verbosity.
             Defaults to 0 (silent).
 
-        input: Deprecated alias for ``source``; passing it emits a
-            ``DeprecationWarning``, and passing both raises :class:`TypeError`.
-            This alias will be removed in a future release.
-
     Raises:
-        TypeError: If ``source`` is missing, is not a supported type, or is passed
-            together with the deprecated ``input`` alias.
+        TypeError: If ``source`` is missing or is not a supported type.
         ValueError: If ``starttime`` or ``endtime`` is not a valid date-time string.
         MiniSEEDError: If the file or file descriptor cannot be initialized for reading,
             or if the stream ends part way through a record, or with bytes remaining
@@ -164,7 +156,7 @@ class MS3RecordReader:
 
     def __init__(
         self,
-        source: str | os.PathLike[str] | int = _INPUT_SENTINEL,
+        source: str | os.PathLike[str] | int,
         start_byte_offset: int = 0,
         end_byte_offset: int = 0,
         unpack_data: bool = False,
@@ -174,7 +166,6 @@ class MS3RecordReader:
         skip_not_data: bool = False,
         validate_crc: bool = True,
         verbose: int = 0,
-        input: str | os.PathLike[str] | int = _INPUT_SENTINEL,
     ) -> None:
         ensure_thread_logging()
 
@@ -185,22 +176,6 @@ class MS3RecordReader:
         self.stream_name = ffi.NULL
         self.verbose = verbose
         self.parse_flags = 0
-
-        if input is not _INPUT_SENTINEL:
-            if source is not _INPUT_SENTINEL:
-                raise TypeError(
-                    "MS3RecordReader() got both 'source' and its deprecated alias "
-                    "'input'; pass only 'source'"
-                )
-            warnings.warn(
-                "'input' is a deprecated alias and will be removed in a future "
-                "release; use 'source' instead.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-            source = input
-        if source is _INPUT_SENTINEL:
-            raise TypeError("MS3RecordReader() missing required argument: 'source'")
 
         # Validate and normalize source
         if isinstance(source, int):

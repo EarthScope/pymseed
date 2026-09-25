@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed deprecated functionality
+
+- `MS3Record.pack()` and `MS3TraceList.pack()`; use `generate()`.
+- Deprecated parameter aliases: `MS3TraceList.add_data()` `start_time_str`,
+  `start_time`, `start_time_seconds`; `MS3TraceList.generate()` `record_length`
+  and `removed_packed`; `MS3TraceList.to_file()` `max_reclen`;
+  `MS3RecordReader()` `input`.
+
 ## [0.9.6] - 2026-09-16
 
 ### Added
@@ -428,6 +436,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CFFI-based bindings to libmseed
 
 [Unreleased]: https://github.com/EarthScope/pymseed/compare/v0.0.5...HEAD
+[0.9.6]: https://github.com/EarthScope/pymseed/releases/tag/v0.9.6
 [0.9.5]: https://github.com/EarthScope/pymseed/releases/tag/v0.9.5
 [0.9.4]: https://github.com/EarthScope/pymseed/releases/tag/v0.9.4
 [0.9.3]: https://github.com/EarthScope/pymseed/releases/tag/v0.9.3

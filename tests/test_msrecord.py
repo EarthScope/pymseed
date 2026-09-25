@@ -3,13 +3,12 @@ import gc
 import json
 import math
 import os
-import weakref
 
 import pytest
 
 from pymseed import DataEncoding, MiniSEEDError, MS3Record
 from pymseed.clib import clibmseed, ffi
-from tests.gc_helpers import collect_until, requires_buffer_export_lock, requires_refcounting
+from tests.gc_helpers import requires_buffer_export_lock
 
 test_dir = os.path.abspath(os.path.dirname(__file__))
 test_pack3 = os.path.join(test_dir, "data", "packtest_sine500.mseed3")
@@ -20,23 +19,11 @@ test_repack3_output = os.path.join(test_dir, "data", "testdata-COLA-signal.mseed
 # A sine wave of 500 samples
 sine_500 = [int(math.sin(math.radians(x)) * 500) for x in range(0, 500)]
 
-# A global record buffer
-record_buffer = b""
-
 
 def _churn_heap():
     """Force reclamation and reuse of freed blocks so a stale pointer shows up."""
     gc.collect()
     return [bytearray(4096) for _ in range(3000)]
-
-
-def record_handler(record, handler_data):
-    """A callback function for MS3Record.set_record_handler()
-    Stores the record in a global buffer for testing
-    """
-    print(f"Record handler called, record length: {len(record)}")
-    global record_buffer
-    record_buffer = bytes(record)
 
 
 def test_msrecord_time_str_sentinels():
@@ -363,128 +350,6 @@ def test_with_datasamples_holds_the_numpy_export():
                 data.resize(1000, refcheck=True)
 
 
-@pytest.mark.filterwarnings("ignore::DeprecationWarning")
-def test_pack_rejects_partial_sample_args():
-    """pack() must fail when only one of data_samples/sample_type is given."""
-    msr = MS3Record()
-    msr.sourceid = "FDSN:XX_TEST__L_H_Z"
-    msr.set_starttime_str("2024-01-01T00:00:00Z")
-    msr.samprate = 1
-
-    def _noop(record, data):
-        pass
-
-    with pytest.raises(ValueError, match="together"):
-        msr.pack(_noop, None, data_samples=[1, 2, 3])
-
-    with pytest.raises(ValueError, match="together"):
-        msr.pack(_noop, None, sample_type="i")
-
-
-@pytest.mark.filterwarnings("ignore::DeprecationWarning")
-def test_pack_reraises_handler_exception():
-    """A failing handler must not be reported as a successful pack()."""
-    msr = MS3Record()
-    msr.sourceid = "FDSN:XX_TEST__L_H_Z"
-    msr.set_starttime_str("2024-01-01T00:00:00Z")
-    msr.samprate = 1
-    msr.reclen = 128
-    msr.encoding = DataEncoding.INT32
-
-    calls = []
-
-    def _failing_handler(record, data):
-        calls.append(record)
-        raise OSError("no space left on device")
-
-    with pytest.raises(OSError, match="no space left on device"):
-        msr.pack(_failing_handler, None, data_samples=list(range(200)), sample_type="i")
-
-    # The records after the failure are not handed to the handler
-    assert len(calls) == 1
-
-
-def _pack_once(collected):
-    """Pack a record whose handler closure carries a canary.
-
-    MS3Record uses __slots__ and is not weakref-able, so the canary stands in
-    for the record's own finalization.
-    """
-
-    class Canary:
-        def __del__(self):
-            collected.append(True)
-
-    canary = Canary()
-    msr = MS3Record()
-    msr.sourceid = "FDSN:XX_TEST__L_H_Z"
-    msr.set_starttime_str("2024-01-01T00:00:00Z")
-    msr.samprate = 1
-    msr.pack(
-        lambda record, data, _canary=canary: None,
-        None,
-        data_samples=[1, 2, 3],
-        sample_type="i",
-    )
-
-
-@pytest.mark.filterwarnings("ignore::DeprecationWarning")
-def test_pack_leaves_the_handler_collectable():
-    """pack() must leave the handler collectable.
-
-    A cycle through the callback cdata the collector cannot traverse would
-    strand the record for the life of the process.
-    """
-    collected = []
-
-    _pack_once(collected)
-
-    assert collect_until(lambda: collected == [True]), "handler was never released"
-
-
-@requires_refcounting
-@pytest.mark.filterwarnings("ignore::DeprecationWarning")
-def test_pack_leaves_no_reference_cycle():
-    """pack() must not tie the record into a reference cycle.
-
-    A cycle leaves msr3_free() waiting for the cyclic collector.
-    """
-    collected = []
-
-    # Reference counting alone must release the handler, with the cyclic
-    # collector off
-    gc.collect()
-    gc.disable()
-    try:
-        _pack_once(collected)
-        assert collected == [True]
-    finally:
-        gc.enable()
-
-
-@pytest.mark.filterwarnings("ignore::DeprecationWarning")
-def test_pack_does_not_retain_handler_data():
-    """pack() must not keep the handler or handler data alive after returning."""
-
-    class HandlerData:
-        pass
-
-    msr = MS3Record()
-    msr.sourceid = "FDSN:XX_TEST__L_H_Z"
-    msr.set_starttime_str("2024-01-01T00:00:00Z")
-    msr.samprate = 1
-
-    handler_data = HandlerData()
-    reference = weakref.ref(handler_data)
-
-    msr.pack(lambda record, data: None, handler_data, data_samples=[1, 2, 3], sample_type="i")
-
-    del handler_data
-    gc.collect()
-
-    assert reference() is None
-
-
 def test_msrecord_encoding_setter():
     """Encoding setter validates against the 0..255 miniSEED on-wire range."""
     msr = MS3Record()
@@ -691,49 +556,6 @@ class TestMS3RecordSorting:
         assert msr3 >= msr2 >= msr1, (
             "Greater than equal: Same time but different sourceid (location)"
         )
-
-
-@pytest.mark.filterwarnings("ignore::DeprecationWarning")
-def test_msrecord_pack():
-
-    msr = MS3Record()
-    msr.sourceid = "FDSN:XX_TEST__B_S_X"
-    msr.reclen = 512
-    msr.formatversion = 3
-    msr.flags = 0x04  # Set the 4th bit (clock locked) to 1
-    msr.set_starttime_str("2023-01-02T01:02:03.123456789Z")
-    msr.samprate = 50.0
-    msr.encoding = DataEncoding.STEIM2
-    msr.pubversion = 1
-    msr.extra = json.dumps({"FDSN": {"Time": {"Quality": 80}}})
-
-    # Test packing of an miniSEED v3 record
-    (packed_samples, packed_records) = msr.pack(
-        record_handler, data_samples=sine_500, sample_type="i"
-    )
-
-    assert packed_samples == 500
-    assert packed_records == 1
-    assert len(record_buffer) == 475
-
-    with open(test_pack3, "rb") as f:
-        record_v3 = f.read()
-        assert record_buffer == record_v3
-
-    # Test packing of an miniSEED v2 record
-    msr.formatversion = 2
-
-    (packed_samples, packed_records) = msr.pack(
-        record_handler, data_samples=sine_500, sample_type="i"
-    )
-
-    assert packed_samples == 500
-    assert packed_records == 1
-    assert len(record_buffer) == 512
-
-    with open(test_pack2, "rb") as f:
-        record_v2 = f.read()
-        assert record_buffer == record_v2
 
 
 def test_msrecord_generate():

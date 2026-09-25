@@ -7,8 +7,7 @@ from __future__ import annotations
 
 import os
 import sys
-import warnings
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Iterator, Sequence
 from typing import Any
 
 from .clib import (
@@ -25,40 +24,6 @@ from .logging import ensure_thread_logging
 from .msrecord import MS3Record
 from .selections import build_selections
 from .util import check_encoding, check_str, encoding_sizetype, nstime2timestr
-
-# Marks a parameter with a deprecated alias as not supplied, so that passing
-# both the parameter and its alias can be told from passing only the alias.
-_UNSET: Any = object()
-
-
-def _resolve_alias(
-    name: str,
-    value: Any,
-    alias_name: str,
-    alias_value: Any,
-    default: Any,
-) -> Any:
-    """Resolve a deprecated alias against the parameter that replaced it.
-
-    The alias still works but warns, and supplying both is an error rather
-    than one silently winning.
-    """
-    if alias_value is None:
-        return default if value is _UNSET else value
-
-    if value is not _UNSET:
-        raise TypeError(
-            f"got both '{name}' and its deprecated alias '{alias_name}'; pass only '{name}'"
-        )
-
-    warnings.warn(
-        f"'{alias_name}' is a deprecated alias and will be removed in a future "
-        f"release; use '{name}' instead.",
-        DeprecationWarning,
-        stacklevel=3,
-    )
-
-    return alias_value
 
 
 def _require_numpy() -> Any:
@@ -1866,9 +1831,6 @@ class MS3TraceList:
         starttime: int | None = None,
         starttime_seconds: float | None = None,
         publication_version: int = 0,
-        start_time_str: str | None = None,
-        start_time: int | None = None,
-        start_time_seconds: float | None = None,
     ) -> None:
         """Add data samples to the trace list
 
@@ -1959,39 +1921,23 @@ class MS3TraceList:
         msr.samprate = sample_rate
         msr.pubversion = publication_version
 
-        # Ensure that start time definitions are mutually exclusive, counting the
-        # deprecated aliases so that e.g. starttime= plus start_time= is rejected
-        # instead of one silently winning.
+        # Ensure that start time definitions are mutually exclusive
         provided = [
             (name, value)
             for name, value in (
                 ("starttime_str", starttime_str),
                 ("starttime", starttime),
                 ("starttime_seconds", starttime_seconds),
-                ("start_time_str", start_time_str),
-                ("start_time", start_time),
-                ("start_time_seconds", start_time_seconds),
             )
             if value is not None
         ]
         if len(provided) != 1:
             raise ValueError(
                 "Specify exactly one of starttime_str, starttime, or "
-                "starttime_seconds, counting their deprecated start_time_str, "
-                f"start_time, and start_time_seconds aliases; got {len(provided)}"
+                f"starttime_seconds; got {len(provided)}"
             )
 
         name, value = provided[0]
-
-        if name.startswith("start_time"):
-            canonical = name.replace("start_time", "starttime", 1)
-            warnings.warn(
-                f"'{name}' is a deprecated alias and will be removed in a future "
-                f"release; use '{canonical}' instead.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-            name = canonical
 
         if name == "starttime_str":
             msr.set_starttime_str(value)
@@ -2014,206 +1960,15 @@ class MS3TraceList:
         if segptr == ffi.NULL:
             raise MiniSEEDError(clibmseed.MS_GENERROR, "Error adding data samples")
 
-    def pack(
-        self,
-        handler: Callable[[bytes, Any], None],
-        handlerdata: Any = None,
-        flush_data: bool = True,
-        flush_idle_seconds: int = 0,
-        max_record_length: int = _UNSET,
-        record_length: int | None = None,
-        encoding: DataEncoding = DataEncoding.STEIM1,
-        format_version: int | None = None,
-        extra_headers: str | None = None,
-        verbose: int = 0,
-    ) -> tuple[int, int]:
-        """Pack trace list data into miniSEED records and call handler function for each record.
-
-        .. deprecated::
-            The `pack()` method is deprecated in favor of the more Pythonic
-            `generate()` method. Use `generate()` for most use cases as it
-            provides a cleaner generator-based interface with equivalent functionality.
-
-        This method packages the time series data from all traces in the trace list
-        into miniSEED format records. For each generated record, the provided handler
-        function is called with the record as a bytes object.
-
-        Args:
-            handler: Callback function that will be called for each packed record.
-                Must accept two arguments: (record_bytes: bytes, userdata: Any).
-                The record_bytes contains the complete miniSEED record.
-
-            handlerdata: Optional user data passed to the handler function as the second argument.
-                Can be any Python object (file handle, list, etc.).
-
-            flush_data: If True, forces packing of all available data, even if it doesn't
-                fill a complete record. If False, partial records at the end of traces
-                may be held in internal buffers. Default is True.
-
-            flush_idle_seconds: If > 0, forces flushing of data segments that have not been
-                updated within the specified number of seconds. Default is 0 (disabled).
-
-            max_record_length: Maximum length of each miniSEED record in bytes.
-                For miniSEED format version 3, this is the maximum record length.
-                For miniSEED format version 2, this must be a power of 2 between
-                128 and 65536. Common values are 512 and 4096.
-                Default is 4096.
-
-            record_length: Deprecated alias for ``max_record_length``;
-                accepted for backward compatibility and forwarded to
-                ``max_record_length``, which it is mutually exclusive with;
-                passing both raises :class:`TypeError`.  Passing it emits a
-                ``DeprecationWarning``. This alias will be removed in a
-                future release.
-
-            encoding: Data encoding format for compression. Options include:
-
-                - DataEncoding.STEIM1: Steim-1 compression (default, good general purpose for 32-bit ints)
-                - DataEncoding.STEIM2: Steim-2 compression
-                - DataEncoding.INT16: 16-bit integers (no compression)
-                - DataEncoding.INT32: 32-bit integers (no compression)
-                - DataEncoding.FLOAT32: 32-bit IEEE floats
-                - DataEncoding.FLOAT64: 64-bit IEEE doubles
-                - DataEncoding.TEXT: Text encoding (UTF-8)
-
-            format_version: miniSEED format version (2 or 3). If None, uses library default.
-                Version 2 is legacy format, version 3 is latest standard.
-
-            extra_headers: Optional extra header fields to include.
-                Must be valid JSON string.
-
-            verbose: Verbosity level for libmseed output (0=quiet, 1=info, 2=detailed).
-
-        Returns:
-            tuple[int, int]: A tuple containing:
-                - packed_samples: Total number of data samples that were packed
-                - packed_records: Total number of miniSEED records generated
-
-        Raises:
-            ValueError: If format_version is not 2 or 3, or encoding is outside
-                the range 0..255.
-            MiniSEEDError: If the underlying libmseed library encounters an error during
-                packing, such as a max_record_length the format or encoding cannot use.
-            Exception: Whatever ``handler`` raises, re-raised once packing has
-                returned; the records after the failing one are not passed to it.
-
-        Examples:
-            Simple example writing to a file:
-
-            >>> from pymseed import MS3TraceList
-            >>> import warnings
-
-            >>> # Create a trace list with some data
-            >>> traces = MS3TraceList()
-            >>> traces.add_data("FDSN:XX_STA__B_H_Z", [1, 2, 3, 4, 5], "i", 100.0, starttime_str="2023-01-01T00:00:00.000Z")
-
-            >>> # Pack to file using a simple handler
-            >>> def write_to_file(record_bytes, file_handle):
-            ...     file_handle.write(record_bytes)
-
-            >>> with open("output.mseed", "wb") as f: # doctest: +SKIP
-            ...     packed_samples, packed_records = traces.pack(write_to_file, f)
-            ...     print(f"Packed {packed_samples} samples into {packed_records} records")
-            Packed 5 samples into 1 records
-
-        Note:
-            - The handler function is called once for each complete record generated
-            - For large datasets, consider using streaming approaches with multiple pack() calls
-
-        See Also:
-            - to_file()
-        """
-        # Issue deprecation warning
-        warnings.warn(
-            "pack() is deprecated and will be removed in a future release. "
-            "Use generate() instead for a more Pythonic generator-based interface.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-
-        max_record_length = _resolve_alias(
-            "max_record_length", max_record_length, "record_length", record_length, 4096
-        )
-
-        check_encoding(encoding)
-        self._check_open()
-
-        ensure_thread_logging()
-
-        # An exception cannot cross the C call, and libmseed cannot be stopped
-        # part way through, so hold the first one, skip the handler for the
-        # remaining records, and re-raise once packing returns.
-        handler_error: list[BaseException] = []
-
-        def record_handler_wrapper(
-            record: Any, record_length: int, _handlerdata: Any
-        ) -> None:
-            """Callback function for mstl3_pack()"""
-            if handler_error:
-                return
-            try:
-                # Convert CFFI buffer to bytes for the handler
-                handler(ffi.buffer(record, record_length)[:], handlerdata)
-            except BaseException as exc:
-                handler_error.append(exc)
-
-        # Held by this frame alone, which covers the synchronous
-        # mstl3_pack_ppupdate_flushidle() call below.  Pinning the callback to
-        # self cycles through the bound method it wraps, leaving the trace list
-        # collectable only by the cyclic GC.
-        callback = ffi.callback("void(char *, int, void *)", record_handler_wrapper)
-
-        pack_flags = 0
-        if flush_data:
-            pack_flags |= clibmseed.MSF_FLUSHDATA
-
-        if format_version is not None:
-            if format_version not in [2, 3]:
-                raise ValueError(f"Invalid miniSEED format version: {format_version}")
-            if format_version == 2:
-                pack_flags |= clibmseed.MSF_PACKVER2
-
-        packed_samples = ffi.new("int64_t *")
-
-        c_extra = (
-            ffi.new("char[]", extra_headers.encode("utf-8"))
-            if extra_headers
-            else ffi.NULL
-        )
-
-        packed_records = clibmseed.mstl3_pack_ppupdate_flushidle(
-            self._mstl,
-            callback,
-            ffi.NULL,
-            max_record_length,
-            encoding,
-            packed_samples,
-            pack_flags,
-            verbose,
-            c_extra,
-            flush_idle_seconds,
-        )
-
-        # Raised in preference to a packing error, as the handler failed first
-        if handler_error:
-            raise handler_error[0]
-
-        if packed_records < 0:
-            raise MiniSEEDError(packed_records, "Error packing miniSEED record(s)")
-
-        return (packed_samples[0], packed_records)
-
     def generate(
         self,
-        max_record_length: int = _UNSET,
-        record_length: int | None = None,
+        max_record_length: int = 4096,
         encoding: DataEncoding = DataEncoding.STEIM1,
         format_version: int | None = None,
         extra_headers: str | None = None,
         flush_data: bool = True,
         flush_idle_seconds: int = 0,
-        remove_packed: bool = _UNSET,
-        removed_packed: bool | None = None,
+        remove_packed: bool = False,
         verbose: int = 0,
     ) -> Iterator[bytes]:
         """Create miniSEED record(s) for data in the trace list.
@@ -2228,13 +1983,6 @@ class MS3TraceList:
                 For miniSEED format version 2, this must be a power of 2 between
                 128 and 65536. Common values are 512 and 4096.
                 Default is 4096.
-
-            record_length: Deprecated alias for ``max_record_length``;
-                accepted for backward compatibility and forwarded to
-                ``max_record_length``, which it is mutually exclusive with;
-                passing both raises :class:`TypeError`.  Passing it emits a
-                ``DeprecationWarning``. This alias will be removed in a
-                future release.
 
             encoding: Data encoding format for compression. Options include:
 
@@ -2267,13 +2015,6 @@ class MS3TraceList:
             remove_packed: If True, data samples packed into records will be
                 removed from the trace list.  See "Rolling buffer" section below
                 for more details. Default is False.
-
-            removed_packed: Deprecated misspelling of ``remove_packed``;
-                accepted for backward compatibility and forwarded to
-                ``remove_packed``, which it is mutually exclusive with;
-                passing both raises :class:`TypeError`.  Passing it emits a
-                ``DeprecationWarning``. This alias will be removed in a
-                future release.
 
             verbose: Verbosity level for libmseed output (0=quiet, 1=info,
                 2=detailed). Default is 0 (quiet).
@@ -2355,13 +2096,6 @@ class MS3TraceList:
         See Also:
             - to_file()
         """
-        remove_packed = _resolve_alias(
-            "remove_packed", remove_packed, "removed_packed", removed_packed, False
-        )
-        max_record_length = _resolve_alias(
-            "max_record_length", max_record_length, "record_length", record_length, 4096
-        )
-
         if format_version is not None and format_version not in (2, 3):
             raise ValueError(f"Invalid miniSEED format version: {format_version}")
 
@@ -2448,8 +2182,7 @@ class MS3TraceList:
         self,
         filename: str | os.PathLike[str],
         overwrite: bool = False,
-        max_record_length: int = _UNSET,
-        max_reclen: int | None = None,
+        max_record_length: int = 4096,
         encoding: DataEncoding = DataEncoding.STEIM1,
         format_version: int | None = None,
         verbose: int = 0,
@@ -2476,13 +2209,6 @@ class MS3TraceList:
                 For miniSEED format version 2, this must be a power of 2
                 between 128 and 65536. Common values are 512 and 4096.
                 Default is 4096.
-
-            max_reclen: Deprecated alias for ``max_record_length``;
-                accepted for backward compatibility and forwarded to
-                ``max_record_length``, which it is mutually exclusive with;
-                passing both raises :class:`TypeError`.  Passing it emits a
-                ``DeprecationWarning``. This alias will be removed in a
-                future release.
 
             encoding: Data encoding format for compression. Options include:
 
@@ -2550,10 +2276,6 @@ class MS3TraceList:
             - add_data(): Add time series data to the trace list
             - from_file(): Read miniSEED data from file
         """
-        max_record_length = _resolve_alias(
-            "max_record_length", max_record_length, "max_reclen", max_reclen, 4096
-        )
-
         if isinstance(filename, os.PathLike):
             filename = os.fspath(filename)
         elif not isinstance(filename, str):

@@ -4,7 +4,6 @@ import io
 import math
 import os
 import time
-import warnings
 import weakref
 
 import pytest
@@ -20,7 +19,7 @@ from pymseed import (
 )
 from pymseed.clib import buffer_pointer
 from pymseed.logging import clear_error_messages
-from tests.gc_helpers import assert_released, requires_refcounting
+from tests.gc_helpers import assert_released
 
 test_dir = os.path.abspath(os.path.dirname(__file__))
 test_path3 = os.path.join(test_dir, "data", "testdata-COLA-signal.mseed3")
@@ -431,26 +430,6 @@ def test_tracelist_add_data_rejects_ambiguous_time_arguments():
             starttime_seconds=1672531200.0,
         )
 
-    # A canonical name plus its own deprecated alias is ambiguous, not a
-    # silent override.
-    for canonical, alias in (
-        ({"starttime_str": "2023-01-01T00:00:00.000Z"}, {"start_time_str": "2023-01-02T00:00:00Z"}),
-        ({"starttime": 1672531200_000000000}, {"start_time": 1672617600_000000000}),
-        ({"starttime_seconds": 1672531200.0}, {"start_time_seconds": 1672617600.0}),
-    ):
-        with pytest.raises(ValueError, match="exactly one of"):
-            MS3TraceList().add_data(**common, **canonical, **alias)
-
-    # Mixing a canonical name with a *different* slot's alias is also rejected,
-    # and the message names the aliases it counted.
-    with pytest.raises(ValueError, match="deprecated start_time_str") as excinfo:
-        MS3TraceList().add_data(
-            **common,
-            starttime_str="2023-01-01T00:00:00.000Z",
-            start_time=1672531200_000000000,
-        )
-    assert "exactly one of" in str(excinfo.value)
-
     # Exactly one passed: each form still works.
     for tkw in (
         {"starttime_str": "2023-01-01T00:00:00.000Z"},
@@ -458,44 +437,6 @@ def test_tracelist_add_data_rejects_ambiguous_time_arguments():
         {"starttime_seconds": 1672531200.0},
     ):
         MS3TraceList().add_data(**common, **tkw)
-
-
-def test_tracelist_add_data_start_time_deprecated_aliases():
-    """`start_time_str`/`start_time`/`start_time_seconds` are deprecated aliases
-    for `starttime_str`/`starttime`/`starttime_seconds`. Keep accepting them for
-    backward compatibility, emit a DeprecationWarning naming the replacement, and
-    produce results identical to the canonical spelling."""
-    common = {
-        "sourceid": "FDSN:XX_STA__B_H_Z",
-        "data_samples": [1, 2, 3],
-        "sample_type": "i",
-        "sample_rate": 20.0,
-    }
-    pairs = (
-        ("starttime_str", "start_time_str", "2023-01-01T00:00:00.000Z"),
-        ("starttime", "start_time", 1672531200_000000000),
-        ("starttime_seconds", "start_time_seconds", 1672531200.0),
-    )
-
-    for canonical, alias, value in pairs:
-        # Canonical spelling: silent.
-        with warnings.catch_warnings():
-            warnings.simplefilter("error", DeprecationWarning)
-            new_list = MS3TraceList()
-            new_list.add_data(**common, **{canonical: value})
-
-        # Deprecated spelling: warns, and names both the alias and replacement.
-        with pytest.warns(DeprecationWarning, match=f"'{alias}' is a deprecated alias") as record:
-            old_list = MS3TraceList()
-            old_list.add_data(**common, **{alias: value})
-        assert f"use '{canonical}'" in str(record[0].message)
-
-        # Same resulting data either way.
-        new_seg = next(iter(new_list))[0]
-        old_seg = next(iter(old_list))[0]
-        assert new_seg.starttime == old_seg.starttime
-        assert new_seg.samplecnt == old_seg.samplecnt
-        assert new_seg.has_same_data(old_seg)
 
 
 def test_tracelist_unpack_recordlist_rejects_non_buffer():
@@ -610,73 +551,6 @@ def test_buffer_pointer_classifies_buffers_the_same_everywhere():
         (memoryview(bytearray(16)).cast("i"), 16),
     ):
         assert len(buffer_pointer(buffer, writable=True)) == nbytes
-
-
-def test_tracelist_generate_removed_packed_deprecated_alias():
-    """`generate(removed_packed=...)` is a typo'd alias for `remove_packed`.
-    Keep accepting it for backward compatibility but emit DeprecationWarning
-    eagerly and produce the same output as the canonical spelling."""
-
-    def _populated_list() -> MS3TraceList:
-        traces = MS3TraceList()
-        traces.add_data(
-            "FDSN:XX_STA__H_H_Z",
-            [1, 2, 3, 4, 5],
-            "i",
-            100.0,
-            starttime_str="2023-01-01T00:00:00.000Z",
-        )
-        return traces
-
-    # Canonical spelling: silent.
-    with warnings.catch_warnings():
-        warnings.simplefilter("error", DeprecationWarning)
-        records_new = list(_populated_list().generate(remove_packed=True))
-
-    # Deprecated spelling: DeprecationWarning raised eagerly at the
-    # generate() call (not lazily on first iteration), and the resulting
-    # records are byte-identical to the canonical spelling.
-    with pytest.warns(DeprecationWarning, match="removed_packed"):
-        gen = _populated_list().generate(removed_packed=True)
-    records_old = list(gen)
-    assert records_old == records_new
-
-
-@pytest.mark.filterwarnings("ignore::DeprecationWarning")
-def test_tracelist_deprecated_aliases_are_mutually_exclusive(tmp_path):
-    """An alias still works and warns, but supplying it alongside the name that
-    replaced it is an error rather than one of the two silently winning."""
-    traces = MS3TraceList(file_name=test_path3, unpack_data=True)
-
-    with pytest.raises(TypeError, match="got both 'max_record_length' and its deprecated alias"):
-        traces.generate(max_record_length=512, record_length=512)
-
-    with pytest.raises(TypeError, match="got both 'remove_packed' and its deprecated alias"):
-        traces.generate(remove_packed=True, removed_packed=True)
-
-    with pytest.raises(TypeError, match="got both 'max_record_length' and its deprecated alias"):
-        traces.to_file(tmp_path / "out.mseed", max_record_length=512, max_reclen=512)
-
-    with pytest.raises(TypeError, match="got both 'max_record_length' and its deprecated alias"):
-        traces.pack(lambda *args: None, max_record_length=512, record_length=512)
-
-    # Rejected before anything is written
-    assert not (tmp_path / "out.mseed").exists()
-
-
-def test_tracelist_deprecated_aliases_still_work_alone():
-    """Each alias on its own warns and produces what the canonical name does."""
-    traces = MS3TraceList(file_name=test_path3, unpack_data=True)
-
-    canonical = list(traces.generate(max_record_length=512, remove_packed=False))
-    with pytest.warns(DeprecationWarning, match="'record_length' is a deprecated alias"):
-        aliased = list(traces.generate(record_length=512, remove_packed=False))
-    assert aliased == canonical
-
-    # Omitting both keeps the documented 4096 default
-    with warnings.catch_warnings():
-        warnings.simplefilter("error", DeprecationWarning)
-        assert list(traces.generate()) == list(traces.generate(max_record_length=4096))
 
 
 def test_tracelist_close_releases_and_rejects_further_use():
@@ -1226,97 +1100,7 @@ def sine_generator(start_degree=0, yield_count=100, total=1000):
         generated += chunk_size
 
 
-# A global record buffer
-record_buffer = bytearray()
-
-
-def record_handler(record, handler_data):
-    """A callback function for MSTraceList.set_record_handler()
-    Adds the record to a global buffer for testing
-    """
-    global record_buffer
-    record_buffer.extend(bytes(record))
-
-
 test_pack3 = os.path.join(test_dir, "data", "packtest_sine2000.mseed3")
-
-
-@pytest.mark.filterwarnings("ignore::DeprecationWarning")
-def test_mstracelist_pack():
-    # Create a new MSTraceList object
-    traces = MS3TraceList()
-
-    total_samples = 0
-    total_records = 0
-    sample_rate = 40.0
-    starttime = timestr2nstime("2024-01-01T15:13:55.123456789Z")
-    format_version = 3
-    max_record_length = 512
-
-    for new_data in sine_generator(yield_count=100, total=2000):
-        traces.add_data(
-            sourceid="FDSN:XX_TEST__B_S_X",
-            data_samples=new_data,
-            sample_type="i",
-            sample_rate=sample_rate,
-            starttime=starttime,
-        )
-
-        starttime = sample_time(starttime, len(new_data), sample_rate)
-
-        (packed_samples, packed_records) = traces.pack(
-            record_handler,
-            flush_data=False,
-            format_version=format_version,
-            max_record_length=max_record_length,
-        )
-
-        total_samples += packed_samples
-        total_records += packed_records
-
-    (packed_samples, packed_records) = traces.pack(
-        record_handler,
-        format_version=format_version,
-        max_record_length=max_record_length,
-    )
-
-    total_samples += packed_samples
-    total_records += packed_records
-
-    assert total_samples == 2000
-    assert total_records == 5
-
-    with open(test_pack3, "rb") as f:
-        data_v3 = f.read()
-        assert record_buffer == data_v3
-
-
-@pytest.mark.filterwarnings("ignore::DeprecationWarning")
-def test_mstracelist_pack_reraises_handler_exception():
-    """A failing handler must not be reported as a successful pack()."""
-    # Enough samples for many 128-byte records
-    sine_500 = [int(math.sin(math.radians(x)) * 500) for x in range(0, 500)]
-
-    traces = MS3TraceList()
-    traces.add_data(
-        sourceid="FDSN:XX_TEST__B_S_X",
-        data_samples=sine_500,
-        sample_type="i",
-        sample_rate=100.0,
-        starttime_str="2024-01-01T00:00:00Z",
-    )
-
-    calls = []
-
-    def _failing_handler(record, data):
-        calls.append(record)
-        raise OSError("no space left on device")
-
-    with pytest.raises(OSError, match="no space left on device"):
-        traces.pack(_failing_handler, max_record_length=128)
-
-    # The records after the failure are not handed to the handler
-    assert len(calls) == 1
 
 
 def test_datasamples_view_holds_the_trace_list():
@@ -1559,87 +1343,6 @@ def test_take_np_datasamples_can_be_refilled_from_the_record_list():
 
     seg.unpack_recordlist()
     assert np.array_equal(seg.np_datasamples, expected)
-
-
-def _packed_tracelist():
-    """A trace list that has been through pack(), for the cycle tests below."""
-    traces = MS3TraceList()
-    traces.add_data(
-        sourceid="FDSN:XX_TEST__B_S_X",
-        data_samples=[1, 2, 3, 4, 5],
-        sample_type="i",
-        sample_rate=100.0,
-        starttime_str="2024-01-01T00:00:00Z",
-    )
-    traces.pack(lambda record, handler_data: None)
-
-    return traces
-
-
-@pytest.mark.filterwarnings("ignore::DeprecationWarning")
-def test_mstracelist_pack_leaves_the_trace_list_collectable():
-    """pack() must leave the trace list collectable.
-
-    A cycle through the callback cdata the collector cannot traverse would
-    strand it for the life of the process.
-    """
-    traces = _packed_tracelist()
-    reference = weakref.ref(traces)
-
-    del traces
-    assert_released(reference)
-
-
-@requires_refcounting
-@pytest.mark.filterwarnings("ignore::DeprecationWarning")
-def test_mstracelist_pack_leaves_no_reference_cycle():
-    """pack() must not tie the trace list into a reference cycle.
-
-    A cycle leaves mstl3_free() waiting for the cyclic collector, which in a
-    long-running rolling buffer defers every release.
-    """
-    traces = _packed_tracelist()
-    reference = weakref.ref(traces)
-
-    # Reference counting alone must release it, with the cyclic collector off
-    gc.collect()
-    gc.disable()
-    try:
-        del traces
-        assert reference() is None
-    finally:
-        gc.enable()
-
-
-@pytest.mark.filterwarnings("ignore::DeprecationWarning")
-def test_mstracelist_pack_does_not_retain_handler_data():
-    """pack() must not keep the handler or handler data alive after returning.
-
-    Handler data is typically the output file handle, which would then stay
-    open for as long as the trace list lives.
-    """
-
-    class HandlerData:
-        pass
-
-    traces = MS3TraceList()
-    traces.add_data(
-        sourceid="FDSN:XX_TEST__B_S_X",
-        data_samples=[1, 2, 3, 4, 5],
-        sample_type="i",
-        sample_rate=100.0,
-        starttime_str="2024-01-01T00:00:00Z",
-    )
-
-    handler_data = HandlerData()
-    reference = weakref.ref(handler_data)
-
-    traces.pack(lambda record, data: None, handler_data)
-
-    del handler_data
-    gc.collect()
-
-    assert reference() is None
 
 
 def test_mstracelist_generate_rollingbuffer():
