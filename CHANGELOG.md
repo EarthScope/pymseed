@@ -38,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `from_filelike()`; it never reached the parser.
 
 ### Changed
+- Update GitHub Actions to current versions and harden release/docs workflows.
 - `MS3RecordReader`, `MS3Record.from_buffer()`/`from_filelike()`/`parse()`/
   `parse_into()`/`generate()`/`to_file()`, and the matching `MS3TraceList`
   methods now take their options as keyword-only arguments.
