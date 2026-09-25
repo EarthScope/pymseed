@@ -3,13 +3,25 @@ Core utility functions for pymseed
 
 """
 
-from typing import Any
+import os
+from typing import Any, Literal
 
 from .clib import cdata_to_string, clibmseed, ffi
 from .definitions import SubSecond, TimeFormat
 
 # Maximum length of any time string libmseed produces with some margin
 _TIMESTRING_BUFSIZE = 50
+
+# Maximum chunk size accepted by the chunked file-like readers (1 GiB)
+MAX_CHUNK_SIZE = 1_073_741_824
+
+# memoryview (format, itemsize) for each libmseed sample type code
+SAMPLE_FORMATS: dict[str, tuple[Literal["i", "f", "d", "B"], int]] = {
+    "i": ("i", 4),
+    "f": ("f", 4),
+    "d": ("d", 8),
+    "t": ("B", 1),
+}
 
 
 def check_encoding(encoding: int) -> None:
@@ -22,6 +34,105 @@ def check_str(name: str, value: Any) -> None:
     """Raise TypeError if value is not a str, before it is encoded for C"""
     if not isinstance(value, str):
         raise TypeError(f"{name} must be str; got {type(value).__name__}")
+
+
+def check_path(name: str, value: Any) -> str:
+    """Return `value` as a str path, raising TypeError if it is neither a str
+    nor an os.PathLike"""
+    if isinstance(value, os.PathLike):
+        return os.fspath(value)
+    if isinstance(value, str):
+        return value
+    raise TypeError(f"{name} must be str or os.PathLike; got {type(value).__name__}")
+
+
+def check_filelike(fh: Any) -> None:
+    """Raise TypeError if fh has no callable .read(n) method"""
+    if not callable(getattr(fh, "read", None)):
+        raise TypeError(
+            "fh must be a file-like object exposing a callable .read(n) "
+            f"method; got {type(fh).__name__}"
+        )
+
+
+def check_chunk_size(chunk_size: int) -> None:
+    """Raise ValueError if chunk_size is not in (0, MAX_CHUNK_SIZE]"""
+    if chunk_size <= 0:
+        raise ValueError("chunk_size must be greater than 0")
+    elif chunk_size > MAX_CHUNK_SIZE:
+        raise ValueError("chunk_size must be less than 1 GiB")
+
+
+def check_format_version(version: int) -> None:
+    """Raise ValueError if version is not 2 or 3"""
+    if version not in (2, 3):
+        raise ValueError(f"Invalid miniSEED format version: {version}")
+
+
+def parse_flags(
+    *,
+    unpack_data: bool = False,
+    validate_crc: bool = False,
+    skip_not_data: bool = False,
+    record_list: bool = False,
+) -> int:
+    """Build an MSF_* parse-flags bitmask from the common reader options"""
+    flags = 0
+    if unpack_data:
+        flags |= clibmseed.MSF_UNPACKDATA
+    if skip_not_data:
+        flags |= clibmseed.MSF_SKIPNOTDATA
+    if validate_crc:
+        flags |= clibmseed.MSF_VALIDATECRC
+    if record_list:
+        flags |= clibmseed.MSF_RECORDLIST
+    return flags
+
+
+def require_numpy() -> Any:
+    """Import and return numpy, or raise if it is not installed."""
+    try:
+        import numpy as np
+    except ImportError:
+        raise ImportError(
+            "numpy is not installed. Install numpy or this package with [numpy] optional dependency"
+        ) from None
+
+    return np
+
+
+def numpy_dtype(np: Any, sampletype: str | None) -> Any:
+    """Translate a libmseed sample type code to a numpy dtype."""
+    nptype = {
+        "i": np.int32,
+        "f": np.float32,
+        "d": np.float64,
+        "t": "S1",  # 1-byte strings for text data
+    }
+
+    if sampletype not in nptype:
+        raise ValueError(f"Unknown sample type: {sampletype}")
+
+    return np.dtype(nptype[sampletype])
+
+
+def sample_preview(datasamples: Any) -> str:
+    """Render up to the first 5 data samples as a list, e.g. "[1, 2, 3, 4, 5, ...]" """
+    if len(datasamples) > 5:
+        first_samples = ", ".join(str(sample) for sample in list(datasamples[:5]))
+        return f"[{first_samples}, ...]"
+    return str(list(datasamples))
+
+
+def format_nstime(nstime: int, timeformat: TimeFormat, subsecond: SubSecond) -> str:
+    """Format a nanosecond timestamp, returning the sentinel strings "ERROR" or
+    "UNSET" for the corresponding libmseed sentinel values."""
+    if nstime == clibmseed.NSTERROR:
+        return "ERROR"
+    if nstime == clibmseed.NSTUNSET:
+        return "UNSET"
+
+    return nstime2timestr(nstime, timeformat, subsecond)
 
 
 def nstime2timestr(

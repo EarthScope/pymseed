@@ -19,7 +19,10 @@ from ._json import json_loads
 from .clib import buffer_pointer, clibmseed, ffi
 from .logging import clear_error_messages, ensure_thread_logging, get_error_messages
 from .mstracelist import MS3TraceList
-from .util import nstime2timestr, system_time
+from .util import check_chunk_size, check_filelike, check_path, nstime2timestr, system_time
+
+# Default read chunk size for the file and file-like record sources (10 MiB)
+DEFAULT_CHUNK_SIZE = 10_485_760
 
 # (buf_ptr, absolute_offset, record_length) for a detected record, or
 # (None, absolute_offset, reason) describing why a source stopped early
@@ -118,7 +121,7 @@ class _FileLikeSource:
     of the file-like object and is responsible for closing it.
     """
 
-    def __init__(self, fh: Any, chunk_size: int = 10_485_760) -> None:
+    def __init__(self, fh: Any, chunk_size: int = DEFAULT_CHUNK_SIZE) -> None:
         self._fh = fh
         self._chunk_size = chunk_size
 
@@ -135,8 +138,6 @@ class _FileLikeSource:
         file_offset = 0
         eof = False
         buf_base: Any = None
-        buf_generation = -1
-        generation = 0
 
         # Compact the consumed prefix of `buf` whenever it exceeds this many
         # bytes. The threshold trades two memmove costs against peak memory:
@@ -144,8 +145,8 @@ class _FileLikeSource:
         #   * larger  → higher peak memory, less frequent (but larger) memmoves
         # In steady state the total bytes moved is roughly conserved, so the
         # main lever is peak memory. Half the chunk size keeps peak memory
-        # near `1.5 * chunk_size` (vs. ~2x with the previous chunk_size
-        # threshold) while still compacting at most once per chunk read.
+        # near `1.5 * chunk_size` while still compacting at most once per
+        # chunk read.
         compact_threshold = max(1, self._chunk_size // 2)
 
         while True:
@@ -162,13 +163,8 @@ class _FileLikeSource:
                         buf_offset = 0
 
                     buf.extend(chunk)
-                    generation += 1
                 else:
                     eof = True
-
-            remaining = len(buf) - buf_offset
-            if remaining <= 0:
-                return
 
             # --- Drain records from current buffer ---
             while True:
@@ -176,9 +172,8 @@ class _FileLikeSource:
                 if remaining <= 0:
                     break
 
-                if buf_generation != generation:
+                if buf_base is None:
                     buf_base = ffi.from_buffer(buf)
-                    buf_generation = generation
 
                 record_ptr = buf_base + buf_offset
 
@@ -223,7 +218,9 @@ class _FileLikeSource:
 class _FileSource:
     """Iterate over detected records in a file using a sliding buffer."""
 
-    def __init__(self, filename: str | os.PathLike[str], chunk_size: int = 10_485_760) -> None:
+    def __init__(
+        self, filename: str | os.PathLike[str], chunk_size: int = DEFAULT_CHUNK_SIZE
+    ) -> None:
         self._filename = filename
         self._chunk_size = chunk_size
 
@@ -393,7 +390,7 @@ class MS3RecordValidator:
         cls,
         filename: str | os.PathLike[str],
         *,
-        chunk_size: int = 10_485_760,
+        chunk_size: int = DEFAULT_CHUNK_SIZE,
         **kwargs: Any,
     ) -> MS3RecordValidator:
         """Create a validator for a miniSEED file.
@@ -429,15 +426,8 @@ class MS3RecordValidator:
 
             errors, traces = MS3RecordValidator.from_file("data.mseed").validate()
         """
-        if isinstance(filename, os.PathLike):
-            filename = os.fspath(filename)
-        elif not isinstance(filename, str):
-            raise TypeError(f"filename must be str or os.PathLike; got {type(filename).__name__}")
-
-        if chunk_size <= 0:
-            raise ValueError("chunk_size must be greater than 0")
-        elif chunk_size > 1_073_741_824:
-            raise ValueError("chunk_size must be less than 1 GiB")
+        filename = check_path("filename", filename)
+        check_chunk_size(chunk_size)
 
         return cls(_FileSource(filename, chunk_size), **kwargs)
 
@@ -446,7 +436,7 @@ class MS3RecordValidator:
         cls,
         fh: Any,
         *,
-        chunk_size: int = 10_485_760,
+        chunk_size: int = DEFAULT_CHUNK_SIZE,
         **kwargs: Any,
     ) -> MS3RecordValidator:
         """Create a validator for a miniSEED file-like stream.
@@ -471,16 +461,8 @@ class MS3RecordValidator:
             errors, traces = MS3RecordValidator.from_filelike(fh).validate()
         """
         # Fail fast at the factory level if fh is not a file-like object.
-        if not callable(getattr(fh, "read", None)):
-            raise TypeError(
-                "fh must be a file-like object exposing a callable .read(n) "
-                f"method; got {type(fh).__name__}"
-            )
-
-        if chunk_size <= 0:
-            raise ValueError("chunk_size must be greater than 0")
-        elif chunk_size > 1_073_741_824:
-            raise ValueError("chunk_size must be less than 1 GiB")
+        check_filelike(fh)
+        check_chunk_size(chunk_size)
 
         return cls(_FileLikeSource(fh, chunk_size), **kwargs)
 
@@ -520,6 +502,25 @@ class MS3RecordValidator:
         errors: list[ValidationError] = []
         tracelist = MS3TraceList() if self._return_trace_list else None
 
+        def record_error(
+            offset: int,
+            message: str,
+            *,
+            sourceid: str | None = None,
+            starttime: int | None = None,
+            reclen: int | None = None,
+        ) -> None:
+            """Append a ValidationError."""
+            errors.append(
+                ValidationError(
+                    offset=offset,
+                    message=message,
+                    sourceid=sourceid,
+                    starttime=starttime,
+                    reclen=reclen,
+                )
+            )
+
         msr_ptr = ffi.new("MS3Record **")
 
         # Latest record end time considered acceptable.  Unused (and the check
@@ -541,12 +542,7 @@ class MS3RecordValidator:
                 # A source signals no whole record with a reason string instead
                 # of a record length (and buf_ptr=None to match).
                 if isinstance(info, str):
-                    errors.append(
-                        ValidationError(
-                            offset=offset,
-                            message=info,
-                        )
-                    )
+                    record_error(offset, info)
                     break
 
                 record_length = info
@@ -570,13 +566,7 @@ class MS3RecordValidator:
                         error_messages = [f"Parse error: {status}"]
 
                     for msg in error_messages:
-                        errors.append(
-                            ValidationError(
-                                offset=offset,
-                                message=msg,
-                                reclen=record_length,
-                            )
-                        )
+                        record_error(offset, msg, reclen=record_length)
                     continue
 
                 # Read metadata directly from the C struct rather than wrapping
@@ -590,18 +580,14 @@ class MS3RecordValidator:
                 sourceid = ffi.string(msr.sid).decode("utf-8")
 
                 # Check for parse warnings (CRC validation, etc.)
-                parse_messages = get_error_messages()
-                if parse_messages:
-                    for msg in parse_messages:
-                        errors.append(
-                            ValidationError(
-                                offset=offset,
-                                message=msg,
-                                sourceid=sourceid,
-                                starttime=msr.starttime,
-                                reclen=record_length,
-                            )
-                        )
+                for msg in get_error_messages():
+                    record_error(
+                        offset,
+                        msg,
+                        sourceid=sourceid,
+                        starttime=msr.starttime,
+                        reclen=record_length,
+                    )
 
                 # Step 3: Optionally check for data beyond the system time
                 if tolerance_ns is not None:
@@ -614,19 +600,15 @@ class MS3RecordValidator:
                         # stale, which would flag legitimately recent data.
                         future_cutoff = system_time() + tolerance_ns
                         if endtime > future_cutoff:
-                            errors.append(
-                                ValidationError(
-                                    offset=offset,
-                                    message=(
-                                        "Record contains future data: end time "
-                                        f"{_timestr(endtime)} is beyond the system time "
-                                        "by more than the tolerance of "
-                                        f"{self._future_data_tolerance} seconds"
-                                    ),
-                                    sourceid=sourceid,
-                                    starttime=msr.starttime,
-                                    reclen=record_length,
-                                )
+                            record_error(
+                                offset,
+                                "Record contains future data: end time "
+                                f"{_timestr(endtime)} is beyond the system time "
+                                "by more than the tolerance of "
+                                f"{self._future_data_tolerance} seconds",
+                                sourceid=sourceid,
+                                starttime=msr.starttime,
+                                reclen=record_length,
                             )
 
                 # Step 4: Optionally validate extra headers
@@ -637,18 +619,12 @@ class MS3RecordValidator:
                         # for every record that carries extra headers, drowning
                         # real validation results in identical noise.
                         if not _eh_load_warning_emitted:
-                            errors.append(
-                                ValidationError(
-                                    offset=offset,
-                                    message=(
-                                        "Extra headers validation skipped for "
-                                        "all records: "
-                                        f"{_eh_load_error}"
-                                    ),
-                                    sourceid=sourceid,
-                                    starttime=msr.starttime,
-                                    reclen=record_length,
-                                )
+                            record_error(
+                                offset,
+                                f"Extra headers validation skipped for all records: {_eh_load_error}",
+                                sourceid=sourceid,
+                                starttime=msr.starttime,
+                                reclen=record_length,
                             )
                             _eh_load_warning_emitted = True
                     else:
@@ -660,24 +636,20 @@ class MS3RecordValidator:
                             )
                             if extra_str:
                                 for ve in _eh_validator.iter_errors(json_loads(extra_str)):
-                                    errors.append(
-                                        ValidationError(
-                                            offset=offset,
-                                            message=f"Extra headers validation error: {ve.message} at {ve.instance_path}",
-                                            sourceid=sourceid,
-                                            starttime=msr.starttime,
-                                            reclen=record_length,
-                                        )
+                                    record_error(
+                                        offset,
+                                        f"Extra headers validation error: {ve.message} at {ve.instance_path}",
+                                        sourceid=sourceid,
+                                        starttime=msr.starttime,
+                                        reclen=record_length,
                                     )
                         except Exception as e:
-                            errors.append(
-                                ValidationError(
-                                    offset=offset,
-                                    message=f"Extra headers validation error: {e}",
-                                    sourceid=sourceid,
-                                    starttime=msr.starttime,
-                                    reclen=record_length,
-                                )
+                            record_error(
+                                offset,
+                                f"Extra headers validation error: {e}",
+                                sourceid=sourceid,
+                                starttime=msr.starttime,
+                                reclen=record_length,
                             )
 
                 # Step 5: Add record to trace list
@@ -693,53 +665,34 @@ class MS3RecordValidator:
                     )
 
                     if segptr == ffi.NULL:
-                        errors.append(
-                            ValidationError(
-                                offset=offset,
-                                message="Failed to add record to trace list",
-                                sourceid=sourceid,
-                                starttime=msr.starttime,
-                                reclen=record_length,
-                            )
+                        record_error(
+                            offset,
+                            "Failed to add record to trace list",
+                            sourceid=sourceid,
+                            starttime=msr.starttime,
+                            reclen=record_length,
                         )
                         continue
 
-                # Step 6: Optionally decompress data samples to detect decoding errors
+                # Step 6: Optionally decompress data samples to detect decoding errors.
+                # Unpack errors and warnings (e.g. decoding integrity checks, historically
+                # often reported as warnings rather than errors) are both recorded here.
                 if self._unpack_data:
                     clear_error_messages()
                     status = clibmseed.msr3_unpack_data(msr, self._verbose)
 
                     error_messages = get_error_messages()
+                    if status < 0 and not error_messages:
+                        error_messages = [f"Data unpack error: {status}"]
 
-                    # Check for unpack errors
-                    if status < 0:
-                        # Add a default error message if no messages are available
-                        if not error_messages:
-                            error_messages = [f"Data unpack error: {status}"]
-
-                        for msg in error_messages:
-                            errors.append(
-                                ValidationError(
-                                    offset=offset,
-                                    message=msg,
-                                    sourceid=sourceid,
-                                    starttime=msr.starttime,
-                                    reclen=record_length,
-                                )
-                            )
-                    # Check for unpack warning messages, e.g. decoding integrity checks
-                    # (historically common for these to be warnings, not errors)
-                    elif error_messages:
-                        for msg in error_messages:
-                            errors.append(
-                                ValidationError(
-                                    offset=offset,
-                                    message=msg,
-                                    sourceid=sourceid,
-                                    starttime=msr.starttime,
-                                    reclen=record_length,
-                                )
-                            )
+                    for msg in error_messages:
+                        record_error(
+                            offset,
+                            msg,
+                            sourceid=sourceid,
+                            starttime=msr.starttime,
+                            reclen=record_length,
+                        )
 
         finally:
             if msr_ptr[0] != ffi.NULL:

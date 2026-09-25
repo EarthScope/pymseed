@@ -8,15 +8,13 @@ from __future__ import annotations
 import os
 import sys
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from jsonschema_rs import ValidationError as JsonSchemaValidationError
 
     from .msrecord_reader import MS3RecordReader
-
-from pymseed._json import json_dumps_minified, json_loads
 
 from ._extra_headers_jsonschema import (
     _IMPORT_ERROR_MESSAGE,
@@ -25,12 +23,49 @@ from ._extra_headers_jsonschema import (
     load_extra_headers_validator,
     validator_for_extra_headers_schema,
 )
+from ._json import json_dumps_minified, json_loads
 from .clib import buffer_pointer, clibmseed, ffi
 from .definitions import SubSecond, TimeFormat
 from .exceptions import MiniSEEDError
 from .logging import ensure_thread_logging
 from .selections import build_selections
-from .util import check_encoding, check_str, encoding_string, nstime2timestr, timestr2nstime
+from .util import (
+    SAMPLE_FORMATS,
+    check_chunk_size,
+    check_encoding,
+    check_filelike,
+    check_format_version,
+    check_path,
+    check_str,
+    encoding_string,
+    format_nstime,
+    numpy_dtype,
+    parse_flags,
+    require_numpy,
+    sample_preview,
+    timestr2nstime,
+)
+
+# Descriptive name for each libmseed sample type code, used by sampletype_str()
+_SAMPLETYPE_NAMES = {"i": "int32", "f": "float32", "d": "float64", "t": "text"}
+
+# CFFI type for each scalar extra-header value type code, used by get_extra_header();
+# "s" (string) is handled separately since its buffer size depends on the record.
+_EXTRA_HEADER_CTYPES = {
+    ord("u"): "uint64_t *",
+    ord("i"): "int64_t *",
+    ord("n"): "double *",
+    ord("b"): "int *",
+}
+
+# (C type, item size, Python conversion) for each numeric sample type code,
+# used by MS3Record.with_datasamples(). The C type doubles as the memoryview
+# format code ("i", "f", "d"), which is what pymseed's sample type codes are.
+_NUMERIC_SAMPLE_SPECS: dict[str, tuple[str, int, Any]] = {
+    "i": ("int32_t", 4, int),
+    "f": ("float", 4, float),
+    "d": ("double", 8, float),
+}
 
 
 def _parse_error_message(status: int) -> str:
@@ -58,6 +93,20 @@ def _truncated_source_message(source: str, remaining: int, needed: int = 0) -> s
 
     plural = "" if remaining == 1 else "s"
     return f"Incomplete miniSEED record at end of {source}, {remaining} unparsed byte{plural}"
+
+
+def _select_record(selections_ptr: Any, msr: Any, unpack_data: bool, verbose: int) -> bool:
+    """Test `msr` against an active selection, unpacking its data if selected
+    and requested.  Returns whether the record matched."""
+    if clibmseed.msr3_matchselect(selections_ptr, msr, ffi.NULL) == ffi.NULL:
+        return False
+
+    if unpack_data and msr.samplecnt > 0:
+        unpacked = clibmseed.msr3_unpack_data(msr, verbose)
+        if unpacked < 0:
+            raise MiniSEEDError(unpacked, "Error unpacking data samples")
+
+    return True
 
 
 class _SharedRecordStruct:
@@ -249,14 +298,7 @@ class MS3Record:
                 pass
 
     def __repr__(self) -> str:
-        sample_preview = "[]"
-        if self._msr.numsamples > 0:
-            if len(self.datasamples) > 5:
-                # Create array representation with ellipsis inside: [1,2,3,4,5,...]
-                first_samples = ", ".join(str(sample) for sample in list(self.datasamples[:5]))
-                sample_preview = f"[{first_samples}, ...]"
-            else:
-                sample_preview = str(list(self.datasamples))
+        preview = sample_preview(self.datasamples) if self._msr.numsamples > 0 else "[]"
 
         return (
             f"MS3Record(sourceid: {self.sourceid}\n"
@@ -273,7 +315,7 @@ class MS3Record:
             f"        datalength: {self._msr.datalength}\n"
             f"             extra: {self.extra}\n"
             f"        numsamples: {self._msr.numsamples}\n"
-            f"       datasamples: {sample_preview}\n"
+            f"       datasamples: {preview}\n"
             f"          datasize: {self._msr.datasize}\n"
             f"        sampletype: {self.sampletype} => {self.sampletype_str()}\n"
             f"    record pointer: {self._msr})"
@@ -360,10 +402,10 @@ class MS3Record:
 
     def swapflag_dict(self) -> dict[str, bool]:
         """Return swap flags as dictionary"""
-        swapflag = {}
-        swapflag["header_swapped"] = bool(self._msr.swapflag & clibmseed.MSSWAP_HEADER)
-        swapflag["payload_swapped"] = bool(self._msr.swapflag & clibmseed.MSSWAP_PAYLOAD)
-        return swapflag
+        return {
+            "header_swapped": bool(self._msr.swapflag & clibmseed.MSSWAP_HEADER),
+            "payload_swapped": bool(self._msr.swapflag & clibmseed.MSSWAP_PAYLOAD),
+        }
 
     @property
     def sourceid(self) -> str:
@@ -411,8 +453,7 @@ class MS3Record:
     @formatversion.setter
     def formatversion(self, value: int) -> None:
         """Set format version"""
-        if value not in [2, 3]:
-            raise ValueError(f"Invalid miniSEED format version: {value}")
+        check_format_version(value)
         self._msr.formatversion = value
 
     @property
@@ -517,12 +558,7 @@ class MS3Record:
         underlying nanosecond timestamp is the corresponding libmseed
         sentinel.
         """
-        if self._msr.starttime == clibmseed.NSTERROR:
-            return "ERROR"
-        if self._msr.starttime == clibmseed.NSTUNSET:
-            return "UNSET"
-
-        return nstime2timestr(self._msr.starttime, timeformat, subsecond)
+        return format_nstime(self._msr.starttime, timeformat, subsecond)
 
     def set_starttime_str(self, value: str) -> None:
         """Set start time from formatted date-time string
@@ -773,20 +809,17 @@ class MS3Record:
             ...                  }
             ...                }}'''
         """
+        c_value = ffi.NULL
         if value:
             # Minify the JSON string to ensure valid JSON and minimize size
             minified = json_dumps_minified(json_loads(value))
             c_value = ffi.new("char[]", minified)
 
-            status = clibmseed.mseh_replace(self._msr, c_value)
+        status = clibmseed.mseh_replace(self._msr, c_value)
 
-            if status < 0:
-                raise ValueError(f"Error setting extra headers: {status}")
-        else:
-            status = clibmseed.mseh_replace(self._msr, ffi.NULL)
-
-            if status < 0:
-                raise ValueError(f"Error removing extra headers: {status}")
+        if status < 0:
+            action = "setting" if value else "removing"
+            raise ValueError(f"Error {action} extra headers: {status}")
 
     def get_extra_header(self, ptr: str) -> bool | int | float | str | None:
         """Get an extra header value specified by JSON Pointer
@@ -841,66 +874,50 @@ class MS3Record:
         c_ptr = ffi.new("char[]", ptr.encode("utf-8"))
 
         parsestate = ffi.new("LM_PARSED_JSON **", None)
-        detected_type = clibmseed.mseh_get_ptr_type(self._msr, c_ptr, parsestate)
+        try:
+            detected_type = clibmseed.mseh_get_ptr_type(self._msr, c_ptr, parsestate)
 
-        if detected_type < 0:
+            if detected_type < 0:
+                raise ValueError(f"Error getting extra header type at {ptr}: {detected_type}")
+
+            if detected_type == 0:
+                return None
+
+            max_string_length = 0
+
+            if detected_type == ord("s"):
+                type_code = b"s"
+                # A decoded string is strictly shorter than the surrounding JSON
+                # (it loses at least the enclosing quotes and the property name),
+                # so the full extras length + 1 is always a sufficient buffer.
+                max_string_length = self._msr.extralength + 1
+                value = ffi.new("char[]", max_string_length)
+            elif detected_type in _EXTRA_HEADER_CTYPES:
+                type_code = bytes([detected_type])
+                value = ffi.new(_EXTRA_HEADER_CTYPES[detected_type], None)
+            else:
+                raise ValueError(f"Unsupported extra header type at {ptr}: {detected_type}")
+
+            status = clibmseed.mseh_get_ptr_r(
+                self._msr, c_ptr, value, type_code, max_string_length, parsestate
+            )
+        finally:
             clibmseed.mseh_free_parsestate(parsestate)
-            raise ValueError(f"Error getting extra header type at {ptr}: {detected_type}")
-
-        if detected_type == 0:
-            clibmseed.mseh_free_parsestate(parsestate)
-            return None
-
-        max_string_length = 0
-
-        if detected_type == ord("u"):
-            type = b"u"
-            value = ffi.new("uint64_t *", None)
-        elif detected_type == ord("i"):
-            type = b"i"
-            value = ffi.new("int64_t *", None)
-        elif detected_type == ord("n"):
-            type = b"n"
-            value = ffi.new("double *", None)
-        elif detected_type == ord("s"):
-            type = b"s"
-            # A decoded string is strictly shorter than the surrounding JSON
-            # (it loses at least the enclosing quotes and the property name),
-            # so the full extras length + 1 is always a sufficient buffer.
-            max_string_length = self._msr.extralength + 1
-            value = ffi.new("char[]", max_string_length)
-        elif detected_type == ord("b"):
-            type = b"b"
-            value = ffi.new("int *", None)
-        else:
-            clibmseed.mseh_free_parsestate(parsestate)
-            raise ValueError(f"Unsupported extra header type at {ptr}: {detected_type}")
-
-        status = clibmseed.mseh_get_ptr_r(
-            self._msr, c_ptr, value, type, max_string_length, parsestate
-        )
-
-        clibmseed.mseh_free_parsestate(parsestate)
 
         if status < 0:
             raise ValueError(f"Error getting extra header at {ptr}: {status}")
         elif status > 0:
             raise ValueError(f"Extra header at {ptr} is missing or of a different type: {status}")
 
-        if type == b"u":
+        if type_code == b"u" or type_code == b"i":
             return int(value[0])
-        elif type == b"i":
-            return int(value[0])
-        elif type == b"n":
+        elif type_code == b"n":
             return float(value[0])
-        elif type == b"s":
+        elif type_code == b"s":
             string = ffi.string(value).decode("utf-8")
             return string if string else None
-        elif type == b"b":
+        else:  # b"b"
             return bool(value[0])
-        else:
-            # We should never get here because types are filtered above
-            raise ValueError(f"Unknown extra header type at {ptr}: {type!r}")
 
     def set_extra_header(self, ptr: str, value: str | int | float | bool) -> None:
         """Set an extra header value specified by JSON Pointer
@@ -1177,25 +1194,13 @@ class MS3Record:
             return memoryview(b"")  # Empty memoryview
 
         sampletype = self.sampletype
-
-        if sampletype == "i":
-            ptr = ffi.cast("int32_t *", self._msr.datasamples)
-            buffer = ffi.buffer(ptr, self._msr.numsamples * ffi.sizeof("int32_t"))
-            return memoryview(buffer).cast("i")
-        elif sampletype == "f":
-            ptr = ffi.cast("float *", self._msr.datasamples)
-            buffer = ffi.buffer(ptr, self._msr.numsamples * ffi.sizeof("float"))
-            return memoryview(buffer).cast("f")
-        elif sampletype == "d":
-            ptr = ffi.cast("double *", self._msr.datasamples)
-            buffer = ffi.buffer(ptr, self._msr.numsamples * ffi.sizeof("double"))
-            return memoryview(buffer).cast("d")
-        elif sampletype == "t":
-            ptr = ffi.cast("char *", self._msr.datasamples)
-            buffer = ffi.buffer(ptr, self._msr.numsamples)
-            return memoryview(buffer).cast("B")
-        else:
+        if sampletype not in SAMPLE_FORMATS:
             raise ValueError(f"Unknown sample type: {sampletype}")
+        fmt, itemsize = SAMPLE_FORMATS[sampletype]
+
+        ptr = ffi.cast("char *", self._msr.datasamples)
+        buffer = ffi.buffer(ptr, self._msr.numsamples * itemsize)
+        return memoryview(buffer).cast(fmt)
 
     @property
     def np_datasamples(self) -> Any:
@@ -1243,31 +1248,15 @@ class MS3Record:
             numsamples: Number of available samples
             sampletype: Type indicator ('i', 'f', 'd', 't')
         """
-        try:
-            import numpy as np
-        except ImportError:
-            raise ImportError(
-                "numpy is not installed. Install numpy or this package with [numpy] optional dependency"
-            ) from None
+        np = require_numpy()
 
         if self._msr.numsamples <= 0:
             return np.array([])  # Empty array
 
-        sampletype = self.sampletype
-
-        # Translate libmseed sample type to numpy type
-        nptype: dict[str, Any] = {
-            "i": np.int32,
-            "f": np.float32,
-            "d": np.float64,
-            "t": "S1",  # 1-byte strings for text data
-        }
-
-        if sampletype not in nptype:
-            raise ValueError(f"Unknown sample type: {sampletype}")
+        dtype = numpy_dtype(np, self.sampletype)
 
         # Create numpy array view from CFFI buffer
-        return np.frombuffer(self.datasamples, dtype=nptype[sampletype])
+        return np.frombuffer(self.datasamples, dtype=dtype)
 
     @property
     def datasize(self) -> int:
@@ -1302,16 +1291,7 @@ class MS3Record:
     def sampletype_str(self) -> str | None:
         """Return sample type as descriptive string"""
         sampletype = self.sampletype
-        if sampletype == "i":
-            return "int32"
-        elif sampletype == "f":
-            return "float32"
-        elif sampletype == "d":
-            return "float64"
-        elif sampletype == "t":
-            return "text"
-        else:
-            return None
+        return None if sampletype is None else _SAMPLETYPE_NAMES.get(sampletype)
 
     @property
     def endtime(self) -> int:
@@ -1346,12 +1326,7 @@ class MS3Record:
         underlying nanosecond timestamp is the corresponding libmseed
         sentinel.
         """
-        if self.endtime == clibmseed.NSTERROR:
-            return "ERROR"
-        if self.endtime == clibmseed.NSTUNSET:
-            return "UNSET"
-
-        return nstime2timestr(self.endtime, timeformat, subsecond)
+        return format_nstime(self.endtime, timeformat, subsecond)
 
     def encoding_str(self) -> str:
         """Human-readable description of the data encoding format.
@@ -1505,58 +1480,27 @@ class MS3Record:
 
         try:
             # Set temporary data directly (inlined implementation)
-            if sample_type == "i":
+            if sample_type in _NUMERIC_SAMPLE_SPECS:
+                ctype, itemsize, convert = _NUMERIC_SAMPLE_SPECS[sample_type]
                 try:
                     mv = memoryview(data_samples)
-                    if mv.format == "i" and mv.itemsize == 4:
+                    if mv.format == sample_type and mv.itemsize == itemsize:
                         # Compatible format - safe to zero-copy. The export must stay
                         # bound for the whole context to keep the source pinned.
                         buffer_export = ffi.from_buffer(data_samples)
-                        sample_array = ffi.cast("int32_t *", buffer_export)
+                        sample_array = ffi.cast(f"{ctype} *", buffer_export)
                     else:
                         raise ValueError("Incompatible buffer format")
                 except (TypeError, ValueError, BufferError):
                     # Not a buffer, or one that cannot be shared as it is
                     # (incompatible format, not contiguous) - need conversion
-                    sample_array = ffi.new("int32_t[]", [int(sample) for sample in data_samples])
+                    sample_array = ffi.new(
+                        f"{ctype}[]", [convert(sample) for sample in data_samples]
+                    )
 
                 self._msr.datasamples = sample_array
                 self._msr.numsamples = len(data_samples)
-                self._msr.datasize = len(data_samples) * 4
-            elif sample_type == "f":
-                try:
-                    mv = memoryview(data_samples)
-                    if mv.format == "f" and mv.itemsize == 4:
-                        # Compatible format - safe to zero-copy, export pinned as above
-                        buffer_export = ffi.from_buffer(data_samples)
-                        sample_array = ffi.cast("float *", buffer_export)
-                    else:
-                        raise ValueError("Incompatible buffer format")
-                except (TypeError, ValueError, BufferError):
-                    # Not a buffer, or one that cannot be shared as it is
-                    # (incompatible format, not contiguous) - need conversion
-                    sample_array = ffi.new("float[]", [float(sample) for sample in data_samples])
-
-                self._msr.datasamples = sample_array
-                self._msr.numsamples = len(data_samples)
-                self._msr.datasize = len(data_samples) * 4
-            elif sample_type == "d":
-                try:
-                    mv = memoryview(data_samples)
-                    if mv.format == "d" and mv.itemsize == 8:
-                        # Compatible format - safe to zero-copy, export pinned as above
-                        buffer_export = ffi.from_buffer(data_samples)
-                        sample_array = ffi.cast("double *", buffer_export)
-                    else:
-                        raise ValueError("Incompatible buffer format")
-                except (TypeError, ValueError, BufferError):
-                    # Not a buffer, or one that cannot be shared as it is
-                    # (incompatible format, not contiguous) - need conversion
-                    sample_array = ffi.new("double[]", [float(sample) for sample in data_samples])
-
-                self._msr.datasamples = sample_array
-                self._msr.numsamples = len(data_samples)
-                self._msr.datasize = len(data_samples) * 8
+                self._msr.datasize = len(data_samples) * itemsize
             elif sample_type == "t":
                 # Convert everything to bytes for simplicity
                 if isinstance(data_samples, str):
@@ -1678,11 +1622,19 @@ class MS3Record:
         record_pp = ffi.new("char **")
         reclen_p = ffi.new("int32_t *")
 
-        def _pack() -> Iterator[bytes]:
+        # Use the provided data samples and type if given, otherwise pack the
+        # record's existing data.
+        data_context = (
+            self.with_datasamples(data_samples, sample_type)
+            if data_samples is not None and sample_type is not None
+            else nullcontext()
+        )
+
+        with data_context:
             packer = clibmseed.msr3_pack_init(self._msr, flags, verbose)
 
             if not packer:
-                raise MiniSEEDError(-1, "Error initializing packer")
+                raise MiniSEEDError(clibmseed.MS_GENERROR, "Error initializing packer")
 
             try:
                 while True:
@@ -1699,14 +1651,6 @@ class MS3Record:
                 pkr_pp = ffi.new("MS3RecordPacker **")
                 pkr_pp[0] = packer
                 clibmseed.msr3_pack_free(pkr_pp, ffi.NULL)
-
-        # Pack miniSEED records using data samples and type if provided
-        if data_samples is not None and sample_type is not None:
-            with self.with_datasamples(data_samples, sample_type):
-                yield from _pack()
-        # Otherwise, pack miniSEED records using the record's existing data
-        else:
-            yield from _pack()
 
     def to_file(
         self,
@@ -1738,10 +1682,7 @@ class MS3Record:
             generate(): For creating record
             MS3Record: Full record documentation
         """
-        if isinstance(filename, os.PathLike):
-            filename = os.fspath(filename)
-        elif not isinstance(filename, str):
-            raise TypeError(f"filename must be str or os.PathLike; got {type(filename).__name__}")
+        filename = check_path("filename", filename)
 
         ensure_thread_logging()
 
@@ -1971,15 +1912,13 @@ class MS3Record:
 
         # Defer per-record data unpacking past the selection match when filtering
         # is active, so cycles are not spent decoding records that are rejected.
-        parse_flags = 0
-        if unpack_data and not has_selections:
-            parse_flags |= clibmseed.MSF_UNPACKDATA
-        if validate_crc:
-            parse_flags |= clibmseed.MSF_VALIDATECRC
+        flags = parse_flags(
+            unpack_data=unpack_data and not has_selections, validate_crc=validate_crc
+        )
 
         # The buffer is all the data there is, which is what allows libmseed to
         # size a version 2 record carrying no Blockette 1000.
-        parse_flags |= clibmseed.MSF_ATENDOFFILE
+        flags |= clibmseed.MSF_ATENDOFFILE
 
         parsed_any = False
 
@@ -2002,7 +1941,7 @@ class MS3Record:
                     buf_ptr + offset,
                     remaining,
                     msr_ptr,
-                    parse_flags,
+                    flags,
                     verbose,
                 )
 
@@ -2010,17 +1949,10 @@ class MS3Record:
                     offset += msr_ptr[0].reclen
                     parsed_any = True
 
-                    if has_selections:
-                        if (
-                            clibmseed.msr3_matchselect(selections_ptr, msr_ptr[0], ffi.NULL)
-                            == ffi.NULL
-                        ):
-                            continue
-
-                        if unpack_data and msr_ptr[0].samplecnt > 0:
-                            unpacked = clibmseed.msr3_unpack_data(msr_ptr[0], verbose)
-                            if unpacked < 0:
-                                raise MiniSEEDError(unpacked, "Error unpacking data samples")
+                    if has_selections and not _select_record(
+                        selections_ptr, msr_ptr[0], unpack_data, verbose
+                    ):
+                        continue
 
                     yield cls(recordptr=msr_ptr[0], owner=struct)
                 elif status > 0:
@@ -2129,16 +2061,8 @@ class MS3Record:
             from_buffer(): Iterate over records in a complete in-memory buffer
             from_file(): Iterate over records in a file
         """
-        if not callable(getattr(fh, "read", None)):
-            raise TypeError(
-                "fh must be a file-like object exposing a callable .read(n) "
-                f"method; got {type(fh).__name__}"
-            )
-
-        if chunk_size <= 0:
-            raise ValueError("chunk_size must be greater than 0")
-        elif chunk_size > 1_073_741_824:
-            raise ValueError("chunk_size must be less than 1 GiB")
+        check_filelike(fh)
+        check_chunk_size(chunk_size)
 
         return cls._iter_filelike(
             fh, chunk_size, unpack_data, sourceid, starttime, endtime, validate_crc, verbose
@@ -2171,11 +2095,9 @@ class MS3Record:
 
         # Defer per-record data unpacking past the selection match when filtering
         # is active, so cycles are not spent decoding records that are rejected.
-        parse_flags = 0
-        if unpack_data and not has_selections:
-            parse_flags |= clibmseed.MSF_UNPACKDATA
-        if validate_crc:
-            parse_flags |= clibmseed.MSF_VALIDATECRC
+        flags = parse_flags(
+            unpack_data=unpack_data and not has_selections, validate_crc=validate_crc
+        )
 
         buf = bytearray()
         offset = 0
@@ -2195,7 +2117,7 @@ class MS3Record:
                         buf_ptr + offset,
                         remaining,
                         msr_ptr,
-                        parse_flags | (clibmseed.MSF_ATENDOFFILE if eof else 0),
+                        flags | (clibmseed.MSF_ATENDOFFILE if eof else 0),
                         verbose,
                     )
                     buf_ptr = None  # release buffer export before any modification
@@ -2205,16 +2127,10 @@ class MS3Record:
                         offset += msr_ptr[0].reclen
                         parsed_any = True
 
-                        if has_selections:
-                            if (
-                                clibmseed.msr3_matchselect(selections_ptr, msr_ptr[0], ffi.NULL)
-                                == ffi.NULL
-                            ):
-                                continue
-                            if unpack_data and msr_ptr[0].samplecnt > 0:
-                                unpacked = clibmseed.msr3_unpack_data(msr_ptr[0], verbose)
-                                if unpacked < 0:
-                                    raise MiniSEEDError(unpacked, "Error unpacking data samples")
+                        if has_selections and not _select_record(
+                            selections_ptr, msr_ptr[0], unpack_data, verbose
+                        ):
+                            continue
 
                         yield cls(recordptr=msr_ptr[0], owner=struct)
                         continue
@@ -2310,10 +2226,7 @@ class MS3Record:
             ...     print(msr)
         """
         if isinstance(source, (str, os.PathLike, int)):
-            yield from cls.from_file(
-                os.fspath(source) if isinstance(source, os.PathLike) else source,
-                **kwargs,
-            )
+            yield from cls.from_file(source, **kwargs)
         elif hasattr(source, "read"):
             yield from cls.from_filelike(source, **kwargs)
         else:
@@ -2380,17 +2293,11 @@ class MS3Record:
         buf_ptr = buffer_pointer(buffer)
         msr_ptr = ffi.new("MS3Record **")
 
-        parse_flags = 0
-        if unpack_data:
-            parse_flags |= clibmseed.MSF_UNPACKDATA
-        if validate_crc:
-            parse_flags |= clibmseed.MSF_VALIDATECRC
-
         status = clibmseed.msr3_parse(
             buf_ptr,
             len(buf_ptr),
             msr_ptr,
-            parse_flags,
+            parse_flags(unpack_data=unpack_data, validate_crc=validate_crc),
             verbose,
         )
 
@@ -2472,17 +2379,11 @@ class MS3Record:
         msr_ptr = ffi.new("MS3Record **")
         msr_ptr[0] = self._msr
 
-        parse_flags = 0
-        if unpack_data:
-            parse_flags |= clibmseed.MSF_UNPACKDATA
-        if validate_crc:
-            parse_flags |= clibmseed.MSF_VALIDATECRC
-
         status = clibmseed.msr3_parse(
             buf_ptr,
             len(buf_ptr),
             msr_ptr,
-            parse_flags,
+            parse_flags(unpack_data=unpack_data, validate_crc=validate_crc),
             verbose,
         )
 

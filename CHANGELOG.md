@@ -14,6 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Restructure validator and add_data branching for type narrowing.
+- Consolidate duplicated argument checks and time formatting into util helpers.
+- Simplify MS3Record sample handling, extra header access and packing.
+- Deduplicate trace list container, repr and file-like reading code.
+- Simplify validator record sources and error accumulation.
+- Remove dead code, stale comments and obsolete lint ignores.
 
 ### Removed deprecated functionality
 - `MS3Record.pack()` and `MS3TraceList.pack()`; use `generate()`.

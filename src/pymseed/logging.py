@@ -33,9 +33,6 @@ from .util import check_str
 # Maximum messages to store in the registry
 DEFAULT_MAX_MESSAGES = 10
 
-# Track whether atexit cleanup has been registered
-_atexit_registered_clear_error_messages = False
-
 # Thread-local storage for keeping prefix strings alive
 _thread_local_prefixes = threading.local()
 
@@ -97,9 +94,9 @@ def configure_logging(
         check_str("error_prefix", error_prefix)
 
     if max_messages < 0:
-        raise ValueError(f"max_messages must be >= 0; got {max_messages}. ")
+        raise ValueError(f"max_messages must be >= 0; got {max_messages}")
 
-    global _atexit_registered_clear_error_messages, _inherited_config
+    global _inherited_config
 
     # libmseed stores each prefix by pointer without copying (logging.c
     # rloginit_int), so the buffer must outlive the call.  CFFI only guarantees
@@ -123,11 +120,6 @@ def configure_logging(
     _thread_local_prefixes.configured = True
 
     _inherited_config = (log_prefix, error_prefix, max_messages)
-
-    # Register cleanup at exit (only once)
-    if not _atexit_registered_clear_error_messages:
-        atexit.register(clear_error_messages)
-        _atexit_registered_clear_error_messages = True
 
 
 def ensure_thread_logging() -> None:
@@ -154,6 +146,10 @@ def clear_error_messages() -> int:
         The number of messages that were cleared.
     """
     return clibmseed.ms_rlog_free(ffi.NULL)
+
+
+# Drain the registry at exit rather than leaving any final messages unclaimed.
+atexit.register(clear_error_messages)
 
 
 def get_error_messages() -> list[str]:

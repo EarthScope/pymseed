@@ -17,14 +17,12 @@ __all__ = [
 ]
 
 try:
-    # This is the correct pattern: import the ffi and lib objects
-    # directly FROM the compiled _libmseed_cffi module.
+    # Import the ffi and lib objects directly from the compiled extension module.
     from ._libmseed_cffi import ffi
     from ._libmseed_cffi import lib as clibmseed
 
 except ImportError as exc:
-    # The friendly error message is still a good idea.
-    # The 'from exc' part preserves the original traceback for debugging.
+    # 'from exc' preserves the original traceback for debugging.
     raise ImportError(
         "Could not import the CFFI-based C extension module.\n"
         "This is likely because the package is not installed correctly.\n"
@@ -142,5 +140,4 @@ def cdata_to_string(cdata: Any, encoding: str = "utf-8") -> str | None:
     """
     if not cdata:
         return None
-    else:
-        return ffi.string(cdata).decode(encoding)
+    return ffi.string(cdata).decode(encoding)

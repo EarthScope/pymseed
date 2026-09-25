@@ -5,6 +5,7 @@ Core trace list implementation for pymseed
 
 from __future__ import annotations
 
+import itertools
 import os
 import sys
 from collections.abc import Iterator
@@ -23,34 +24,57 @@ from .exceptions import MiniSEEDError
 from .logging import ensure_thread_logging
 from .msrecord import MS3Record
 from .selections import build_selections
-from .util import check_encoding, check_str, encoding_sizetype, nstime2timestr
+from .util import (
+    SAMPLE_FORMATS,
+    check_encoding,
+    check_format_version,
+    check_path,
+    check_str,
+    encoding_sizetype,
+    format_nstime,
+    numpy_dtype,
+    parse_flags,
+    require_numpy,
+    sample_preview,
+)
 
 
-def _require_numpy() -> Any:
-    """Import and return numpy, or raise if it is not installed."""
-    try:
-        import numpy as np
-    except ImportError:
-        raise ImportError(
-            "numpy is not installed. Install numpy or this package with [numpy] optional dependency"
-        ) from None
-
-    return np
+def _indent(text: str) -> str:
+    """Indent each line of `text` by two spaces, for repr()/str() nesting."""
+    return "\n".join("  " + line for line in text.split("\n"))
 
 
-def _numpy_dtype(np: Any, sampletype: str | None) -> Any:
-    """Translate a libmseed sample type code to a numpy dtype."""
-    nptype = {
-        "i": np.int32,
-        "f": np.float32,
-        "d": np.float64,
-        "t": "S1",  # 1-byte strings for text data
-    }
+def _summary_lines(seq: Any, render: Any) -> list[str]:
+    """Render up to 5 items of `seq` with `render` (repr or str), otherwise the
+    first two, an "... N more" marker, and the last two."""
+    items = list(seq)
+    if len(items) <= 5:
+        return [_indent(render(item)) for item in items]
 
-    if sampletype not in nptype:
-        raise ValueError(f"Unknown sample type: {sampletype}")
+    return [
+        _indent(render(items[0])),
+        _indent(render(items[1])),
+        f"  ... {len(items) - 4} more",
+        _indent(render(items[-2])),
+        _indent(render(items[-1])),
+    ]
 
-    return np.dtype(nptype[sampletype])
+
+def _linked_getitem(seq: Any, key: int | slice) -> Any:
+    """Shared `__getitem__` for the linked-list-backed containers below:
+    MS3RecordList, MS3TraceID, and MS3TraceList."""
+    if isinstance(key, slice):
+        return list(seq)[key]
+    if not isinstance(key, int):
+        raise TypeError("indices must be integers or slices")
+
+    length = len(seq)
+    if key < 0:
+        key += length
+    if key < 0 or key >= length:
+        raise IndexError("list index out of range")
+
+    return next(itertools.islice(seq, key, key + 1))
 
 
 class MS3RecordPtr:
@@ -137,44 +161,12 @@ class MS3RecordList:
         self._parent_tracelist = parent_tracelist
 
     def __repr__(self) -> str:
-        def indent_repr(thing: object) -> str:
-            """Add two-space indentation to each line of repr(thing)"""
-            return "\n".join("  " + line for line in repr(thing).split("\n"))
-
-        # Create list of formatted strings
-        if len(self) <= 5:
-            formatted_lines = [indent_repr(recptr) for recptr in self]
-        else:
-            formatted_lines = [
-                indent_repr(self[0]),
-                indent_repr(self[1]),
-                f"  ... {len(self) - 4} more",
-                indent_repr(self[-2]),
-                indent_repr(self[-1]),
-            ]
-
-        newline = "\n"
-        return f"MS3RecordList(recordcnt: {len(self)}\n{newline.join(formatted_lines)}\n)"
+        lines = "\n".join(_summary_lines(self, repr))
+        return f"MS3RecordList(recordcnt: {len(self)}\n{lines}\n)"
 
     def __str__(self) -> str:
-        def indent_str(thing: object) -> str:
-            """Add two-space indentation to each line of str(thing)"""
-            return "\n".join("  " + line for line in str(thing).split("\n"))
-
-        # Create list of formatted strings
-        if len(self) <= 5:
-            formatted_lines = [indent_str(recptr) for recptr in self]
-        else:
-            formatted_lines = [
-                indent_str(self[0]),
-                indent_str(self[1]),
-                f"  ... {len(self) - 4} more",
-                indent_str(self[-2]),
-                indent_str(self[-1]),
-            ]
-
-        newline = "\n"
-        return f"Record list with {len(self)} records\n{newline.join(formatted_lines)}"
+        lines = "\n".join(_summary_lines(self, str))
+        return f"Record list with {len(self)} records\n{lines}"
 
     def __len__(self) -> int:
         """Return number of records"""
@@ -182,33 +174,7 @@ class MS3RecordList:
 
     def __getitem__(self, key: int | slice) -> Any:
         """Enable indexing and slicing access to record pointers"""
-        if isinstance(key, slice):
-            # Handle slice objects (e.g., record_list[1:3], record_list[::2])
-            record_list = list(self)
-            return record_list[key]
-        elif isinstance(key, int):
-            # Handle single integer index
-            length = len(self)
-            if length == 0:
-                raise IndexError("list index out of range")
-
-            # Handle negative indices
-            if key < 0:
-                key += length
-
-            # Check bounds
-            if key < 0 or key >= length:
-                raise IndexError("list index out of range")
-
-            # Find and return the record at the specified index
-            for i, record in enumerate(self):
-                if i == key:
-                    return record
-
-            # This shouldn't happen if our logic is correct
-            raise IndexError("list index out of range")
-        else:
-            raise TypeError("indices must be integers or slices")
+        return _linked_getitem(self, key)
 
     def __iter__(self) -> Iterator[MS3RecordPtr]:
         """Return iterator over record pointers"""
@@ -244,21 +210,14 @@ class MS3TraceSeg:
         self._parent_tracelist = parent_tracelist  # Reference to parent MS3TraceList
 
     def __repr__(self) -> str:
-        sample_preview = "[]"
-        if self.numsamples > 0:
-            if len(self.datasamples) > 5:
-                # Create array representation with ellipsis inside: [1,2,3,4,5,...]
-                first_samples = ", ".join(str(sample) for sample in list(self.datasamples[:5]))
-                sample_preview = f"[{first_samples}, ...]"
-            else:
-                sample_preview = str(list(self.datasamples))
+        preview = sample_preview(self.datasamples) if self.numsamples > 0 else "[]"
 
         return (
             f"MS3TraceSeg(start: {self.starttime_str(timeformat=TimeFormat.ISOMONTHDAY_DOY_Z)}\n"
             f"              end: {self.endtime_str(timeformat=TimeFormat.ISOMONTHDAY_DOY_Z)}\n"
             f"         samprate: {self.samprate}\n"
             f"        samplecnt: {self.samplecnt}\n"
-            f"      datasamples: {sample_preview}\n"
+            f"      datasamples: {preview}\n"
             f"         datasize: {self.datasize}\n"
             f"       numsamples: {self.numsamples}\n"
             f"       sampletype: {self.sampletype}\n"
@@ -295,12 +254,7 @@ class MS3TraceSeg:
         underlying nanosecond timestamp is the corresponding libmseed
         sentinel, mirroring :meth:`~pymseed.MS3Record.starttime_str`.
         """
-        if self._seg.starttime == clibmseed.NSTERROR:
-            return "ERROR"
-        if self._seg.starttime == clibmseed.NSTUNSET:
-            return "UNSET"
-
-        return nstime2timestr(self._seg.starttime, timeformat, subsecond)
+        return format_nstime(self._seg.starttime, timeformat, subsecond)
 
     @property
     def endtime(self) -> int:
@@ -323,12 +277,7 @@ class MS3TraceSeg:
         underlying nanosecond timestamp is the corresponding libmseed
         sentinel, mirroring :meth:`~pymseed.MS3Record.endtime_str`.
         """
-        if self._seg.endtime == clibmseed.NSTERROR:
-            return "ERROR"
-        if self._seg.endtime == clibmseed.NSTUNSET:
-            return "UNSET"
-
-        return nstime2timestr(self._seg.endtime, timeformat, subsecond)
+        return format_nstime(self._seg.endtime, timeformat, subsecond)
 
     @property
     def samprate(self) -> float:
@@ -370,10 +319,9 @@ class MS3TraceSeg:
     @property
     def recordlist(self) -> MS3RecordList | None:
         """Return the record list structure"""
-        if self._seg.recordlist:
-            return MS3RecordList(self._seg.recordlist, self._parent_tracelist)
-        else:
+        if not self._seg.recordlist:
             return None
+        return MS3RecordList(self._seg.recordlist, self._parent_tracelist)
 
     @property
     def datasamples(self) -> memoryview:
@@ -398,24 +346,13 @@ class MS3TraceSeg:
             return memoryview(b"")  # Empty memoryview
 
         sampletype = self.sampletype
-
-        if sampletype == "i":
-            ptr = ffi.cast("int32_t *", self._seg.datasamples)
-            nbytes = self._seg.numsamples * ffi.sizeof("int32_t")
-            return owned_memoryview(ptr, nbytes, "i", self)
-        elif sampletype == "f":
-            ptr = ffi.cast("float *", self._seg.datasamples)
-            nbytes = self._seg.numsamples * ffi.sizeof("float")
-            return owned_memoryview(ptr, nbytes, "f", self)
-        elif sampletype == "d":
-            ptr = ffi.cast("double *", self._seg.datasamples)
-            nbytes = self._seg.numsamples * ffi.sizeof("double")
-            return owned_memoryview(ptr, nbytes, "d", self)
-        elif sampletype == "t":
-            ptr = ffi.cast("char *", self._seg.datasamples)
-            return owned_memoryview(ptr, self._seg.numsamples, "B", self)
-        else:
+        if sampletype not in SAMPLE_FORMATS:
             raise ValueError(f"Unknown sample type: {sampletype}")
+        fmt, itemsize = SAMPLE_FORMATS[sampletype]
+
+        ptr = ffi.cast("char *", self._seg.datasamples)
+        nbytes = self._seg.numsamples * itemsize
+        return owned_memoryview(ptr, nbytes, fmt, self)
 
     @property
     def sampletype(self) -> str | None:
@@ -462,12 +399,12 @@ class MS3TraceSeg:
         is next changed.  See :meth:`take_np_datasamples` for a numpy array that
         outlives the trace list instead.
         """
-        np = _require_numpy()
+        np = require_numpy()
 
         if self._seg.numsamples <= 0:
             return np.array([])  # Empty array
 
-        dtype = _numpy_dtype(np, self.sampletype)
+        dtype = numpy_dtype(np, self.sampletype)
 
         # Create numpy array view from CFFI buffer
         return np.frombuffer(self.datasamples, dtype=dtype)
@@ -488,13 +425,13 @@ class MS3TraceSeg:
         array returned here does; dropping the array while such a view is
         still around leaves that view referring to freed memory.
         """
-        np = _require_numpy()
+        np = require_numpy()
 
         if self._seg.numsamples <= 0:
             return np.array([])  # Empty array
 
         numsamples = self._seg.numsamples
-        dtype = _numpy_dtype(np, self.sampletype)
+        dtype = numpy_dtype(np, self.sampletype)
         nbytes = numsamples * dtype.itemsize
 
         # Windows preallocates buffer growth in blocks, so the segment's
@@ -525,7 +462,7 @@ class MS3TraceSeg:
         :meth:`take_np_datasamples` is usually faster.  The record list is still
         preferable to decode only some segments, or into a caller's own buffer.
         """
-        np = _require_numpy()
+        np = require_numpy()
 
         if self.recordlist is None:
             raise ValueError(
@@ -536,7 +473,7 @@ class MS3TraceSeg:
             return np.array([])  # Empty array
 
         (_, sample_type) = self.sample_size_type
-        dtype = _numpy_dtype(np, sample_type)
+        dtype = numpy_dtype(np, sample_type)
 
         # Create numpy array of the correct type and size
         array = np.empty(self.samplecnt, dtype=dtype)
@@ -666,7 +603,7 @@ class MS3TraceSeg:
         if not self.recordlist:
             raise ValueError("No record list available to unpack")
 
-        if self.datasamples and buffer is not None:
+        if self._seg.numsamples > 0 and buffer is not None:
             raise ValueError("Data samples already unpacked")
 
         buffer_ptr = ffi.NULL
@@ -688,8 +625,7 @@ class MS3TraceSeg:
 
         if status < 0:
             raise MiniSEEDError(status, "Error unpacking record list")
-        else:
-            return status
+        return status
 
     def has_same_data(self, other: object) -> bool:
         """Compare trace segments for equivalent data
@@ -731,30 +667,14 @@ class MS3TraceID:
         self._parent_tracelist = parent_tracelist
 
     def __repr__(self) -> str:
-        def indent_repr(thing: object) -> str:
-            """Add two-space indentation to each line of repr(thing)"""
-            return "\n".join("  " + line for line in repr(thing).split("\n"))
-
-        # Create list of formatted strings
-        if len(self) <= 5:
-            formatted_lines = [indent_repr(traceid) for traceid in self]
-        else:
-            formatted_lines = [
-                indent_repr(self[0]),
-                indent_repr(self[1]),
-                f"  ... {len(self) - 4} more",
-                indent_repr(self[-2]),
-                indent_repr(self[-1]),
-            ]
-
-        newline = "\n"
+        lines = "\n".join(_summary_lines(self, repr))
         return (
             f"MS3TraceID(sourceid: {self.sourceid}\n"
             f"         pubversion: {self.pubversion}\n"
             f"           earliest: {self.earliest_str(timeformat=TimeFormat.ISOMONTHDAY_DOY_Z)}\n"
             f"             latest: {self.latest_str(timeformat=TimeFormat.ISOMONTHDAY_DOY_Z)}\n"
             f"        numsegments: {len(self)}\n"
-            f"{newline.join(formatted_lines)}"
+            f"{lines}"
             "\n)"
         )
 
@@ -780,33 +700,7 @@ class MS3TraceID:
 
     def __getitem__(self, key: int | slice) -> Any:
         """Enable indexing and slicing access to segments"""
-        if isinstance(key, slice):
-            # Handle slice objects (e.g., traceid[1:3], traceid[::2])
-            segment_list = list(self)
-            return segment_list[key]
-        elif isinstance(key, int):
-            # Handle single integer index
-            length = len(self)
-            if length == 0:
-                raise IndexError("list index out of range")
-
-            # Handle negative indices
-            if key < 0:
-                key += length
-
-            # Check bounds
-            if key < 0 or key >= length:
-                raise IndexError("list index out of range")
-
-            # Find and return the segment at the specified index
-            for i, segment in enumerate(self):
-                if i == key:
-                    return segment
-
-            # This shouldn't happen if our logic is correct
-            raise IndexError("list index out of range")
-        else:
-            raise TypeError("indices must be integers or slices")
+        return _linked_getitem(self, key)
 
     @property
     def sourceid(self) -> str:
@@ -839,12 +733,7 @@ class MS3TraceID:
         underlying nanosecond timestamp is the corresponding libmseed
         sentinel.
         """
-        if self._id.earliest == clibmseed.NSTERROR:
-            return "ERROR"
-        if self._id.earliest == clibmseed.NSTUNSET:
-            return "UNSET"
-
-        return nstime2timestr(self._id.earliest, timeformat, subsecond)
+        return format_nstime(self._id.earliest, timeformat, subsecond)
 
     @property
     def latest(self) -> int:
@@ -867,12 +756,7 @@ class MS3TraceID:
         underlying nanosecond timestamp is the corresponding libmseed
         sentinel.
         """
-        if self._id.latest == clibmseed.NSTERROR:
-            return "ERROR"
-        if self._id.latest == clibmseed.NSTUNSET:
-            return "UNSET"
-
-        return nstime2timestr(self._id.latest, timeformat, subsecond)
+        return format_nstime(self._id.latest, timeformat, subsecond)
 
 
 class MS3TraceList:
@@ -1088,47 +972,15 @@ class MS3TraceList:
         if self._mstl == ffi.NULL:
             return "MS3TraceList(closed)"
 
-        def indent_repr(thing: object) -> str:
-            """Add two-space indentation to each line of repr(thing)"""
-            return "\n".join("  " + line for line in repr(thing).split("\n"))
-
-        # Create list of formatted strings
-        if len(self) <= 5:
-            formatted_lines = [indent_repr(traceid) for traceid in self]
-        else:
-            formatted_lines = [
-                indent_repr(self[0]),
-                indent_repr(self[1]),
-                f"  ... {len(self) - 4} more",
-                indent_repr(self[-2]),
-                indent_repr(self[-1]),
-            ]
-
-        newline = "\n"
-        return f"MS3TraceList(numtraceids: {len(self)}\n{newline.join(formatted_lines)}\n)"
+        lines = "\n".join(_summary_lines(self, repr))
+        return f"MS3TraceList(numtraceids: {len(self)}\n{lines}\n)"
 
     def __str__(self) -> str:
         if self._mstl == ffi.NULL:
             return "Closed trace list"
 
-        def indent_str(thing: object) -> str:
-            """Add two-space indentation to each line of str(thing)"""
-            return "\n".join("  " + line for line in str(thing).split("\n"))
-
-        # Create list of formatted strings
-        if len(self) <= 5:
-            formatted_lines = [indent_str(traceid) for traceid in self]
-        else:
-            formatted_lines = [
-                indent_str(self[0]),
-                indent_str(self[1]),
-                f"  ... {len(self) - 4} more",
-                indent_str(self[-2]),
-                indent_str(self[-1]),
-            ]
-
-        newline = "\n"
-        return f"Trace list with {len(self)} trace IDs\n{newline.join(formatted_lines)}\n"
+        lines = "\n".join(_summary_lines(self, str))
+        return f"Trace list with {len(self)} trace IDs\n{lines}\n"
 
     def __len__(self) -> int:
         """Return number of trace IDs in the list"""
@@ -1160,33 +1012,7 @@ class MS3TraceList:
 
     def __getitem__(self, key: int | slice) -> Any:
         """Enable indexing and slicing access to trace IDs"""
-        if isinstance(key, slice):
-            # Handle slice objects (e.g., traces[1:3], traces[::2])
-            trace_list = list(self)
-            return trace_list[key]
-        elif isinstance(key, int):
-            # Handle single integer index
-            length = len(self)
-            if length == 0:
-                raise IndexError("list index out of range")
-
-            # Handle negative indices
-            if key < 0:
-                key += length
-
-            # Check bounds
-            if key < 0 or key >= length:
-                raise IndexError("list index out of range")
-
-            # Find and return the trace ID at the specified index
-            for i, traceid in enumerate(self):
-                if i == key:
-                    return traceid
-
-            # This shouldn't happen if our logic is correct
-            raise IndexError("list index out of range")
-        else:
-            raise TypeError("indices must be integers or slices")
+        return _linked_getitem(self, key)
 
     @property
     def numtraceids(self) -> int:
@@ -1379,10 +1205,7 @@ class MS3TraceList:
             True
 
         """
-        if isinstance(file_name, os.PathLike):
-            file_name = os.fspath(file_name)
-        elif not isinstance(file_name, str):
-            raise TypeError(f"file_name must be str or os.PathLike; got {type(file_name).__name__}")
+        file_name = check_path("file_name", file_name)
 
         ensure_thread_logging()
 
@@ -1400,16 +1223,12 @@ class MS3TraceList:
 
         # Request storing time of update in the trace list segment
         # This stores the update time as an nstime_t in the segment's private pointer (seg.prvtptr)
-        flags = clibmseed.MSF_PPUPDATETIME
-
-        if unpack_data:
-            flags |= clibmseed.MSF_UNPACKDATA
-        if record_list:
-            flags |= clibmseed.MSF_RECORDLIST
-        if skip_not_data:
-            flags |= clibmseed.MSF_SKIPNOTDATA
-        if validate_crc:
-            flags |= clibmseed.MSF_VALIDATECRC
+        flags = clibmseed.MSF_PPUPDATETIME | parse_flags(
+            unpack_data=unpack_data,
+            validate_crc=validate_crc,
+            skip_not_data=skip_not_data,
+            record_list=record_list,
+        )
 
         # Create a reference to the current trace list pointer
         self._check_open()
@@ -1570,16 +1389,12 @@ class MS3TraceList:
 
         # Request storing time of update in the trace list segment
         # This stores the update time as an nstime_t in the segment's private pointer (seg.prvtptr)
-        flags = clibmseed.MSF_PPUPDATETIME
-
-        if unpack_data:
-            flags |= clibmseed.MSF_UNPACKDATA
-        if record_list:
-            flags |= clibmseed.MSF_RECORDLIST
-        if skip_not_data:
-            flags |= clibmseed.MSF_SKIPNOTDATA
-        if validate_crc:
-            flags |= clibmseed.MSF_VALIDATECRC
+        flags = clibmseed.MSF_PPUPDATETIME | parse_flags(
+            unpack_data=unpack_data,
+            validate_crc=validate_crc,
+            skip_not_data=skip_not_data,
+            record_list=record_list,
+        )
 
         # Create a reference to the current trace list pointer
         self._check_open()
@@ -1735,74 +1550,49 @@ class MS3TraceList:
             >>> traces[0].sourceid
             'FDSN:IU_COLA_00_L_H_Z'
         """
-        if not callable(getattr(fh, "read", None)):
-            raise TypeError(
-                "fh must be a file-like object exposing a callable .read(n) "
-                f"method; got {type(fh).__name__}"
-            )
-
-        if chunk_size <= 0:
-            raise ValueError("chunk_size must be greater than 0")
-        elif chunk_size > 1_073_741_824:
-            raise ValueError("chunk_size must be less than 1 GiB")
+        # Built before _check_open() so an invalid fh or chunk_size raises
+        # before the open check.
+        records = MS3Record.from_filelike(
+            fh,
+            chunk_size=chunk_size,
+            unpack_data=unpack_data,
+            sourceid=sourceid,
+            starttime=starttime,
+            endtime=endtime,
+            validate_crc=validate_crc,
+            verbose=verbose,
+        )
 
         self._check_open()
 
-        flags = clibmseed.MSF_PPUPDATETIME
-        if skip_not_data:
-            flags |= clibmseed.MSF_SKIPNOTDATA
-        if validate_crc:
-            flags |= clibmseed.MSF_VALIDATECRC
-        if record_list:
-            flags |= clibmseed.MSF_RECORDLIST
+        flags = clibmseed.MSF_PPUPDATETIME | parse_flags(
+            validate_crc=validate_crc, skip_not_data=skip_not_data, record_list=record_list
+        )
 
         ensure_thread_logging()
 
         # A handle for the record entries in a record list, reused for each record
         pprecptr = ffi.new("MS3RecordPtr **") if record_list else ffi.NULL
 
-        # Build selections, if sourceid, starttime, or endtime are specified
-        selections_ptr, free_selections = build_selections(sourceid, starttime, endtime)
-        has_selections = selections_ptr != ffi.NULL
+        # Selection matching and deferred data unpacking happen in `records`.
+        for msr in records:
+            # A record added directly carries no source reference, msr->record
+            # included, matching source bytes that do not outlive the read.
+            seg = clibmseed.mstl3_addmsr_recordptr(
+                self._mstl,
+                msr._msr,
+                pprecptr,
+                int(split_version),
+                1,  # autoheal
+                flags,
+                ffi.NULL,  # tolerance
+            )
 
-        # Defer per-record data unpacking past the selection match when filtering
-        # is active, so cycles are not spent decoding records that are rejected.
-        parse_unpack = unpack_data and not has_selections
-
-        try:
-            for msr in MS3Record.from_filelike(
-                fh,
-                chunk_size=chunk_size,
-                unpack_data=parse_unpack,
-                validate_crc=validate_crc,
-                verbose=verbose,
-            ):
-                if has_selections:
-                    if clibmseed.msr3_matchselect(selections_ptr, msr._msr, ffi.NULL) == ffi.NULL:
-                        continue
-                    if unpack_data:
-                        msr.unpack_data(verbose=verbose)
-
-                # A record added directly carries no source reference, msr->record
-                # included, matching source bytes that do not outlive the read.
-                seg = clibmseed.mstl3_addmsr_recordptr(
-                    self._mstl,
-                    msr._msr,
-                    pprecptr,
-                    int(split_version),
-                    1,  # autoheal
-                    flags,
-                    ffi.NULL,  # tolerance
+            if seg == ffi.NULL:
+                raise MiniSEEDError(
+                    clibmseed.MS_GENERROR,
+                    "Error adding record from file-like stream",
                 )
-
-                if seg == ffi.NULL:
-                    raise MiniSEEDError(
-                        clibmseed.MS_GENERROR,
-                        "Error adding record from file-like stream",
-                    )
-        finally:
-            if free_selections is not None:
-                free_selections()
 
     def add_data(
         self,
@@ -2071,8 +1861,8 @@ class MS3TraceList:
         See Also:
             - to_file()
         """
-        if format_version is not None and format_version not in (2, 3):
-            raise ValueError(f"Invalid miniSEED format version: {format_version}")
+        if format_version is not None:
+            check_format_version(format_version)
 
         check_encoding(encoding)
         self._check_open()
@@ -2128,7 +1918,7 @@ class MS3TraceList:
         )
 
         if not packer:
-            raise MiniSEEDError(-1, "Error initializing packer")
+            raise MiniSEEDError(clibmseed.MS_GENERROR, "Error initializing packer")
 
         record_pp = ffi.new("char **")
         reclen_p = ffi.new("int32_t *")
@@ -2247,10 +2037,7 @@ class MS3TraceList:
             - add_data(): Add time series data to the trace list
             - from_file(): Read miniSEED data from file
         """
-        if isinstance(filename, os.PathLike):
-            filename = os.fspath(filename)
-        elif not isinstance(filename, str):
-            raise TypeError(f"filename must be str or os.PathLike; got {type(filename).__name__}")
+        filename = check_path("filename", filename)
 
         check_encoding(encoding)
         self._check_open()
@@ -2262,8 +2049,7 @@ class MS3TraceList:
 
         pack_flags = 0
         if format_version is not None:
-            if format_version not in [2, 3]:
-                raise ValueError(f"Invalid miniSEED format version: {format_version}")
+            check_format_version(format_version)
             if format_version == 2:
                 pack_flags |= clibmseed.MSF_PACKVER2
 

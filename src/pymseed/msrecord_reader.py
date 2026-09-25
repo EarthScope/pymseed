@@ -13,6 +13,7 @@ from .exceptions import MiniSEEDError
 from .logging import ensure_thread_logging
 from .msrecord import MS3Record, _truncated_source_message
 from .selections import build_selections
+from .util import parse_flags
 
 
 class MS3RecordReader:
@@ -175,16 +176,11 @@ class MS3RecordReader:
         self._free_selections: Callable[[], None] | None = None
         self.stream_name = ffi.NULL
         self.verbose = verbose
-        self.parse_flags = 0
 
         # Validate and normalize source
-        if isinstance(source, int):
-            pass
-        elif isinstance(source, str):
-            pass
-        elif isinstance(source, os.PathLike):
+        if isinstance(source, os.PathLike):
             source = os.fspath(source)
-        else:
+        elif not isinstance(source, (str, int)):
             raise TypeError(
                 "source must be str, int (file descriptor), or os.PathLike; "
                 f"got {type(source).__name__}"
@@ -201,13 +197,9 @@ class MS3RecordReader:
                 f"start_byte_offset ({start_byte_offset})"
             )
 
-        # Construct parse flags
-        if unpack_data:
-            self.parse_flags |= clibmseed.MSF_UNPACKDATA
-        if skip_not_data:
-            self.parse_flags |= clibmseed.MSF_SKIPNOTDATA
-        if validate_crc:
-            self.parse_flags |= clibmseed.MSF_VALIDATECRC
+        self.parse_flags = parse_flags(
+            unpack_data=unpack_data, skip_not_data=skip_not_data, validate_crc=validate_crc
+        )
 
         # Build selections, if sourceid, starttime, or endtime are specified.
         # Done before opening the input so an invalid time string raises without
@@ -215,7 +207,8 @@ class MS3RecordReader:
         # structures, which it owns until _free_selections() is called in close().
         self._selections, self._free_selections = build_selections(sourceid, starttime, endtime)
 
-        # If the stream is an integer, assume an open file descriptor
+        # If the stream is an integer, assume an open file descriptor; otherwise
+        # source is a str path, which libmseed opens internally.
         if isinstance(source, int):
             if source < 0:
                 raise ValueError(
@@ -223,27 +216,18 @@ class MS3RecordReader:
                     "(A negative value typically indicates an unopened or "
                     "already-closed descriptor.)"
                 )
-            self._msfp_ptr[0] = clibmseed.ms3_msfp_init(start_byte_offset, end_byte_offset, source)
-
-            if self._msfp_ptr[0] == ffi.NULL:
-                raise MiniSEEDError(
-                    clibmseed.MS_GENERROR,
-                    f"Error initializing file descriptor {source}",
-                )
-
+            fd = source
+            error_source = f"file descriptor {source}"
             self.stream_name = ffi.new("char[]", f"File Descriptor {source}".encode())
-        # Otherwise, source is a str path
         else:
-            encoded_path = os.fsencode(source)
-            self._msfp_ptr[0] = clibmseed.ms3_msfp_init(start_byte_offset, end_byte_offset, -1)
+            fd = -1
+            error_source = f"file {source}"
+            self.stream_name = ffi.new("char[]", os.fsencode(source))
 
-            if self._msfp_ptr[0] == ffi.NULL:
-                raise MiniSEEDError(
-                    clibmseed.MS_GENERROR,
-                    f"Error initializing file {source}",
-                )
+        self._msfp_ptr[0] = clibmseed.ms3_msfp_init(start_byte_offset, end_byte_offset, fd)
 
-            self.stream_name = ffi.new("char[]", encoded_path)
+        if self._msfp_ptr[0] == ffi.NULL:
+            raise MiniSEEDError(clibmseed.MS_GENERROR, f"Error initializing {error_source}")
 
     def __repr__(self) -> str:
         return (
