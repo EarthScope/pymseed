@@ -183,11 +183,8 @@ warn_unreachable = true
 strict_equality = true
 
 [[tool.mypy.overrides]]
-module = [
-    "pymseed._libmseed_cffi",
-    "pymseed.libmseed_version"
-]
-ignore_errors = true
+module = ["pymseed._libmseed_cffi"]
+ignore_missing_imports = true
 
 # Coverage configuration
 [tool.coverage.run]
