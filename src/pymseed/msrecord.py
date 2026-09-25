@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import os
 import sys
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
 
@@ -1407,9 +1407,7 @@ class MS3Record:
         return samples_unpacked
 
     @contextmanager
-    def with_datasamples(
-        self, data_samples: Sequence[Any], sample_type: str
-    ) -> Iterator[MS3Record]:
+    def with_datasamples(self, data_samples: Any, sample_type: str) -> Iterator[MS3Record]:
         """Context manager for temporarily setting data samples with automatic cleanup.
 
         This context manager temporarily sets data samples, counts, and type for the record

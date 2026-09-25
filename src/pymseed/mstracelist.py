@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import os
 import sys
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator
 from typing import Any
 
 from .clib import (
@@ -94,9 +94,7 @@ class MS3RecordPtr:
         if not hasattr(self, "_msrecord"):
             # libmseed leaves msr->record unset unless the source bytes outlive the
             # read, as they do for a buffer-sourced entry held by the trace list.
-            self._msrecord = MS3Record(
-                recordptr=self._ptr.msr, owner=self._parent_tracelist
-            )
+            self._msrecord = MS3Record(recordptr=self._ptr.msr, owner=self._parent_tracelist)
         return self._msrecord
 
     @property
@@ -156,9 +154,7 @@ class MS3RecordList:
             ]
 
         newline = "\n"
-        return (
-            f"MS3RecordList(recordcnt: {len(self)}\n{newline.join(formatted_lines)}\n)"
-        )
+        return f"MS3RecordList(recordcnt: {len(self)}\n{newline.join(formatted_lines)}\n)"
 
     def __str__(self) -> str:
         def indent_str(thing: object) -> str:
@@ -252,9 +248,7 @@ class MS3TraceSeg:
         if self.numsamples > 0:
             if len(self.datasamples) > 5:
                 # Create array representation with ellipsis inside: [1,2,3,4,5,...]
-                first_samples = ", ".join(
-                    str(sample) for sample in list(self.datasamples[:5])
-                )
+                first_samples = ", ".join(str(sample) for sample in list(self.datasamples[:5]))
                 sample_preview = f"[{first_samples}, ...]"
             else:
                 sample_preview = str(list(self.datasamples))
@@ -448,9 +442,7 @@ class MS3TraceSeg:
         It is not guaranteed to be correct for any other records in the list.
         """
         if not self._seg.recordlist:
-            raise ValueError(
-                "No record list available to determine sample size and type"
-            )
+            raise ValueError("No record list available to determine sample size and type")
 
         # Get the first record
         first_record_ptr = self._seg.recordlist.first
@@ -699,7 +691,7 @@ class MS3TraceSeg:
         else:
             return status
 
-    def has_same_data(self, other: MS3TraceSeg) -> bool:
+    def has_same_data(self, other: object) -> bool:
         """Compare trace segments for equivalent data
 
         Args:
@@ -1113,9 +1105,7 @@ class MS3TraceList:
             ]
 
         newline = "\n"
-        return (
-            f"MS3TraceList(numtraceids: {len(self)}\n{newline.join(formatted_lines)}\n)"
-        )
+        return f"MS3TraceList(numtraceids: {len(self)}\n{newline.join(formatted_lines)}\n)"
 
     def __str__(self) -> str:
         if self._mstl == ffi.NULL:
@@ -1138,9 +1128,7 @@ class MS3TraceList:
             ]
 
         newline = "\n"
-        return (
-            f"Trace list with {len(self)} trace IDs\n{newline.join(formatted_lines)}\n"
-        )
+        return f"Trace list with {len(self)} trace IDs\n{newline.join(formatted_lines)}\n"
 
     def __len__(self) -> int:
         """Return number of trace IDs in the list"""
@@ -1394,9 +1382,7 @@ class MS3TraceList:
         if isinstance(file_name, os.PathLike):
             file_name = os.fspath(file_name)
         elif not isinstance(file_name, str):
-            raise TypeError(
-                f"file_name must be str or os.PathLike; got {type(file_name).__name__}"
-            )
+            raise TypeError(f"file_name must be str or os.PathLike; got {type(file_name).__name__}")
 
         ensure_thread_logging()
 
@@ -1792,10 +1778,7 @@ class MS3TraceList:
                 verbose=verbose,
             ):
                 if has_selections:
-                    if (
-                        clibmseed.msr3_matchselect(selections_ptr, msr._msr, ffi.NULL)
-                        == ffi.NULL
-                    ):
+                    if clibmseed.msr3_matchselect(selections_ptr, msr._msr, ffi.NULL) == ffi.NULL:
                         continue
                     if unpack_data:
                         msr.unpack_data(verbose=verbose)
@@ -1824,7 +1807,7 @@ class MS3TraceList:
     def add_data(
         self,
         sourceid: str,
-        data_samples: Sequence[Any],
+        data_samples: Any,
         sample_type: str,
         sample_rate: float,
         starttime_str: str | None = None,
@@ -2132,11 +2115,7 @@ class MS3TraceList:
         if format_version == 2:
             flags |= clibmseed.MSF_PACKVER2
 
-        c_extra = (
-            ffi.new("char[]", extra_headers.encode("utf-8"))
-            if extra_headers
-            else ffi.NULL
-        )
+        c_extra = ffi.new("char[]", extra_headers.encode("utf-8")) if extra_headers else ffi.NULL
 
         packer = clibmseed.mstl3_pack_init(
             self._mstl,
@@ -2271,9 +2250,7 @@ class MS3TraceList:
         if isinstance(filename, os.PathLike):
             filename = os.fspath(filename)
         elif not isinstance(filename, str):
-            raise TypeError(
-                f"filename must be str or os.PathLike; got {type(filename).__name__}"
-            )
+            raise TypeError(f"filename must be str or os.PathLike; got {type(filename).__name__}")
 
         check_encoding(encoding)
         self._check_open()
