@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - CI workflow running the test suite and linters on pushes and pull requests.
+- Add Contributing sections to README.md and development.md.
 - Add missing type annotations flagged by mypy.
 
 ### Changed

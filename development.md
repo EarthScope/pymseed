@@ -1,5 +1,18 @@
 Commands needed for setting up a development environment and running tests
 
+# Contributing
+
+Pull requests should be submitted against the `develop` branch.
+
+Before submitting, run the same checks used by CI and ensure they pass
+during development:
+
+pytest
+ruff check src/ tests/
+mypy src/pymseed
+
+After the PR is created, ensure that the test checks pass in the PR.
+
 # Development environment
 
 ## Create the development environment, only needed once
@@ -30,6 +43,15 @@ pytest --cov=pymseed --cov-report=term-missing --cov-report=html --cov-report=xm
 
 ## Run tests with coverage and open HTML report
 pytest --cov=pymseed --cov-report=html && open htmlcov/index.html
+
+## Install linting and type checking tools
+python3 -m pip install ruff mypy
+
+## Run the linter
+ruff check src/ tests/
+
+## Run the type checker
+mypy src/pymseed
 
 
 # Update release version

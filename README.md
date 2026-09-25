@@ -170,6 +170,12 @@ with ThreadPoolExecutor(max_workers=4, initializer=configure_logging) as executo
     results = executor.map(process_file, file_list)
 ```
 
+## Contributing
+
+Contributions are welcome. Please submit pull requests against the `develop`
+branch. See [development.md](development.md) for details on setting up a
+development environment and running tests.
+
 ## Package design rationale
 
 The package functionality and exposed API are designed to support the most
