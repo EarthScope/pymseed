@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- CI workflow running the test suite and linters on pushes and pull requests.
+
 ### Removed deprecated functionality
 
 - `MS3Record.pack()` and `MS3TraceList.pack()`; use `generate()`.
