@@ -1,6 +1,10 @@
 # pymseed - a Python package to read and write miniSEED formatted data
 
+[![Python versions](https://img.shields.io/pypi/pyversions/pymseed)](https://pypi.org/project/pymseed/)
+[![PyPI](https://img.shields.io/pypi/v/pymseed)](https://pypi.org/project/pymseed/)
+[![conda-forge](https://img.shields.io/conda/vn/conda-forge/pymseed)](https://anaconda.org/conda-forge/pymseed)
 [![Documentation](https://img.shields.io/badge/docs-earthscope.github.io/pymseed-blue)](https://earthscope.github.io/pymseed/)
+[![Tests](https://github.com/EarthScope/pymseed/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/EarthScope/pymseed/actions/workflows/test.yml)
 
 The pymseed package supports reading and writing of miniSEED formatted data.
 Both [miniSEED version 2](https://fdsn.org/pdf/SEEDManual_V2.4.pdf)
