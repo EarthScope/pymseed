@@ -1922,29 +1922,21 @@ class MS3TraceList:
         msr.pubversion = publication_version
 
         # Ensure that start time definitions are mutually exclusive
-        provided = [
-            (name, value)
-            for name, value in (
-                ("starttime_str", starttime_str),
-                ("starttime", starttime),
-                ("starttime_seconds", starttime_seconds),
-            )
-            if value is not None
-        ]
-        if len(provided) != 1:
+        provided_count = sum(
+            value is not None for value in (starttime_str, starttime, starttime_seconds)
+        )
+        if provided_count != 1:
             raise ValueError(
                 "Specify exactly one of starttime_str, starttime, or "
-                f"starttime_seconds; got {len(provided)}"
+                f"starttime_seconds; got {provided_count}"
             )
 
-        name, value = provided[0]
-
-        if name == "starttime_str":
-            msr.set_starttime_str(value)
-        elif name == "starttime":
-            msr.starttime = value
-        else:
-            msr.starttime_seconds = value
+        if starttime_str is not None:
+            msr.set_starttime_str(starttime_str)
+        elif starttime is not None:
+            msr.starttime = starttime
+        elif starttime_seconds is not None:
+            msr.starttime_seconds = starttime_seconds
 
         # Request storing time of update in the trace list segment
         # This stores the update time as an nstime_t in the segment's private pointer (seg.prvtptr)

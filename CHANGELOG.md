@@ -8,12 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-
 - CI workflow running the test suite and linters on pushes and pull requests.
 - Add missing type annotations flagged by mypy.
 
-### Removed deprecated functionality
+### Changed
+- Restructure validator and add_data branching for type narrowing.
 
+### Removed deprecated functionality
 - `MS3Record.pack()` and `MS3TraceList.pack()`; use `generate()`.
 - Deprecated parameter aliases: `MS3TraceList.add_data()` `start_time_str`,
   `start_time`, `start_time_seconds`; `MS3TraceList.generate()` `record_length`
@@ -23,7 +24,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.9.6] - 2026-09-16
 
 ### Added
-
 - Significant documentation updates to numerous docstrings.
 - Autobuild documentation to GitHub Pages.
 
@@ -35,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.9.4] - 2026-08-05
 
+### Changed
 - libmseed updated to v3.5.4.  Including:
     * Trace list packing optimization and improvements
     * Return MS_ENDOFFILE instead of MS_NOTSEED when selections skip all data
@@ -44,6 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.9.3] - 2026-07-30
 
+### Changed
 - libmseed updated to v3.5.3.  This includes a significant optimization to
   constructing trace lists with many segments.
 

@@ -538,8 +538,9 @@ class MS3RecordValidator:
 
         try:
             for buf_ptr, offset, info in self._source:
-                # A source signals no whole record with buf_ptr=None and a reason.
-                if buf_ptr is None:
+                # A source signals no whole record with a reason string instead
+                # of a record length (and buf_ptr=None to match).
+                if isinstance(info, str):
                     errors.append(
                         ValidationError(
                             offset=offset,
