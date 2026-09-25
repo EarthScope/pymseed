@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   array build before falling back to per-element conversion.
 - Speed up `MS3RecordValidator.validate()` by caching extra-header
   validation results per distinct extra-header JSON string.
+- Speed up `MS3RecordValidator.validate()`'s log-message draining by
+  fetching the thread-local pop buffer once per call instead of per drain.
 - Restructure validator and add_data branching for type narrowing.
 - Consolidate duplicated argument checks and time formatting into util helpers.
 - Simplify MS3Record sample handling, extra header access and packing.

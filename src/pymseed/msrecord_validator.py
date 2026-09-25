@@ -17,7 +17,12 @@ from typing import Any
 from ._extra_headers_jsonschema import KNOWN_SCHEMAS, load_extra_headers_validator
 from ._json import json_loads
 from .clib import buffer_pointer, clibmseed, ffi
-from .logging import clear_error_messages, ensure_thread_logging, get_error_messages
+from .logging import (
+    _drain_error_messages,
+    _thread_local_rlog_buf,
+    clear_error_messages,
+    ensure_thread_logging,
+)
 from .mstracelist import MS3TraceList
 from .util import check_chunk_size, check_filelike, check_path, nstime2timestr, system_time
 
@@ -505,6 +510,10 @@ class MS3RecordValidator:
         """
         ensure_thread_logging()
 
+        # Fetched once rather than per drain call, since this loop can run
+        # over millions of records.
+        rlog_buf = _thread_local_rlog_buf()
+
         errors: list[ValidationError] = []
         tracelist = MS3TraceList() if self._return_trace_list else None
 
@@ -569,7 +578,7 @@ class MS3RecordValidator:
                 )
 
                 if status != clibmseed.MS_NOERROR:
-                    error_messages = get_error_messages()
+                    error_messages = _drain_error_messages(rlog_buf)
 
                     # Add a default error message if no messages are available
                     if not error_messages:
@@ -590,7 +599,7 @@ class MS3RecordValidator:
                 sourceid = ffi.string(msr.sid).decode("utf-8")
 
                 # Check for parse warnings (CRC validation, etc.)
-                for msg in get_error_messages():
+                for msg in _drain_error_messages(rlog_buf):
                     record_error(
                         offset,
                         msg,
@@ -709,7 +718,7 @@ class MS3RecordValidator:
                     clear_error_messages()
                     status = clibmseed.msr3_unpack_data(msr, self._verbose)
 
-                    error_messages = get_error_messages()
+                    error_messages = _drain_error_messages(rlog_buf)
                     if status < 0 and not error_messages:
                         error_messages = [f"Data unpack error: {status}"]
 

@@ -26,6 +26,7 @@ rather than importing from ``pymseed.logging`` directly.
 
 import atexit
 import threading
+from typing import Any
 
 from .clib import clibmseed, ffi
 from .util import check_str
@@ -152,6 +153,40 @@ def clear_error_messages() -> int:
 atexit.register(clear_error_messages)
 
 
+def _thread_local_rlog_buf() -> Any:
+    """Return this thread's reusable ms_rlog_pop() buffer, creating it on first use.
+
+    Exposed separately from get_error_messages() for a caller that pops the
+    registry many times in a loop (e.g. MS3RecordValidator), so it can fetch
+    the buffer once and pass it to _drain_error_messages() directly instead
+    of repeating this lookup on every call.
+    """
+    buf = getattr(_thread_local_rlog_pop_buf, "buf", None)
+    if buf is None:
+        buf = ffi.new("char[]", _MAX_RLOG_MSG_LEN)
+        _thread_local_rlog_pop_buf.buf = buf
+    return buf
+
+
+def _drain_error_messages(buf: Any) -> list[str]:
+    """Pop all pending messages from the libmseed log registry into `buf`.
+
+    `buf` must be a ``char[]`` of at least _MAX_RLOG_MSG_LEN bytes, as
+    returned by _thread_local_rlog_buf().
+    """
+    messages: list[str] = []
+    while True:
+        length = clibmseed.ms_rlog_pop(ffi.NULL, buf, _MAX_RLOG_MSG_LEN, 0)
+        if length <= 0:
+            break
+        messages.append(ffi.unpack(buf, length).decode("utf-8", errors="replace").rstrip("\n"))
+
+    # The registry is newest-first, entries are added at its head
+    messages.reverse()
+
+    return messages
+
+
 def get_error_messages() -> list[str]:
     """
     Get all error/warning messages from the libmseed logging registry.
@@ -167,19 +202,4 @@ def get_error_messages() -> list[str]:
         A list of error/warning message strings, oldest first.  Empty list
         if no messages.
     """
-    buf = getattr(_thread_local_rlog_pop_buf, "buf", None)
-    if buf is None:
-        buf = ffi.new("char[]", _MAX_RLOG_MSG_LEN)
-        _thread_local_rlog_pop_buf.buf = buf
-
-    messages: list[str] = []
-    while True:
-        length = clibmseed.ms_rlog_pop(ffi.NULL, buf, _MAX_RLOG_MSG_LEN, 0)
-        if length <= 0:
-            break
-        messages.append(ffi.unpack(buf, length).decode("utf-8", errors="replace").rstrip("\n"))
-
-    # The registry is newest-first, entries are added at its head
-    messages.reverse()
-
-    return messages
+    return _drain_error_messages(_thread_local_rlog_buf())
