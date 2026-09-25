@@ -51,6 +51,7 @@ class MiniSEEDError(PymseedError):
         return self._rendered
 
     def _render(self) -> str:
+        library_message: str | None
         # For generic errors, use captured error messages if available
         if self.status_code == clibmseed.MS_GENERROR and self.error_messages:
             library_message = "; ".join(self.error_messages)

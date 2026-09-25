@@ -134,7 +134,7 @@ class _FileLikeSource:
         buf_offset = 0
         file_offset = 0
         eof = False
-        buf_base = None
+        buf_base: Any = None
         buf_generation = -1
         generation = 0
 

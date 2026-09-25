@@ -139,7 +139,7 @@ class MS3RecordList:
         self._parent_tracelist = parent_tracelist
 
     def __repr__(self) -> str:
-        def indent_repr(thing):
+        def indent_repr(thing: object) -> str:
             """Add two-space indentation to each line of repr(thing)"""
             return "\n".join("  " + line for line in repr(thing).split("\n"))
 
@@ -161,7 +161,7 @@ class MS3RecordList:
         )
 
     def __str__(self) -> str:
-        def indent_str(thing):
+        def indent_str(thing: object) -> str:
             """Add two-space indentation to each line of str(thing)"""
             return "\n".join("  " + line for line in str(thing).split("\n"))
 
@@ -739,7 +739,7 @@ class MS3TraceID:
         self._parent_tracelist = parent_tracelist
 
     def __repr__(self) -> str:
-        def indent_repr(thing):
+        def indent_repr(thing: object) -> str:
             """Add two-space indentation to each line of repr(thing)"""
             return "\n".join("  " + line for line in repr(thing).split("\n"))
 
@@ -1046,7 +1046,7 @@ class MS3TraceList:
         """Context manager exit point - ensures proper cleanup by calling close()."""
         self.close()
 
-    def __del__(self):
+    def __del__(self) -> None:
         """Destructor to ensure proper cleanup"""
         if sys.is_finalizing():
             return
@@ -1096,7 +1096,7 @@ class MS3TraceList:
         if self._mstl == ffi.NULL:
             return "MS3TraceList(closed)"
 
-        def indent_repr(thing):
+        def indent_repr(thing: object) -> str:
             """Add two-space indentation to each line of repr(thing)"""
             return "\n".join("  " + line for line in repr(thing).split("\n"))
 
@@ -1121,7 +1121,7 @@ class MS3TraceList:
         if self._mstl == ffi.NULL:
             return "Closed trace list"
 
-        def indent_str(thing):
+        def indent_str(thing: object) -> str:
             """Add two-space indentation to each line of str(thing)"""
             return "\n".join("  " + line for line in str(thing).split("\n"))
 

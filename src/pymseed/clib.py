@@ -3,7 +3,9 @@ Core library interface for pymseed using CFFI
 
 """
 
-from typing import Any
+from __future__ import annotations
+
+from typing import Any, Literal
 
 __all__ = [
     "ffi",
@@ -74,7 +76,9 @@ def buffer_pointer(buffer: Any, *, writable: bool = False, context: str = "") ->
     return ffi.from_buffer(buffer, require_writable=writable)
 
 
-def owned_memoryview(ptr: Any, nbytes: int, format: str, owner: Any) -> memoryview:
+def owned_memoryview(
+    ptr: Any, nbytes: int, format: Literal["i", "f", "d", "B"], owner: Any
+) -> memoryview[Any]:
     """
     Return a memoryview of `nbytes` at `ptr` that keeps `owner` alive.
 

@@ -900,7 +900,7 @@ class MS3Record:
             return bool(value[0])
         else:
             # We should never get here because types are filtered above
-            raise ValueError(f"Unknown extra header type at {ptr}: {type}")
+            raise ValueError(f"Unknown extra header type at {ptr}: {type!r}")
 
     def set_extra_header(self, ptr: str, value: str | int | float | bool) -> None:
         """Set an extra header value specified by JSON Pointer
@@ -1130,7 +1130,7 @@ class MS3Record:
         return len(self.validate_extra_headers(schema_id, schema_file)) == 0
 
     @property
-    def datasamples(self) -> memoryview:
+    def datasamples(self) -> memoryview[Any]:
         """Data samples as a memoryview (zero-copy access).
 
         Returns a memoryview of the decoded data samples. This provides direct
@@ -1256,7 +1256,7 @@ class MS3Record:
         sampletype = self.sampletype
 
         # Translate libmseed sample type to numpy type
-        nptype = {
+        nptype: dict[str, Any] = {
             "i": np.int32,
             "f": np.float32,
             "d": np.float64,
@@ -1407,7 +1407,9 @@ class MS3Record:
         return samples_unpacked
 
     @contextmanager
-    def with_datasamples(self, data_samples: Sequence[Any], sample_type: str):
+    def with_datasamples(
+        self, data_samples: Sequence[Any], sample_type: str
+    ) -> Iterator[MS3Record]:
         """Context manager for temporarily setting data samples with automatic cleanup.
 
         This context manager temporarily sets data samples, counts, and type for the record

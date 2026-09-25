@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - CI workflow running the test suite and linters on pushes and pull requests.
+- Add missing type annotations flagged by mypy.
 
 ### Removed deprecated functionality
 
