@@ -517,13 +517,13 @@ clear_error_messages()
 pymseed is safe to use from multiple threads, with one rule: threads must not
 share mutable objects like {class}`~pymseed.MS3TraceList`.
 
-Each thread needs its own logging registry. The easiest way to set this up is
-by passing {func}`~pymseed.configure_logging` as the
-{class}`~concurrent.futures.ThreadPoolExecutor` initializer:
+Each thread has its own logging registry, and pymseed sets it up automatically
+the first time a thread makes a pymseed call, so no per-thread initialization
+is required:
 
 ```{testcode}
 from concurrent.futures import ThreadPoolExecutor
-from pymseed import MS3TraceList, configure_logging
+from pymseed import MS3TraceList
 
 def read_file(path):
     traces = MS3TraceList.from_file(path)
@@ -531,7 +531,7 @@ def read_file(path):
 
 files = ["examples/example_data.mseed"] * 3
 
-with ThreadPoolExecutor(max_workers=4, initializer=configure_logging) as pool:
+with ThreadPoolExecutor(max_workers=4) as pool:
     counts = list(pool.map(read_file, files))
 
 print(counts)
@@ -544,8 +544,10 @@ print(counts)
 ...
 ```
 
-If you create threads manually, call {func}`~pymseed.configure_logging` at the
-start of each thread's target function before any pymseed calls.
+Call {func}`~pymseed.configure_logging` explicitly only to change the
+log/error prefixes or the maximum stored message count for the calling
+thread. A thread that never calls it uses the settings from the most recent
+`configure_logging()` call made anywhere in the process.
 
 ## Next Steps
 
