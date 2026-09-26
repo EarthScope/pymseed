@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-09-25
+
 ### Fixed
 - Using a record after its reader, buffer or trace list is closed, or after a
   later parse error, now raises `ValueError` instead of reading freed memory.
@@ -471,7 +473,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - MS3Record class for individual records
 - CFFI-based bindings to libmseed
 
-[Unreleased]: https://github.com/EarthScope/pymseed/compare/v0.9.6...HEAD
+[Unreleased]: https://github.com/EarthScope/pymseed/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/EarthScope/pymseed/releases/tag/v1.0.0
 [0.9.6]: https://github.com/EarthScope/pymseed/releases/tag/v0.9.6
 [0.9.5]: https://github.com/EarthScope/pymseed/releases/tag/v0.9.5
 [0.9.4]: https://github.com/EarthScope/pymseed/releases/tag/v0.9.4
