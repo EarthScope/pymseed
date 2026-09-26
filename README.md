@@ -1,4 +1,4 @@
-# pymseed - a Python package to read and write miniSEED formatted data
+# pymseed - miniSEED for Python
 
 [![Python versions](https://img.shields.io/pypi/pyversions/pymseed)](https://pypi.org/project/pymseed/)
 [![PyPI](https://img.shields.io/pypi/v/pymseed)](https://pypi.org/project/pymseed/)
@@ -16,14 +16,17 @@ for most of the data format and manipulation work.
 
 ## Installation
 
-The [releases](https://pypi.org/project/pymseed/) should be installed
-directly from PyPI with, for example, `pip install pymseed`.
+Install from [PyPI](https://pypi.org/project/pymseed/):
 
-If using numpy features use optional dependency "numpy" or install it independently
-e.g. `pip install pymseed[numpy]`.
+```bash
+pip install pymseed
+```
 
-For package development use optional dependency "dev" for needed dependencies
-e.g. `pip install pymseed[dev]`.
+Or from [conda-forge](https://anaconda.org/conda-forge/pymseed):
+
+```bash
+conda install -c conda-forge pymseed
+```
 
 ## Example usage
 
@@ -32,7 +35,9 @@ tutorial and complete API reference. Working programs for a variety of use
 cases can be found in the
 [examples](https://github.com/EarthScope/pymseed/tree/main/examples) directory of the repository.
 
-Read a file and print details from each record:
+Read a file and print details from each record. Each `msr` is only valid
+during its own iteration, since the reader reuses it for the next record;
+using it afterwards raises `ValueError`:
 ```python
 from pymseed import MS3Record, TimeFormat
 
@@ -44,7 +49,7 @@ for msr in MS3Record.from_file(input_file):
     print(f' Start Time: {msr.starttime_str(timeformat=TimeFormat.ISOMONTHDAY_SPACE_Z)}')
     print(f'    Samples: {msr.samplecnt}')
 
-    # Alternatively, use the library print function
+    # Alternatively, use the library print function (print to console)
     msr.print()
 ```
 
@@ -106,9 +111,9 @@ traces.to_file(output_file,
 miniSEED 3 and FDSN [Source Identifiers](https://docs.fdsn.org/projects/source-identifiers)
 use a single string (for example `FDSN:IU_COLA_00_B_H_Z`) to identify a unique
 time series channel. Classic SEED-style identifiers split the same information
-into network, station, location, and channel (NSLC) codes.  SourceIDs are a
-superset of SEED v2 codes, all SEED codes can be represented as SourceIDs,
-but not all SourceIDs will fit into SEED codes.
+into network, station, location, and channel (NSLC) codes.  Source IDs are a
+superset of SEED v2 codes: all SEED codes can be represented as Source IDs,
+but not all Source IDs will fit into SEED codes.
 
 The utility methods `nslc2sourceid()` and `sourceid2nslc()` support mapping
 between these identifier systems:
@@ -120,7 +125,7 @@ from pymseed import nslc2sourceid, sourceid2nslc
 sid = nslc2sourceid("IU", "COLA", "00", "BHZ")
 # 'FDSN:IU_COLA_00_B_H_Z'
 
-# Blank location codes are represented as an empty strings
+# Blank location codes are represented as an empty string
 sid2 = nslc2sourceid("XX", "TEST", "", "BHZ")
 # 'FDSN:XX_TEST__B_H_Z'
 
@@ -141,7 +146,7 @@ nslc = sourceid2nslc("FDSN:NETWORK_STATION_LOCATION_G_SR_1")
 assert nslc == ('NETWORK', 'STATION', 'LOCATION', 'G_SR_1')
 ```
 
-Invalid source IDs raise `ValueError` from `sourceid2nslc()`; invalid NSLC combinations
+Invalid source IDs raise `ValueError` from `sourceid2nslc()`; invalid NSLC codes
 raise `ValueError` from `nslc2sourceid()`.
 
 ## Threaded usage
@@ -149,30 +154,32 @@ raise `ValueError` from `nslc2sourceid()`.
 The pymseed package is safe to use with threads as long as the threads
 are not sharing data structures, e.g. a `MS3TraceList`.
 
-The underlying libmseed library uses thread-local storage for logging,
-allowing each thread to have its own logging configuration.
-
-When using threads, call `configure_logging()` in each thread to initialize
-the logging registry for that thread. This can be done either explicitly at
-the start of the thread function or as an initializer for thread pools:
+The underlying libmseed library uses thread-local storage for logging, so
+each thread has its own message registry. This is set up automatically the
+first time a thread makes a pymseed call, so no per-thread initialization
+is required:
 
 ```python
 from concurrent.futures import ThreadPoolExecutor
-from pymseed import configure_logging, MS3TraceList
+from pymseed import MS3TraceList
 
 def process_file(filename):
     traces = MS3TraceList.from_file(filename)
     # ... process traces ...
     return len(traces)
 
-# A list of files to process (silly example)
+# A list of files to process (example)
 file_list = ["examples/example_data.mseed",
              "examples/example_data.mseed"]
 
-# Using initializer to configure logging for each worker thread
-with ThreadPoolExecutor(max_workers=4, initializer=configure_logging) as executor:
+with ThreadPoolExecutor(max_workers=4) as executor:
     results = executor.map(process_file, file_list)
 ```
+
+Call `configure_logging()` explicitly only to change the log/error prefixes
+or the maximum stored message count for the calling thread. A thread that
+never calls it uses the settings from the most recent `configure_logging()`
+call made anywhere in the process.
 
 ## Contributing
 
