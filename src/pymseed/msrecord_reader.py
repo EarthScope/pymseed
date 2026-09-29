@@ -11,12 +11,12 @@ from typing import Any
 from .clib import clibmseed, ffi
 from .exceptions import MiniSEEDError
 from .logging import begin_operation
-from .msrecord import MS3Record, _truncated_source_message
+from .msrecord import MS3Record, _AdvanceGuard, _truncated_source_message
 from .selections import build_selections
 from .util import parse_flags
 
 
-class MS3RecordReader:
+class MS3RecordReader(_AdvanceGuard):
     """Read miniSEED records from a file or file descriptor.
 
     Usually created via :meth:`MS3Record.from_file` rather than directly.
@@ -171,6 +171,8 @@ class MS3RecordReader:
         validate_crc: bool = True,
         verbose: int = 0,
     ) -> None:
+        self._temp_contexts = 0
+
         begin_operation()
 
         self._msfp_ptr = ffi.new("MS3FileParam **")
@@ -303,6 +305,8 @@ class MS3RecordReader:
         if self._msfp_ptr[0] == ffi.NULL:
             raise ValueError("I/O operation on closed MS3RecordReader")
 
+        self._check_advance()
+
         status = clibmseed.ms3_readmsr_selection(
             self._msfp_ptr,
             self._msr_ptr,
@@ -375,7 +379,13 @@ class MS3RecordReader:
         """Close the reader and free any allocated memory.
 
         Idempotent: safe to call multiple times.
+
+        Raises:
+            ValueError: Within :meth:`MS3Record.with_datasamples` of a record
+                this reader yielded, as closing would free its samples.
         """
+        self._check_advance()
+
         # Perform cleanup by calling the function with NULL stream name.
         # The pointer-NULL guard makes this method idempotent.
         if self._msfp_ptr[0] != ffi.NULL or self._msr_ptr[0] != ffi.NULL:

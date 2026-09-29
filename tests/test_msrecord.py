@@ -446,6 +446,62 @@ def test_parse_trims_preallocated_sample_buffer():
         pymseed.set_prealloc_block_size(original)
 
 
+def _iterators_over_records():
+    """Factories for each way of iterating records, by name."""
+    import io
+
+    from pymseed import MS3RecordReader
+
+    with open(test_repack2_input, "rb") as f:
+        data = f.read()
+
+    return {
+        "from_buffer": lambda: MS3Record.from_buffer(data, unpack_data=True),
+        "from_filelike": lambda: MS3Record.from_filelike(io.BytesIO(data), unpack_data=True),
+        "from_file": lambda: MS3Record.from_file(test_repack2_input, unpack_data=True),
+        "reader": lambda: MS3RecordReader(test_repack2_input, unpack_data=True),
+    }
+
+
+@pytest.mark.parametrize("name", ["from_buffer", "from_filelike", "from_file", "reader"])
+def test_with_datasamples_rejects_advancing_the_source(name):
+    """Advancing the source would free the temporary samples; iteration resumes afterward."""
+    make_source = _iterators_over_records()[name]
+    source = make_source()
+    msr = next(source)
+
+    # Contexts, nested or not, leave the source free to advance
+    with msr.with_datasamples([1, 2, 3], "i"):
+        with msr.with_datasamples([4, 5], "i"):
+            pass
+    msr = next(source)
+
+    with msr.with_datasamples([1, 2, 3], "i"):
+        with msr.with_datasamples([4, 5], "i"):
+            pass
+        with pytest.raises(ValueError, match="within its with_datasamples"):
+            next(source)
+        assert list(msr.datasamples) == [1, 2, 3]
+
+    # Only the reader survives a refused advance; a generator has ended
+    if name == "reader":
+        assert next(source).numsamples > 0
+
+
+def test_reader_close_rejected_within_with_datasamples():
+    from pymseed import MS3RecordReader
+
+    reader = MS3RecordReader(test_repack2_input, unpack_data=True)
+    msr = next(reader)
+
+    with msr.with_datasamples([1, 2, 3], "i"):
+        with pytest.raises(ValueError, match="within its with_datasamples"):
+            reader.close()
+        assert list(msr.datasamples) == [1, 2, 3]
+
+    reader.close()
+
+
 def test_with_datasamples_nested_contexts_restore_the_guard():
     msr = _header_only_record()
 

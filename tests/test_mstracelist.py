@@ -2168,7 +2168,7 @@ def test_segment_invalid_after_add_from_sources():
         "add_buffer": lambda t: t.add_buffer(buf),
         "add_filelike": lambda t: t.add_filelike(io.BytesIO(buf)),
     }
-    for name, add in adders.items():
+    for add in adders.values():
         traces = _traces_with_two_segments()
         seg = traces[0][0]
 
@@ -2176,6 +2176,24 @@ def test_segment_invalid_after_add_from_sources():
 
         with pytest.raises(ValueError, match="MS3TraceList was modified"):
             seg.samplecnt
+
+
+def test_record_entry_with_datasamples_rejects_changing_the_trace_list():
+    """Closing or changing the list would free the temporary samples of an entry's record."""
+    traces = MS3TraceList.from_file(test_path3, record_list=True)
+    record = traces[0][0].recordlist[0].record
+
+    with record.with_datasamples([1, 2, 3], "i"):
+        with pytest.raises(ValueError, match="within its with_datasamples"):
+            traces.close()
+        with pytest.raises(ValueError, match="within its with_datasamples"):
+            traces.add_data(_SID, [1], "i", 10, starttime_str="2024-01-01T00:00:00Z")
+        with pytest.raises(ValueError, match="within its with_datasamples"):
+            next(traces.generate(remove_packed=True))
+        assert list(record.datasamples) == [1, 2, 3]
+
+    traces.add_data(_SID, [1], "i", 10, starttime_str="2024-01-01T00:00:00Z")
+    traces.close()
 
 
 def test_traceid_remains_valid_after_add():
@@ -2375,9 +2393,7 @@ def test_small_additions_are_not_trimmed_until_requested():
         whole = MS3TraceList()
         whole.add_buffer(b"".join(records), unpack_data=True)
         assert whole[0][0].datasize == 2000 * 4
-        via_filelike = MS3TraceList.from_filelike(
-            io.BytesIO(b"".join(records)), unpack_data=True
-        )
+        via_filelike = MS3TraceList.from_filelike(io.BytesIO(b"".join(records)), unpack_data=True)
         assert via_filelike[0][0].datasize == 2000 * 4
 
         traces.close()
@@ -2396,10 +2412,12 @@ def test_add_data_appended_segment_keeps_slack_until_trimmed():
         pymseed.set_prealloc_block_size(1 << 20)
 
         traces = MS3TraceList()
-        traces.add_data("FDSN:XX_STA__B_H_1", [1, 2, 3], "i", 10.0,
-                        starttime_str="2023-01-01T00:00:00.000Z")
-        traces.add_data("FDSN:XX_STA__B_H_1", [4, 5, 6], "i", 10.0,
-                        starttime_str="2023-01-01T00:00:00.300Z")
+        traces.add_data(
+            "FDSN:XX_STA__B_H_1", [1, 2, 3], "i", 10.0, starttime_str="2023-01-01T00:00:00.000Z"
+        )
+        traces.add_data(
+            "FDSN:XX_STA__B_H_1", [4, 5, 6], "i", 10.0, starttime_str="2023-01-01T00:00:00.300Z"
+        )
         seg = traces[0][0]
         assert seg.numsamples == 6
         assert seg.datasize > seg.numsamples * 4
@@ -2419,10 +2437,12 @@ def test_trim_buffers_after_disabling_preallocation():
     try:
         pymseed.set_prealloc_block_size(1 << 20)
         traces = MS3TraceList()
-        traces.add_data("FDSN:XX_STA__B_H_1", [1, 2, 3], "i", 10.0,
-                        starttime_str="2023-01-01T00:00:00.000Z")
-        traces.add_data("FDSN:XX_STA__B_H_1", [4, 5, 6], "i", 10.0,
-                        starttime_str="2023-01-01T00:00:00.300Z")
+        traces.add_data(
+            "FDSN:XX_STA__B_H_1", [1, 2, 3], "i", 10.0, starttime_str="2023-01-01T00:00:00.000Z"
+        )
+        traces.add_data(
+            "FDSN:XX_STA__B_H_1", [4, 5, 6], "i", 10.0, starttime_str="2023-01-01T00:00:00.300Z"
+        )
         seg = traces[0][0]
         assert seg.datasize > seg.numsamples * 4
 

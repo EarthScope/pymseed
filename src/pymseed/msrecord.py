@@ -109,7 +109,29 @@ def _select_record(selections_ptr: Any, msr: Any, unpack_data: bool, verbose: in
     return True
 
 
-class _SharedRecordStruct:
+class _AdvanceGuard:
+    """Mixin for a source of borrowed records, which libmseed reuses or frees.
+
+    with_datasamples() counts its active contexts in ``_temp_contexts``, which the
+    subclass sets to 0 first in ``__init__``.  Advancing or closing the source
+    would let libmseed reallocate or free the temporary samples it does not own,
+    so :meth:`_check_advance` refuses.
+    """
+
+    __slots__ = ()
+
+    @property
+    def _advance_guard(self) -> _AdvanceGuard:
+        return self
+
+    def _check_advance(self) -> None:
+        if self._temp_contexts:  # type: ignore[attr-defined]
+            raise ValueError(
+                "cannot advance or close the source of a record within its with_datasamples()"
+            )
+
+
+class _SharedRecordStruct(_AdvanceGuard):
     """Owns the C record struct shared by a record iterator and the records it yields.
 
     The iterators reuse one ``MS3Record`` struct for every record they parse, so
@@ -124,9 +146,10 @@ class _SharedRecordStruct:
     reading the freed memory (see :meth:`MS3Record._borrow`).
     """
 
-    __slots__ = ("_msr_ptr", "_source")
+    __slots__ = ("_msr_ptr", "_source", "_temp_contexts")
 
     def __init__(self, msr_ptr: Any, source: Any = None) -> None:
+        self._temp_contexts = 0
         self._msr_ptr = msr_ptr
         # Keeps the parsed-from buffer alive; msr->record points into it.
         self._source = source
@@ -1600,9 +1623,11 @@ class MS3Record:
             undefined behavior that nothing reports.
 
             Within the context, :meth:`unpack_data` and :meth:`parse_into` raise
-            ``ValueError``, as they would reallocate the temporary samples.  A
-            view taken from ``datasamples`` keeps the temporary samples alive
-            after the context exits.
+            ``ValueError``, as they would reallocate the temporary samples.  So
+            does advancing or closing the reader, iterator or trace list that
+            yielded this record, which ends an iterator.  A view taken from
+            ``datasamples`` keeps the temporary samples alive after the context
+            exits.
 
         See Also:
             MS3TraceList.add_data(): Add data samples to a trace list
@@ -1630,6 +1655,7 @@ class MS3Record:
         buffer_export = None
         orig_temp_samples = self._temp_samples
         temp_samples = None
+        guard = None
         try:
             # Set temporary data directly (inlined implementation)
             if sample_type in _NUMERIC_SAMPLE_SPECS:
@@ -1697,8 +1723,15 @@ class MS3Record:
             self._msr.sampletype = sample_type.encode("ascii")
             self._temp_samples = temp_samples
 
+            # A source that yielded this record must not advance meanwhile
+            guard = getattr(self._owner, "_advance_guard", None)
+            if guard is not None:
+                guard._temp_contexts += 1
+
             yield self
         finally:
+            if guard is not None:
+                guard._temp_contexts -= 1
             # Restore original state
             self._msr.datasamples = orig_datasamples
             self._msr.datasize = orig_datasize
@@ -2113,6 +2146,8 @@ class MS3Record:
                         _truncated_source_message("buffer", remaining),
                     )
 
+                struct._check_advance()
+
                 status = clibmseed.msr3_parse(
                     buf_ptr + offset,
                     remaining,
@@ -2290,6 +2325,8 @@ class MS3Record:
                 if remaining >= clibmseed.MINRECLEN:
                     if buf_ptr is None:
                         buf_ptr = ffi.from_buffer(buf)
+                    struct._check_advance()
+
                     # Once the stream is exhausted libmseed can size a version 2
                     # record carrying no Blockette 1000 from what is left.
                     status = clibmseed.msr3_parse(

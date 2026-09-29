@@ -22,7 +22,7 @@ from .clib import (
 from .definitions import DataEncoding, SubSecond, TimeFormat
 from .exceptions import MiniSEEDError
 from .logging import begin_operation
-from .msrecord import MS3Record
+from .msrecord import MS3Record, _AdvanceGuard
 from .selections import build_selections
 from .util import (
     SAMPLE_FORMATS,
@@ -102,6 +102,11 @@ class MS3RecordPtr:
     def _ptr(self) -> Any:
         self._parent_tracelist._check_segments(self._epoch)
         return self._ptr_raw
+
+    @property
+    def _advance_guard(self) -> Any:
+        """The trace list, which frees this entry's record when it changes."""
+        return self._parent_tracelist
 
     def __repr__(self) -> str:
         return (
@@ -825,7 +830,7 @@ class MS3TraceID:
         return format_nstime(self._id.latest, timeformat, subsecond)
 
 
-class MS3TraceList:
+class MS3TraceList(_AdvanceGuard):
     """A container for a list of traces read from miniSEED
 
     If ``file_name`` is specified miniSEED will be read from the file.
@@ -937,6 +942,8 @@ class MS3TraceList:
         split_version: bool = False,
         verbose: int = 0,
     ) -> None:
+        self._temp_contexts = 0
+
         # Advanced when a change can free what wrappers point to: `_segment_epoch`
         # when segments may be merged or removed, `_id_epoch` when trace IDs are
         # removed as well.  Wrappers hold the value from when they were made.
@@ -1026,7 +1033,13 @@ class MS3TraceList:
             views (``record_mv``) are not guarded: reading one after this call
             reads freed memory, so copy what is needed first.  The trace list
             itself raises :class:`ValueError` for any further operation on it.
+
+        Raises:
+            ValueError: Within :meth:`MS3Record.with_datasamples` of a record
+                entry from this trace list, as closing would free its samples.
         """
+        self._check_advance()
+
         if self._mstl != ffi.NULL:
             mstl_ptr = ffi.new("MS3TraceList **")
             mstl_ptr[0] = self._mstl
@@ -1343,6 +1356,7 @@ class MS3TraceList:
         # Build selections, if sourceid, starttime, or endtime are specified
         selections_ptr, free_selections = build_selections(sourceid, starttime, endtime)
 
+        self._check_advance()
         self._segment_epoch += 1
 
         try:
@@ -1530,6 +1544,7 @@ class MS3TraceList:
         if record_list:
             self._buffer_refs.append(buffer_ptr)
 
+        self._check_advance()
         self._segment_epoch += 1
 
         try:
@@ -1699,6 +1714,7 @@ class MS3TraceList:
         added_bytes = 0
         for msr in records:
             added_bytes += msr._msr.reclen
+            self._check_advance()
             self._segment_epoch += 1
 
             # A record added directly carries no source reference, msr->record
@@ -1869,6 +1885,7 @@ class MS3TraceList:
 
         # Set data samples array, type, and counts temporarily for potential zero-copy operations
         with msr.with_datasamples(data_samples, sample_type):
+            self._check_advance()
             self._segment_epoch += 1
 
             # Add the MS3Record to the trace list, setting auto-heal flag to 1 (true)
@@ -2087,6 +2104,7 @@ class MS3TraceList:
 
                 # Packing removes segments, and trace IDs once emptied
                 if remove_packed:
+                    self._check_advance()
                     self._id_epoch += 1
                     self._segment_epoch += 1
                     id_epoch = self._id_epoch
