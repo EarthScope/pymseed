@@ -465,3 +465,32 @@ def sample_time(time: int, offset: int, samprate: float) -> int:
 def system_time() -> int:
     """Get the current system time in nanoseconds"""
     return clibmseed.lmp_systemtime()
+
+
+def get_prealloc_block_size() -> int:
+    """Get the block size in bytes used to grow sample buffers, 0 if disabled"""
+    return int(clibmseed.libmseed_prealloc_block_size)
+
+
+def set_prealloc_block_size(nbytes: int) -> None:
+    """
+    Set the block size in bytes used to grow sample buffers, 0 to disable.
+
+    Sample buffers grow in blocks of this size while data is added, which
+    avoids a reallocation per record.  Buffers are trimmed to size after
+    :meth:`MS3TraceList.add_file`, :meth:`MS3TraceList.add_buffer` and
+    :meth:`MS3TraceList.add_filelike`.  The setting is process-wide.
+
+    Args:
+        nbytes: Block size in bytes, 0 disables preallocation
+
+    Raises:
+        TypeError: If `nbytes` is not an integer
+        ValueError: If `nbytes` is negative
+    """
+    if isinstance(nbytes, bool) or not isinstance(nbytes, int):
+        raise TypeError(f"nbytes must be an integer; got {type(nbytes).__name__}")
+    if nbytes < 0:
+        raise ValueError("nbytes must not be negative")
+
+    clibmseed.libmseed_prealloc_block_size = nbytes

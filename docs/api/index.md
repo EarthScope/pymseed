@@ -57,6 +57,8 @@ list rather than constructed directly.
    pymseed.timestr2nstime
    pymseed.sample_time
    pymseed.system_time
+   pymseed.get_prealloc_block_size
+   pymseed.set_prealloc_block_size
    pymseed.configure_logging
    pymseed.clear_error_messages
    pymseed.get_error_messages

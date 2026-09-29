@@ -1508,6 +1508,13 @@ class MS3Record:
         if samples_unpacked < 0:
             raise MiniSEEDError(samples_unpacked, "Error unpacking data samples")
 
+        # Release the unused tail of a preallocated buffer, a shared struct
+        # keeps it for reuse by the next record
+        if self._msr_allocated and clibmseed.libmseed_prealloc_block_size:
+            status = clibmseed.msr3_resize_buffer(self._msr)
+            if status != clibmseed.MS_NOERROR:
+                raise MiniSEEDError(status, "Error resizing data sample buffer")
+
         return samples_unpacked
 
     @contextmanager

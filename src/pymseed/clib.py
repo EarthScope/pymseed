@@ -32,6 +32,13 @@ except ImportError as exc:
         "  pip install -e ."
     ) from exc
 
+# libmseed grows a segment's sample buffer with one realloc per record unless
+# block preallocation is on, which is the default only on Windows. Without it
+# reading is quadratic in segment size on some platforms (e.g. macOS).
+DEFAULT_PREALLOC_BLOCK_SIZE = 1 << 20
+if clibmseed.libmseed_prealloc_block_size == 0:
+    clibmseed.libmseed_prealloc_block_size = DEFAULT_PREALLOC_BLOCK_SIZE
+
 
 def buffer_pointer(buffer: Any, *, writable: bool = False, context: str = "") -> Any:
     """

@@ -16,9 +16,11 @@ from .msrecord_reader import MS3RecordReader
 from .msrecord_validator import MS3RecordValidator, ValidationError
 from .mstracelist import MS3TraceList
 from .util import (
+    get_prealloc_block_size,
     nslc2sourceid,
     nstime2timestr,
     sample_time,
+    set_prealloc_block_size,
     sourceid2nslc,
     system_time,
     timestr2nstime,
@@ -58,6 +60,8 @@ __all__ = [
     "timestr2nstime",
     "sample_time",
     "system_time",
+    "get_prealloc_block_size",
+    "set_prealloc_block_size",
     "configure_logging",
     "clear_error_messages",
     "get_error_messages",

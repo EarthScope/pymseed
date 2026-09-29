@@ -1361,6 +1361,8 @@ class MS3TraceList:
         if status != clibmseed.MS_NOERROR:
             raise MiniSEEDError(status, f"Error reading file: {file_name}")
 
+        self._trim_buffers()
+
     def add_buffer(
         self,
         buffer: Any,
@@ -1548,6 +1550,8 @@ class MS3TraceList:
         if status < 0:
             raise MiniSEEDError(status, f"Error reading buffer (status: {status})")
 
+        self._trim_buffers()
+
     def add_filelike(
         self,
         fh: Any,
@@ -1706,6 +1710,17 @@ class MS3TraceList:
                     clibmseed.MS_GENERROR,
                     "Error adding record from file-like stream",
                 )
+
+        self._trim_buffers()
+
+    def _trim_buffers(self) -> None:
+        """Release the unused tail of preallocated segment sample buffers"""
+        if clibmseed.libmseed_prealloc_block_size == 0:
+            return
+
+        status = clibmseed.mstl3_resize_buffers(self._mstl)
+        if status != clibmseed.MS_NOERROR:
+            raise MiniSEEDError(status, "Error resizing sample buffers")
 
     def add_data(
         self,
