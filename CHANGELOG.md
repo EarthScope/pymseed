@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-09-29
+
 ### Added
 - `get_prealloc_block_size()` and `set_prealloc_block_size()` to read or disable
   the block preallocation of sample buffers.  Use default of 1 MiB.
