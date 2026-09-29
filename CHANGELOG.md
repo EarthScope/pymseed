@@ -32,7 +32,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Grow sample buffers in 1 MiB blocks on all platforms, avoiding quadratic read time
-  on some, and trim them to size after `add_file()`, `add_buffer()` and `add_filelike()`.
+  on some, and trim them to size after `add_file()`, `add_buffer()`, `add_filelike()`,
+  and `MS3Record.parse()`, `parse_into()` and `unpack_data()`.
 - Document when data sample and raw record views become invalid, for `MS3Record`,
   `MS3RecordReader` and `MS3TraceSeg`.
 

@@ -1508,14 +1508,19 @@ class MS3Record:
         if samples_unpacked < 0:
             raise MiniSEEDError(samples_unpacked, "Error unpacking data samples")
 
-        # Release the unused tail of a preallocated buffer, a shared struct
-        # keeps it for reuse by the next record
+        self._trim_samples()
+
+        return samples_unpacked
+
+    def _trim_samples(self) -> None:
+        """Release the unused tail of a preallocated sample buffer
+
+        A shared struct keeps its buffer for reuse by the next record.
+        """
         if self._msr_allocated and clibmseed.libmseed_prealloc_block_size:
             status = clibmseed.msr3_resize_buffer(self._msr)
             if status != clibmseed.MS_NOERROR:
                 raise MiniSEEDError(status, "Error resizing data sample buffer")
-
-        return samples_unpacked
 
     @contextmanager
     def with_datasamples(self, data_samples: Any, sample_type: str) -> Iterator[MS3Record]:
@@ -2494,7 +2499,10 @@ class MS3Record:
         if status == clibmseed.MS_NOERROR:
             # msr->record points into `buffer` rather than a copy, so the record
             # must keep it alive to stay self-contained.
-            return cls._wrap(msr_ptr[0], owns=True, owner=buf_ptr)
+            msr = cls._wrap(msr_ptr[0], owns=True, owner=buf_ptr)
+            if unpack_data:
+                msr._trim_samples()
+            return msr
 
         # No record is returned to hold the export past this point.
         ffi.release(buf_ptr)
@@ -2602,5 +2610,8 @@ class MS3Record:
 
         if status != clibmseed.MS_NOERROR:
             raise MiniSEEDError(status, _parse_error_message(status))
+
+        if unpack_data:
+            self._trim_samples()
 
         return self

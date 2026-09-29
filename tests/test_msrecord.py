@@ -423,6 +423,29 @@ def test_with_datasamples_rejects_parse_into():
     assert msr.numsamples > 0
 
 
+def test_parse_trims_preallocated_sample_buffer():
+    """parse() and parse_into() with unpack_data leave an exact-size buffer."""
+    import pymseed
+
+    with open(test_repack2_input, "rb") as f:
+        raw = f.read(512)
+
+    original = pymseed.get_prealloc_block_size()
+    try:
+        pymseed.set_prealloc_block_size(1 << 20)
+
+        msr = MS3Record.parse(raw, unpack_data=True)
+        assert msr.numsamples > 0
+        assert msr._msr.datasize == msr.datasamples.nbytes
+
+        into = MS3Record()
+        into.parse_into(raw, unpack_data=True)
+        assert into._msr.datasize == into.datasamples.nbytes
+        assert list(into.datasamples) == list(msr.datasamples)
+    finally:
+        pymseed.set_prealloc_block_size(original)
+
+
 def test_with_datasamples_nested_contexts_restore_the_guard():
     msr = _header_only_record()
 
