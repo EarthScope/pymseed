@@ -182,6 +182,31 @@ def test_record_survives_temporary_filelike_generator():
     assert msr.datasamples[0] == -502916
 
 
+def test_raw_record_unavailable_after_generator_ends():
+    """The raw record lives in the generator's buffer, so it is not left dangling."""
+    msr = list(MS3Record.from_filelike(io.BytesIO(_read(test_path3))))[-1]
+    gc.collect()
+    _churn = [bytearray(4096) for _ in range(3000)]
+
+    with pytest.raises(ValueError, match="No raw record"):
+        msr.record
+    with pytest.raises(ValueError, match="No raw record"):
+        msr.record_mv
+    with pytest.raises(MiniSEEDError):
+        msr.unpack_data()
+
+
+def test_raw_record_unavailable_after_generator_closed():
+    records = MS3Record.from_filelike(io.BytesIO(_read(test_path3)))
+    msr = next(records)
+    assert msr.record[:2] == b"MS"
+
+    records.close()
+
+    with pytest.raises(ValueError, match="No raw record"):
+        msr.record
+
+
 def test_from_filelike_reports_truncated_final_record():
     """A stream ending mid-record must not read as a clean end of data."""
     data = _read(test_path3)

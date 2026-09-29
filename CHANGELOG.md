@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `MS3Record.unpack_data()` and `parse_into()` within `with_datasamples()` raise
   `ValueError` instead of aborting the process, and a view taken within it stays
   valid after the context exits.
+- A record from `MS3Record.from_filelike()` no longer exposes its raw record once
+  the buffer it pointed into is gone; `record` raises `ValueError`.
 
 ## [1.0.0] - 2026-09-25
 

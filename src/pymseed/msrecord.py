@@ -2313,6 +2313,10 @@ class MS3Record:
                         _truncated_source_message("stream", remaining, needed),
                     )
 
+                # The raw record points into `buf`, which is about to change
+                if msr_ptr[0] != ffi.NULL:
+                    msr_ptr[0].record = ffi.NULL
+
                 # Release the export before mutating the bytearray below
                 if buf_ptr is not None:
                     ffi.release(buf_ptr)
@@ -2335,6 +2339,9 @@ class MS3Record:
             # record wrapper referring to it are gone.
             if free_selections is not None:
                 free_selections()
+            # The raw record points into `buf`, which goes with this frame
+            if msr_ptr[0] != ffi.NULL:
+                msr_ptr[0].record = ffi.NULL
             if buf_ptr is not None:
                 ffi.release(buf_ptr)
 
