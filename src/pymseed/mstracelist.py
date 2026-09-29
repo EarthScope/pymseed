@@ -1032,6 +1032,8 @@ class MS3TraceList:
             mstl_ptr[0] = self._mstl
             clibmseed.mstl3_free(mstl_ptr, 1)
             self._mstl = ffi.NULL
+            self._id_epoch += 1
+            self._segment_epoch += 1
 
         # Nothing refers to the file names or source buffers now
         self._c_file_names.clear()
@@ -1046,14 +1048,14 @@ class MS3TraceList:
 
     def _check_ids(self, epoch: int) -> None:
         """Raise if the trace list is closed or has removed trace IDs since `epoch`"""
-        self._check_open()
         if epoch != self._id_epoch:
+            self._check_open()
             raise ValueError("trace ID is no longer valid: removed from the MS3TraceList")
 
     def _check_segments(self, epoch: int) -> None:
         """Raise if the trace list is closed or has changed its segments since `epoch`"""
-        self._check_open()
         if epoch != self._segment_epoch:
+            self._check_open()
             raise ValueError(
                 "segment or record list is no longer valid: the MS3TraceList was modified"
             )
