@@ -20,6 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the buffer it pointed into is gone; `record` raises `ValueError`.
 - `configure_logging()` raises `ValueError` for a prefix of 200 bytes or more,
   which libmseed refuses, instead of releasing the prefix it keeps using.
+- `MS3TraceSeg`, `MS3RecordList` and `MS3RecordPtr` raise `ValueError` once data is
+  added to their `MS3TraceList`, and `MS3TraceID` once `generate(remove_packed=True)`
+  removes data, instead of reading segments and trace IDs libmseed has freed.
+  Iterating over them is checked at each step, and `generate()` raises `ValueError`
+  if the trace list is closed or has data removed while it is suspended.
 
 ## [1.0.0] - 2026-09-25
 

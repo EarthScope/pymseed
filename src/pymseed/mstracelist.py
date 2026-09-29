@@ -86,8 +86,9 @@ class MS3RecordPtr:
     an internal pointer for a buffer, and exposes the parsed header as
     :attr:`record` without decoding the data samples.
 
-    Invalidated when the owning :class:`MS3TraceList` is closed; using it
-    afterward raises :class:`ValueError` instead of reading freed memory.
+    Invalidated when the owning :class:`MS3TraceList` is closed or changed by
+    adding or removing data; using it afterward raises :class:`ValueError`
+    instead of reading freed memory.
     """
 
     def __init__(self, cffi_ptr: Any, parent_tracelist: Any) -> None:
@@ -95,10 +96,11 @@ class MS3RecordPtr:
         # The referenced structure is owned by the trace list; hold a reference
         # so it cannot be freed while this wrapper is in use.
         self._parent_tracelist = parent_tracelist
+        self._epoch = parent_tracelist._segment_epoch
 
     @property
     def _ptr(self) -> Any:
-        self._parent_tracelist._check_open()
+        self._parent_tracelist._check_segments(self._epoch)
         return self._ptr_raw
 
     def __repr__(self) -> str:
@@ -169,8 +171,9 @@ class MS3RecordList:
     - record_list[start:end] returns a slice of record pointers
     - for record_ptr in record_list: iterates over all record pointers
 
-    Invalidated when the owning :class:`MS3TraceList` is closed; using it
-    afterward raises :class:`ValueError` instead of reading freed memory.
+    Invalidated when the owning :class:`MS3TraceList` is closed or changed by
+    adding or removing data; using it afterward raises :class:`ValueError`
+    instead of reading freed memory.
     """
 
     def __init__(self, cffi_ptr: Any, parent_tracelist: Any) -> None:
@@ -178,10 +181,11 @@ class MS3RecordList:
         # The referenced structure is owned by the trace list; hold a reference
         # so it cannot be freed while this wrapper is in use.
         self._parent_tracelist = parent_tracelist
+        self._epoch = parent_tracelist._segment_epoch
 
     @property
     def _list(self) -> Any:
-        self._parent_tracelist._check_open()
+        self._parent_tracelist._check_segments(self._epoch)
         return self._list_raw
 
     def __repr__(self) -> str:
@@ -205,6 +209,7 @@ class MS3RecordList:
         current_record = self._list.first
         while current_record != ffi.NULL:
             yield MS3RecordPtr(current_record, self._parent_tracelist)
+            self._parent_tracelist._check_segments(self._epoch)
             current_record = current_record.next
 
     def records(self) -> Iterator[MS3RecordPtr]:
@@ -225,7 +230,8 @@ class MS3TraceSeg:
     samples are available as :attr:`datasamples` when the trace list was read
     with ``unpack_data=True``, or after :meth:`unpack_recordlist`.
 
-    Invalidated when the owning :class:`MS3TraceList` is closed; using it
+    Invalidated when the owning :class:`MS3TraceList` is closed or changed by
+    adding or removing data, which can merge or remove segments; using it
     afterward raises :class:`ValueError` instead of reading freed memory.
     """
 
@@ -233,10 +239,11 @@ class MS3TraceSeg:
         self._seg_raw = cffi_ptr
         self._parent_traceid = parent_traceid  # Reference to parent MS3TraceID
         self._parent_tracelist = parent_tracelist  # Reference to parent MS3TraceList
+        self._epoch = parent_tracelist._segment_epoch
 
     @property
     def _seg(self) -> Any:
-        self._parent_tracelist._check_open()
+        self._parent_tracelist._check_segments(self._epoch)
         return self._seg_raw
 
     def __repr__(self) -> str:
@@ -708,17 +715,19 @@ class MS3TraceID:
     - traceid[start:end] returns a slice of segments
     - for segment in traceid: iterates over all segments
 
-    Invalidated when the owning :class:`MS3TraceList` is closed; using it
-    afterward raises :class:`ValueError` instead of reading freed memory.
+    Invalidated when the owning :class:`MS3TraceList` is closed or
+    ``generate(remove_packed=True)`` removes its data; using it afterward
+    raises :class:`ValueError` instead of reading freed memory.
     """
 
     def __init__(self, cffi_ptr: Any, parent_tracelist: Any) -> None:
         self._id_raw = cffi_ptr
         self._parent_tracelist = parent_tracelist
+        self._epoch = parent_tracelist._id_epoch
 
     @property
     def _id(self) -> Any:
-        self._parent_tracelist._check_open()
+        self._parent_tracelist._check_ids(self._epoch)
         return self._id_raw
 
     def __repr__(self) -> str:
@@ -749,8 +758,10 @@ class MS3TraceID:
     def __iter__(self) -> Iterator[MS3TraceSeg]:
         """Return iterator over segments"""
         current_segment = self._id.first
+        epoch = self._parent_tracelist._segment_epoch
         while current_segment != ffi.NULL:
             yield MS3TraceSeg(current_segment, self, self._parent_tracelist)
+            self._parent_tracelist._check_segments(epoch)
             current_segment = current_segment.next
 
     def __getitem__(self, key: int | slice) -> Any:
@@ -926,6 +937,12 @@ class MS3TraceList:
         split_version: bool = False,
         verbose: int = 0,
     ) -> None:
+        # Advanced when a change can free what wrappers point to: `_segment_epoch`
+        # when segments may be merged or removed, `_id_epoch` when trace IDs are
+        # removed as well.  Wrappers hold the value from when they were made.
+        self._id_epoch = 0
+        self._segment_epoch = 0
+
         # Initialize trace list - mstl3_init() returns an initialized pointer
         self._mstl = clibmseed.mstl3_init(ffi.NULL)
 
@@ -1026,6 +1043,20 @@ class MS3TraceList:
         if self._mstl == ffi.NULL:
             raise ValueError("operation on closed MS3TraceList")
 
+    def _check_ids(self, epoch: int) -> None:
+        """Raise if the trace list is closed or has removed trace IDs since `epoch`"""
+        self._check_open()
+        if epoch != self._id_epoch:
+            raise ValueError("trace ID is no longer valid: removed from the MS3TraceList")
+
+    def _check_segments(self, epoch: int) -> None:
+        """Raise if the trace list is closed or has changed its segments since `epoch`"""
+        self._check_open()
+        if epoch != self._segment_epoch:
+            raise ValueError(
+                "segment or record list is no longer valid: the MS3TraceList was modified"
+            )
+
     def __repr__(self) -> str:
         if self._mstl == ffi.NULL:
             return "MS3TraceList(closed)"
@@ -1051,8 +1082,10 @@ class MS3TraceList:
         self._check_open()
 
         current_traceid = self._mstl.traces.next[0]
+        epoch = self._id_epoch
         while current_traceid != ffi.NULL:
             yield MS3TraceID(current_traceid, self)
+            self._check_ids(epoch)
             current_traceid = current_traceid.next[0]
 
     def __contains__(self, item: object) -> bool:
@@ -1291,6 +1324,7 @@ class MS3TraceList:
 
         # Create a reference to the current trace list pointer
         self._check_open()
+        self._segment_epoch += 1
         mstl_ptr = ffi.new("MS3TraceList **")
         mstl_ptr[0] = self._mstl
 
@@ -1468,6 +1502,7 @@ class MS3TraceList:
 
         # Create a reference to the current trace list pointer
         self._check_open()
+        self._segment_epoch += 1
         mstl_ptr = ffi.new("MS3TraceList **")
         mstl_ptr[0] = self._mstl
 
@@ -1638,6 +1673,7 @@ class MS3TraceList:
         )
 
         self._check_open()
+        self._segment_epoch += 1
 
         flags = clibmseed.MSF_PPUPDATETIME | parse_flags(
             validate_crc=validate_crc, record_list=record_list
@@ -1760,6 +1796,7 @@ class MS3TraceList:
         """
 
         self._check_open()
+        self._segment_epoch += 1
 
         begin_operation()
 
@@ -1998,9 +2035,20 @@ class MS3TraceList:
 
         record_pp = ffi.new("char **")
         reclen_p = ffi.new("int32_t *")
+        id_epoch = self._id_epoch
 
         try:
             while True:
+                # The packer holds trace IDs, which must not have been freed by
+                # closing or by another generator removing packed data
+                self._check_ids(id_epoch)
+
+                # Packing removes segments, and trace IDs once emptied
+                if remove_packed:
+                    self._id_epoch += 1
+                    self._segment_epoch += 1
+                    id_epoch = self._id_epoch
+
                 # 1 = record available, 0 = finished, < 0 = error
                 status = clibmseed.mstl3_pack_next(packer, flags, record_pp, reclen_p)
 

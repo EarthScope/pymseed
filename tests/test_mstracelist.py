@@ -2088,3 +2088,161 @@ def test_tracelist_filelike_small_chunk_size():
     assert len(traces) == 3
     for tid in traces:
         assert tid[0].samplecnt == 84000
+
+
+_SID = "FDSN:XX_TEST__B_H_Z"
+
+
+def _traces_with_two_segments():
+    """Two segments 0.6 s apart, with a 0.3 s gap between them that data can fill."""
+    traces = MS3TraceList()
+    traces.add_data(_SID, [1, 2, 3], "i", 10, starttime_str="2024-01-01T00:00:00.000Z")
+    traces.add_data(_SID, [7, 8, 9], "i", 10, starttime_str="2024-01-01T00:00:00.600Z")
+    assert len(traces[0]) == 2
+    return traces
+
+
+def _fill_gap(traces):
+    """Add the samples between the two segments, merging them into one."""
+    traces.add_data(_SID, [4, 5, 6], "i", 10, starttime_str="2024-01-01T00:00:00.300Z")
+
+
+def test_segment_invalid_after_merge():
+    """A segment freed by an autoheal merge is reported rather than read."""
+    traces = _traces_with_two_segments()
+    later = traces[0][1]
+
+    _fill_gap(traces)
+
+    assert len(traces[0]) == 1
+    with pytest.raises(ValueError, match="MS3TraceList was modified"):
+        later.samplecnt
+
+
+def test_segment_and_record_wrappers_invalid_after_add():
+    traces = MS3TraceList.from_file(test_path3, record_list=True)
+    seg = traces[0][0]
+    record_list = seg.recordlist
+    record_ptr = record_list[0]
+
+    traces.add_data(_SID, [1, 2, 3], "i", 10, starttime_str="2024-01-01T00:00:00Z")
+
+    with pytest.raises(ValueError, match="MS3TraceList was modified"):
+        seg.samplecnt
+    with pytest.raises(ValueError, match="MS3TraceList was modified"):
+        len(record_list)
+    with pytest.raises(ValueError, match="MS3TraceList was modified"):
+        record_ptr.fileoffset
+
+    # Fresh wrappers are valid
+    assert traces[0][0].samplecnt > 0
+    assert len(traces[0][0].recordlist) > 0
+
+
+def test_traceid_remains_valid_after_add():
+    """Adding data never frees a trace ID."""
+    traces = _traces_with_two_segments()
+    traceid = traces[0]
+
+    _fill_gap(traces)
+    traces.add_data("FDSN:XX_TEST__B_H_N", [1], "i", 10, starttime_str="2024-01-01T00:00:00Z")
+
+    assert traceid.sourceid == _SID
+    assert len(traceid) == 1
+
+
+def test_wrappers_invalid_after_remove_packed():
+    traces = MS3TraceList()
+    traces.add_data(_SID, list(range(1000)), "i", 10, starttime_str="2024-01-01T00:00:00Z")
+    traceid = traces[0]
+    segment = traceid[0]
+
+    assert list(traces.generate(remove_packed=True))
+
+    with pytest.raises(ValueError, match="trace ID is no longer valid"):
+        traceid.sourceid
+    with pytest.raises(ValueError, match="MS3TraceList was modified"):
+        segment.samplecnt
+    assert len(traces) == 0
+
+
+def test_wrappers_valid_after_generate_without_remove_packed():
+    traces = _traces_with_two_segments()
+    traceid = traces[0]
+    segment = traceid[0]
+
+    assert list(traces.generate())
+
+    assert traceid.sourceid == _SID
+    assert segment.samplecnt == 3
+
+
+def test_segment_iteration_rejects_change_between_steps():
+    traces = _traces_with_two_segments()
+
+    with pytest.raises(ValueError, match="MS3TraceList was modified"):
+        for _segment in traces[0]:
+            _fill_gap(traces)
+
+
+def test_traceid_iteration_rejects_removal_between_steps():
+    traces = MS3TraceList()
+    traces.add_data(_SID, list(range(1000)), "i", 10, starttime_str="2024-01-01T00:00:00Z")
+    traces.add_data("FDSN:XX_TEST__B_H_N", [1], "i", 10, starttime_str="2024-01-01T00:00:00Z")
+
+    with pytest.raises(ValueError, match="trace ID is no longer valid"):
+        for _traceid in traces:
+            list(traces.generate(remove_packed=True))
+
+
+def test_traceid_iteration_rejects_close_between_steps():
+    traces = MS3TraceList.from_file(test_path3)
+
+    with pytest.raises(ValueError, match="closed MS3TraceList"):
+        for _traceid in traces:
+            traces.close()
+
+
+def test_record_list_iteration_rejects_change_between_steps():
+    traces = MS3TraceList.from_file(test_path3, record_list=True)
+    record_list = traces[0][0].recordlist
+    assert len(record_list) > 1
+
+    with pytest.raises(ValueError, match="MS3TraceList was modified"):
+        for _record in record_list:
+            traces.add_data(_SID, [1], "i", 10, starttime_str="2024-01-01T00:00:00Z")
+
+
+def test_generate_rejects_resume_after_close():
+    traces = MS3TraceList()
+    traces.add_data(_SID, list(range(5000)), "i", 10, starttime_str="2024-01-01T00:00:00Z")
+
+    records = traces.generate()
+    assert next(records)
+
+    traces.close()
+
+    with pytest.raises(ValueError, match="closed MS3TraceList"):
+        next(records)
+
+
+def test_generate_rejects_resume_after_other_generator_removes_data():
+    traces = MS3TraceList()
+    traces.add_data(_SID, list(range(5000)), "i", 10, starttime_str="2024-01-01T00:00:00Z")
+
+    suspended = traces.generate()
+    assert next(suspended)
+
+    assert list(traces.generate(remove_packed=True))
+
+    with pytest.raises(ValueError, match="trace ID is no longer valid"):
+        next(suspended)
+
+
+def test_generate_remove_packed_completes():
+    """A generator that removes packed data does not invalidate itself."""
+    traces = MS3TraceList()
+    traces.add_data(_SID, list(range(5000)), "i", 10, starttime_str="2024-01-01T00:00:00Z")
+
+    assert len(list(traces.generate(remove_packed=True))) > 1
+    assert len(traces) == 0
