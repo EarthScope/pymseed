@@ -1795,7 +1795,9 @@ class MS3TraceList:
         Note:
             Data is automatically merged with existing segments based on source ID,
             time continuity, and sample rate similarity. Adjacent or overlapping
-            segments are combined when possible.
+            segments are combined when possible.  A segment that data is appended
+            to keeps unused space up to the preallocation block size, released
+            by :meth:`trim_buffers`.
 
         Performance:
             The method attempts zero-copy optimization when data_samples is a compatible

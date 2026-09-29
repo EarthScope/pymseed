@@ -2346,3 +2346,27 @@ def test_small_additions_are_not_trimmed_until_requested():
             traces.trim_buffers()
     finally:
         pymseed.set_prealloc_block_size(original)
+
+
+def test_add_data_appended_segment_keeps_slack_until_trimmed():
+    """Appending with add_data() grows a segment in blocks; trim_buffers() releases them."""
+    import pymseed
+
+    original = pymseed.get_prealloc_block_size()
+    try:
+        pymseed.set_prealloc_block_size(1 << 20)
+
+        traces = MS3TraceList()
+        traces.add_data("FDSN:XX_STA__B_H_1", [1, 2, 3], "i", 10.0,
+                        starttime_str="2023-01-01T00:00:00.000Z")
+        traces.add_data("FDSN:XX_STA__B_H_1", [4, 5, 6], "i", 10.0,
+                        starttime_str="2023-01-01T00:00:00.300Z")
+        seg = traces[0][0]
+        assert seg.numsamples == 6
+        assert seg.datasize > seg.numsamples * 4
+
+        traces.trim_buffers()
+        assert seg.datasize == seg.numsamples * 4
+        assert list(seg.datasamples) == [1, 2, 3, 4, 5, 6]
+    finally:
+        pymseed.set_prealloc_block_size(original)
