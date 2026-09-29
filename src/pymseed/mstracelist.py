@@ -373,7 +373,7 @@ class MS3TraceSeg:
         returned.  The view holds the trace list object, but the samples are only
         valid until the trace list is next changed or closed: adding data can
         move a segment's buffer, packing with ``remove_packed=True`` releases it,
-        and :meth:`MS3TraceList.close` frees it.  Reading a view after that reads
+        and :meth:`~pymseed.MS3TraceList.close` frees it.  Reading a view after that reads
         freed memory, so copy the samples to keep them across such calls, or use
         :meth:`take_np_datasamples` to detach the buffer itself.
 

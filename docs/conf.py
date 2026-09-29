@@ -121,6 +121,16 @@ autodoc_default_options = {
 # Document both class docstring and __init__ docstring
 autoclass_content = "both"
 
+
+def _hide_private_bases(app, name, obj, options, bases):
+    # Private mixins are implementation details, not part of the public API
+    bases[:] = [b for b in bases if not b.__name__.startswith("_")] or [object]
+
+
+def setup(app):
+    app.connect("autodoc-process-bases", _hide_private_bases)
+
+
 # -- Options for autosummary --------------------------------------------------
 
 autosummary_generate = True
