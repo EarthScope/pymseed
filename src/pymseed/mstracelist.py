@@ -1361,7 +1361,7 @@ class MS3TraceList:
         if status != clibmseed.MS_NOERROR:
             raise MiniSEEDError(status, f"Error reading file: {file_name}")
 
-        self._trim_buffers()
+        self.trim_buffers()
 
     def add_buffer(
         self,
@@ -1550,7 +1550,9 @@ class MS3TraceList:
         if status < 0:
             raise MiniSEEDError(status, f"Error reading buffer (status: {status})")
 
-        self._trim_buffers()
+        # A buffer smaller than a block is likely one of many small additions
+        if buffer_length >= clibmseed.libmseed_prealloc_block_size:
+            self.trim_buffers()
 
     def add_filelike(
         self,
@@ -1692,7 +1694,10 @@ class MS3TraceList:
         pprecptr = ffi.new("MS3RecordPtr **") if record_list else ffi.NULL
 
         # Selection matching and deferred data unpacking happen in `records`.
+        added_bytes = 0
         for msr in records:
+            added_bytes += msr._msr.reclen
+
             # A record added directly carries no source reference, msr->record
             # included, matching source bytes that do not outlive the read.
             seg = clibmseed.mstl3_addmsr_recordptr(
@@ -1711,10 +1716,25 @@ class MS3TraceList:
                     "Error adding record from file-like stream",
                 )
 
-        self._trim_buffers()
+        # A stream smaller than a block is likely one of many small additions
+        if added_bytes >= clibmseed.libmseed_prealloc_block_size:
+            self.trim_buffers()
 
-    def _trim_buffers(self) -> None:
-        """Release the unused tail of preallocated segment sample buffers"""
+    def trim_buffers(self) -> None:
+        """Release the unused tail of preallocated segment sample buffers
+
+        Sample buffers grow in blocks (see :func:`set_prealloc_block_size`).
+        :meth:`add_file` trims them after reading, and :meth:`add_buffer` and
+        :meth:`add_filelike` do for input of at least one block.  Call this
+        after adding data in small pieces, e.g. with :meth:`add_data` or
+        :meth:`add_buffer` per record, to release the unused space.
+
+        Raises:
+            ValueError: If the trace list is closed
+            MiniSEEDError: If resizing a buffer fails
+        """
+        self._check_open()
+
         if clibmseed.libmseed_prealloc_block_size == 0:
             return
 

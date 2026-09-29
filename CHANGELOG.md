@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - `get_prealloc_block_size()` and `set_prealloc_block_size()` to read or disable
   the block preallocation of sample buffers.  Use default of 1 MiB.
+- `MS3TraceList.trim_buffers()` to trim sample buffers after adding data in small pieces.
 
 ### Fixed
 - Release cffi buffer exports explicitly to avoid a GC segfault with memoryview
@@ -32,8 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Grow sample buffers in 1 MiB blocks on all platforms, avoiding quadratic read time
-  on some, and trim them to size after `add_file()`, `add_buffer()`, `add_filelike()`,
-  and `MS3Record.parse()`, `parse_into()` and `unpack_data()`.
+  on some, and trim them to size after `add_file()`, `add_buffer()` and `add_filelike()`
+  of at least one block, and `MS3Record.parse()`, `parse_into()` and `unpack_data()`.
 - Document when data sample and raw record views become invalid, for `MS3Record`,
   `MS3RecordReader` and `MS3TraceSeg`.
 

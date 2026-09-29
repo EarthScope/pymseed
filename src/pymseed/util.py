@@ -478,8 +478,9 @@ def set_prealloc_block_size(nbytes: int) -> None:
 
     Sample buffers grow in blocks of this size while data is added, which
     avoids a reallocation per record.  Buffers are trimmed to size after
-    :meth:`MS3TraceList.add_file`, :meth:`MS3TraceList.add_buffer` and
-    :meth:`MS3TraceList.add_filelike`.  The setting is process-wide.
+    :meth:`MS3TraceList.add_file`, after :meth:`MS3TraceList.add_buffer` and
+    :meth:`MS3TraceList.add_filelike` for input of at least one block, and by
+    :meth:`MS3TraceList.trim_buffers`.  The setting is process-wide.
 
     Args:
         nbytes: Block size in bytes, 0 disables preallocation

@@ -2285,7 +2285,7 @@ def test_bulk_read_trims_preallocated_buffers(tmp_path):
 
     original = pymseed.get_prealloc_block_size()
     try:
-        pymseed.set_prealloc_block_size(1 << 20)
+        pymseed.set_prealloc_block_size(path.stat().st_size)
         traces = MS3TraceList.from_file(str(path), unpack_data=True)
         seg = traces[0][0]
         assert seg.datasize == seg.numsamples * 4
@@ -2297,5 +2297,52 @@ def test_bulk_read_trims_preallocated_buffers(tmp_path):
             via_filelike = MS3TraceList.from_filelike(fh, unpack_data=True)
         assert via_filelike[0][0].datasize == 5000 * 4
         assert list(seg.datasamples) == list(range(5000))
+    finally:
+        pymseed.set_prealloc_block_size(original)
+
+
+def test_small_additions_are_not_trimmed_until_requested():
+    """A record-sized add_buffer() leaves block slack that trim_buffers() releases."""
+    import pymseed
+
+    src = MS3TraceList()
+    src.add_data(
+        sourceid="FDSN:XX_TEST__B_S_X",
+        data_samples=list(range(2000)),
+        sample_type="i",
+        sample_rate=100.0,
+        starttime_str="2024-01-01T00:00:00Z",
+    )
+    records = list(src.generate(max_record_length=512))
+    assert len(records) > 1
+
+    original = pymseed.get_prealloc_block_size()
+    try:
+        pymseed.set_prealloc_block_size(1 << 20)
+
+        traces = MS3TraceList()
+        for record in records:
+            traces.add_buffer(record, unpack_data=True)
+        seg = traces[0][0]
+        assert seg.numsamples == 2000
+        assert seg.datasize > seg.numsamples * 4
+
+        traces.trim_buffers()
+        assert seg.datasize == seg.numsamples * 4
+        assert list(seg.datasamples) == list(range(2000))
+
+        # One call with at least a block of input is trimmed
+        pymseed.set_prealloc_block_size(sum(len(r) for r in records))
+        whole = MS3TraceList()
+        whole.add_buffer(b"".join(records), unpack_data=True)
+        assert whole[0][0].datasize == 2000 * 4
+        via_filelike = MS3TraceList.from_filelike(
+            io.BytesIO(b"".join(records)), unpack_data=True
+        )
+        assert via_filelike[0][0].datasize == 2000 * 4
+
+        traces.close()
+        with pytest.raises(ValueError):
+            traces.trim_buffers()
     finally:
         pymseed.set_prealloc_block_size(original)
