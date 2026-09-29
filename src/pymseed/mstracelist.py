@@ -1476,15 +1476,19 @@ class MS3TraceList:
         buffer_ptr = buffer_pointer(buffer)
         buffer_length = len(buffer_ptr)
 
+        # Build selections, if sourceid, starttime, or endtime are specified
+        try:
+            selections_ptr, free_selections = build_selections(sourceid, starttime, endtime)
+        except BaseException:
+            ffi.release(buffer_ptr)
+            raise
+
         # Record list entries point into the buffer instead of copying it, for
         # both the raw records and unpacking.  Hold it before reading so the
         # records a partial read added remain valid.  Otherwise the export is
         # only needed for this call, and is released once it returns.
         if record_list:
             self._buffer_refs.append(buffer_ptr)
-
-        # Build selections, if sourceid, starttime, or endtime are specified
-        selections_ptr, free_selections = build_selections(sourceid, starttime, endtime)
 
         try:
             status = clibmseed.mstl3_readbuffer_selection(

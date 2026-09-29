@@ -2282,8 +2282,10 @@ class MS3Record:
                         _truncated_source_message("stream", remaining, needed),
                     )
 
-                # Drop the export before mutating the bytearray below
-                buf_ptr = None
+                # Release the export before mutating the bytearray below
+                if buf_ptr is not None:
+                    ffi.release(buf_ptr)
+                    buf_ptr = None
 
                 # Compact consumed bytes before reading more
                 if offset > 0:
@@ -2302,6 +2304,8 @@ class MS3Record:
             # record wrapper referring to it are gone.
             if free_selections is not None:
                 free_selections()
+            if buf_ptr is not None:
+                ffi.release(buf_ptr)
 
     @classmethod
     def iter_records(cls, source: Any, **kwargs: Any) -> Iterator[MS3Record]:

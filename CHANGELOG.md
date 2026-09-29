@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Release cffi buffer exports explicitly to avoid a GC segfault with memoryview
   on CPython before 3.12.7 (see python/cpython#77894).
+- Release the remaining cffi buffer exports explicitly: in `MS3TraceList.add_buffer()`
+  on an invalid selection, and in `MS3Record.from_filelike()` and the file-like
+  validator source.
 
 ## [1.0.0] - 2026-09-25
 
@@ -477,7 +480,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - MS3Record class for individual records
 - CFFI-based bindings to libmseed
 
-[Unreleased]: https://github.com/EarthScope/pymseed/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/EarthScope/pymseed/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/EarthScope/pymseed/releases/tag/v1.0.1
 [1.0.0]: https://github.com/EarthScope/pymseed/releases/tag/v1.0.0
 [0.9.6]: https://github.com/EarthScope/pymseed/releases/tag/v0.9.6
 [0.9.5]: https://github.com/EarthScope/pymseed/releases/tag/v0.9.5

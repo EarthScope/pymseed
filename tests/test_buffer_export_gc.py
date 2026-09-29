@@ -10,13 +10,16 @@ it is outstanding, which is how a live export is detected here.
 
 import array
 import gc
+import io
 import os
 import sys
 
 import pytest
 
 from pymseed import MS3Record, MS3RecordValidator, MS3TraceList
-from pymseed.msrecord_validator import _BufferSource
+from pymseed import msrecord as msrecord_module
+from pymseed import msrecord_validator as validator_module
+from pymseed.msrecord_validator import _BufferSource, _FileLikeSource
 
 pytestmark = pytest.mark.skipif(
     sys.implementation.name != "cpython",
@@ -181,3 +184,77 @@ def test_buffer_source_close_releases():
 
     records.close()
     _assert_released(buf)
+
+
+class _FfiSpy:
+    """Stand-in for ``ffi`` that records each export and each release of one."""
+
+    def __init__(self, real):
+        self._real = real
+        self.exported = []
+        self.released = []
+
+    def __getattr__(self, name):
+        return getattr(self._real, name)
+
+    def from_buffer(self, *args, **kwargs):
+        export = self._real.from_buffer(*args, **kwargs)
+        self.exported.append(export)
+        return export
+
+    def release(self, cdata):
+        self.released.append(cdata)
+        self._real.release(cdata)
+
+    def assert_all_released(self):
+        assert self.exported
+        assert len(self.released) == len(self.exported)
+
+
+def test_tracelist_add_buffer_releases_on_bad_selection():
+    buf = _valid()
+    traces = MS3TraceList()
+    err = _raised(traces.add_buffer, buf, starttime="not a time")
+    _assert_released(buf)
+    del err
+    traces.close()
+
+
+def test_from_filelike_releases_on_close(monkeypatch):
+    spy = _FfiSpy(msrecord_module.ffi)
+    monkeypatch.setattr(msrecord_module, "ffi", spy)
+
+    records = MS3Record.from_filelike(io.BytesIO(_valid_bytes), chunk_size=1024)
+    next(records)
+    records.close()
+
+    spy.assert_all_released()
+
+
+def test_from_filelike_releases_when_reading_more(monkeypatch):
+    spy = _FfiSpy(msrecord_module.ffi)
+    monkeypatch.setattr(msrecord_module, "ffi", spy)
+
+    assert len(list(MS3Record.from_filelike(io.BytesIO(_valid_bytes), chunk_size=100))) > 1
+
+    spy.assert_all_released()
+
+
+def test_file_like_source_releases_on_close(monkeypatch):
+    spy = _FfiSpy(validator_module.ffi)
+    monkeypatch.setattr(validator_module, "ffi", spy)
+
+    records = iter(_FileLikeSource(io.BytesIO(_valid_bytes), chunk_size=1024))
+    next(records)
+    records.close()
+
+    spy.assert_all_released()
+
+
+def test_file_like_source_releases_when_reading_more(monkeypatch):
+    spy = _FfiSpy(validator_module.ffi)
+    monkeypatch.setattr(validator_module, "ffi", spy)
+
+    assert len(list(_FileLikeSource(io.BytesIO(_valid_bytes), chunk_size=100))) > 1
+
+    spy.assert_all_released()

@@ -163,70 +163,76 @@ class _FileLikeSource:
         # chunk read.
         compact_threshold = max(1, self._chunk_size // 2)
 
-        while True:
-            # --- Fill buffer ---
-            if not eof:
-                chunk = self._fh.read(self._chunk_size)
-                if chunk:
-                    # Drop the previous CFFI buffer-protocol export over
-                    # `buf` BEFORE mutating the bytearray.
-                    buf_base = None
-
-                    if buf_offset > compact_threshold:
-                        del buf[:buf_offset]
-                        buf_offset = 0
-
-                    buf.extend(chunk)
-                else:
-                    eof = True
-
-            # --- Drain records from current buffer ---
+        try:
             while True:
-                remaining = len(buf) - buf_offset
-                if remaining <= 0:
-                    break
+                # --- Fill buffer ---
+                if not eof:
+                    chunk = self._fh.read(self._chunk_size)
+                    if chunk:
+                        # Release the previous CFFI buffer-protocol export over
+                        # `buf` BEFORE mutating the bytearray.
+                        if buf_base is not None:
+                            ffi.release(buf_base)
+                            buf_base = None
 
-                if buf_base is None:
-                    buf_base = ffi.from_buffer(buf)
+                        if buf_offset > compact_threshold:
+                            del buf[:buf_offset]
+                            buf_offset = 0
 
-                record_ptr = buf_base + buf_offset
+                        buf.extend(chunk)
+                    else:
+                        eof = True
 
-                reclen = clibmseed.ms3_detect(
-                    record_ptr,
-                    remaining,
-                    format_version,
-                )
+                # --- Drain records from current buffer ---
+                while True:
+                    remaining = len(buf) - buf_offset
+                    if remaining <= 0:
+                        break
 
-                if reclen < 0:
-                    # Detection only fails for want of data below MINRECLEN
-                    # bytes; at or above that the failure is conclusive.
-                    if eof or remaining >= clibmseed.MINRECLEN:
+                    if buf_base is None:
+                        buf_base = ffi.from_buffer(buf)
+
+                    record_ptr = buf_base + buf_offset
+
+                    reclen = clibmseed.ms3_detect(
+                        record_ptr,
+                        remaining,
+                        format_version,
+                    )
+
+                    if reclen < 0:
+                        # Detection only fails for want of data below MINRECLEN
+                        # bytes; at or above that the failure is conclusive.
+                        if eof or remaining >= clibmseed.MINRECLEN:
+                            yield (None, file_offset, _detection_failure(reclen, remaining))
+                            return
+                        break
+
+                    # A length beyond the supported maximum, or an undetermined
+                    # length with a maximum-length record already buffered, cannot
+                    # be resolved by reading more data.
+                    if reclen > clibmseed.MAXRECLEN or (
+                        reclen == 0 and remaining > clibmseed.MAXRECLEN
+                    ):
                         yield (None, file_offset, _detection_failure(reclen, remaining))
                         return
-                    break
 
-                # A length beyond the supported maximum, or an undetermined
-                # length with a maximum-length record already buffered, cannot
-                # be resolved by reading more data.
-                if reclen > clibmseed.MAXRECLEN or (
-                    reclen == 0 and remaining > clibmseed.MAXRECLEN
-                ):
-                    yield (None, file_offset, _detection_failure(reclen, remaining))
+                    if reclen == 0 or reclen > remaining:
+                        # At EOF the shortfall can never be filled.
+                        if eof:
+                            yield (None, file_offset, _detection_failure(reclen, remaining))
+                            return
+                        break
+
+                    yield (record_ptr, file_offset, reclen)
+                    buf_offset += reclen
+                    file_offset += reclen
+
+                if eof:
                     return
-
-                if reclen == 0 or reclen > remaining:
-                    # At EOF the shortfall can never be filled.
-                    if eof:
-                        yield (None, file_offset, _detection_failure(reclen, remaining))
-                        return
-                    break
-
-                yield (record_ptr, file_offset, reclen)
-                buf_offset += reclen
-                file_offset += reclen
-
-            if eof:
-                return
+        finally:
+            if buf_base is not None:
+                ffi.release(buf_base)
 
 
 class _FileSource:
