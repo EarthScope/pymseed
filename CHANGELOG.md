@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Release cffi buffer exports explicitly to avoid a GC segfault with memoryview
+  on CPython before 3.12.7 (see python/cpython#77894).
+
 ## [1.0.0] - 2026-09-25
 
 ### Fixed

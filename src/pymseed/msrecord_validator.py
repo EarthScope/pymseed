@@ -106,22 +106,25 @@ class _BufferSource:
         format_version = ffi.new("uint8_t *")
         offset = 0
 
-        while offset < buf_size:
-            remaining = buf_size - offset
+        try:
+            while offset < buf_size:
+                remaining = buf_size - offset
 
-            reclen = clibmseed.ms3_detect(
-                buf_ptr + offset,
-                remaining,
-                format_version,
-            )
+                reclen = clibmseed.ms3_detect(
+                    buf_ptr + offset,
+                    remaining,
+                    format_version,
+                )
 
-            # Undetectable, over-long or truncated: no whole record here.
-            if reclen <= 0 or reclen > remaining or reclen > clibmseed.MAXRECLEN:
-                yield (None, offset, _detection_failure(reclen, remaining))
-                return
+                # Undetectable, over-long or truncated: no whole record here.
+                if reclen <= 0 or reclen > remaining or reclen > clibmseed.MAXRECLEN:
+                    yield (None, offset, _detection_failure(reclen, remaining))
+                    return
 
-            yield (buf_ptr + offset, offset, reclen)
-            offset += reclen
+                yield (buf_ptr + offset, offset, reclen)
+                offset += reclen
+        finally:
+            ffi.release(buf_ptr)
 
 
 class _FileLikeSource:

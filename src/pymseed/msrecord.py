@@ -153,6 +153,9 @@ class _SharedRecordStruct:
             if self._msr_ptr[0] != ffi.NULL:
                 clibmseed.msr3_free(self._msr_ptr)
                 self._msr_ptr[0] = ffi.NULL
+            if self._source is not None:
+                ffi.release(self._source)
+                self._source = None
         except (AttributeError, TypeError):
             # Module-teardown race, as in MS3Record.__del__.
             pass
@@ -383,6 +386,20 @@ class MS3Record:
                 # bugs in __del__ surface via Python's "Exception ignored in"
                 # mechanism.
                 pass
+
+            # An owning instance's `_owner`, when set, is the cdata export
+            # from the buffer msr->record pointed into (see parse() and
+            # parse_into()); release it now rather than leaving it for GC.
+            try:
+                owner = self._owner
+            except AttributeError:
+                owner = None
+            if owner is not None:
+                try:
+                    ffi.release(owner)
+                    self._owner = None
+                except (AttributeError, TypeError):
+                    pass
 
     def __repr__(self) -> str:
         preview = sample_preview(self.datasamples) if self._msr.numsamples > 0 else "[]"
@@ -1571,6 +1588,7 @@ class MS3Record:
         orig_numsamples = self._msr.numsamples
         orig_sampletype = self._msr.sampletype
 
+        buffer_export = None
         try:
             # Set temporary data directly (inlined implementation)
             if sample_type in _NUMERIC_SAMPLE_SPECS:
@@ -1641,6 +1659,8 @@ class MS3Record:
             self._msr.samplecnt = orig_samplecnt
             self._msr.numsamples = orig_numsamples
             self._msr.sampletype = orig_sampletype
+            if buffer_export is not None:
+                ffi.release(buffer_export)
 
     def generate(
         self,
@@ -2423,6 +2443,8 @@ class MS3Record:
             # must keep it alive to stay self-contained.
             return cls._wrap(msr_ptr[0], owns=True, owner=buf_ptr)
 
+        # No record is returned to hold the export past this point.
+        ffi.release(buf_ptr)
         raise MiniSEEDError(status, _parse_error_message(status))
 
     def parse_into(
@@ -2513,6 +2535,11 @@ class MS3Record:
             self._msr = clibmseed.msr3_init(ffi.NULL)
 
         self._pin_raw_reclen()
+
+        # The previous call's buffer export, if any, is no longer referenced
+        # by the struct now that it has been reparsed.
+        if self._owner is not None:
+            ffi.release(self._owner)
 
         # msr->record points into `buffer` rather than a copy; hold it so it
         # cannot be released while this record refers to it.

@@ -658,13 +658,17 @@ class MS3TraceSeg:
             )
             buffer_size = len(buffer_ptr)
 
-        status = clibmseed.mstl3_unpack_recordlist(
-            self._parent_traceid._id,
-            self._seg,
-            buffer_ptr,
-            buffer_size,
-            verbose,
-        )
+        try:
+            status = clibmseed.mstl3_unpack_recordlist(
+                self._parent_traceid._id,
+                self._seg,
+                buffer_ptr,
+                buffer_size,
+                verbose,
+            )
+        finally:
+            if buffer is not None:
+                ffi.release(buffer_ptr)
 
         if status < 0:
             raise MiniSEEDError(status, "Error unpacking record list")
@@ -1013,6 +1017,8 @@ class MS3TraceList:
 
         # Nothing refers to the file names or source buffers now
         self._c_file_names.clear()
+        for buffer_ref in self._buffer_refs:
+            ffi.release(buffer_ref)
         self._buffer_refs.clear()
 
     def _check_open(self) -> None:
@@ -1472,7 +1478,8 @@ class MS3TraceList:
 
         # Record list entries point into the buffer instead of copying it, for
         # both the raw records and unpacking.  Hold it before reading so the
-        # records a partial read added remain valid.
+        # records a partial read added remain valid.  Otherwise the export is
+        # only needed for this call, and is released once it returns.
         if record_list:
             self._buffer_refs.append(buffer_ptr)
 
@@ -1493,6 +1500,8 @@ class MS3TraceList:
         finally:
             if free_selections is not None:
                 free_selections()
+            if not record_list:
+                ffi.release(buffer_ptr)
 
         if status < 0:
             raise MiniSEEDError(status, f"Error reading buffer (status: {status})")
