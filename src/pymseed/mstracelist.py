@@ -1551,7 +1551,8 @@ class MS3TraceList:
             raise MiniSEEDError(status, f"Error reading buffer (status: {status})")
 
         # A buffer smaller than a block is likely one of many small additions
-        if buffer_length >= clibmseed.libmseed_prealloc_block_size:
+        block_size = clibmseed.libmseed_prealloc_block_size
+        if block_size and buffer_length >= block_size:
             self.trim_buffers()
 
     def add_filelike(
@@ -1717,7 +1718,8 @@ class MS3TraceList:
                 )
 
         # A stream smaller than a block is likely one of many small additions
-        if added_bytes >= clibmseed.libmseed_prealloc_block_size:
+        block_size = clibmseed.libmseed_prealloc_block_size
+        if block_size and added_bytes >= block_size:
             self.trim_buffers()
 
     def trim_buffers(self) -> None:
@@ -1734,9 +1736,6 @@ class MS3TraceList:
             MiniSEEDError: If resizing a buffer fails
         """
         self._check_open()
-
-        if clibmseed.libmseed_prealloc_block_size == 0:
-            return
 
         status = clibmseed.mstl3_resize_buffers(self._mstl)
         if status != clibmseed.MS_NOERROR:
