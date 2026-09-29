@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   valid after the context exits.
 - A record from `MS3Record.from_filelike()` no longer exposes its raw record once
   the buffer it pointed into is gone; `record` raises `ValueError`.
+- `configure_logging()` raises `ValueError` for a prefix of 200 bytes or more,
+  which libmseed refuses, instead of releasing the prefix it keeps using.
 
 ## [1.0.0] - 2026-09-25
 

@@ -83,7 +83,8 @@ def configure_logging(
 
     Raises:
         TypeError: If a prefix is neither a str nor None.
-        ValueError: If ``max_messages`` is negative.
+        ValueError: If ``max_messages`` is negative, or a prefix is 200 bytes
+            or longer when UTF-8 encoded.
 
     Example:
         >>> from pymseed import configure_logging
@@ -96,6 +97,12 @@ def configure_logging(
 
     if max_messages < 0:
         raise ValueError(f"max_messages must be >= 0; got {max_messages}")
+
+    # libmseed keeps the previous prefix when given one that is too long, which
+    # would leave it pointing at a buffer released here
+    for name, prefix in (("log_prefix", log_prefix), ("error_prefix", error_prefix)):
+        if prefix is not None and len(prefix.encode("utf-8")) >= _MAX_RLOG_MSG_LEN:
+            raise ValueError(f"{name} must be shorter than {_MAX_RLOG_MSG_LEN} bytes")
 
     global _inherited_config
 

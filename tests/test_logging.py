@@ -147,6 +147,30 @@ class TestLoggingCapture:
         assert messages
         assert messages[0].startswith("[RETAINED] ")
 
+    def test_overlong_prefix_is_rejected_and_previous_kept(self) -> None:
+        """libmseed keeps the old prefix pointer when refusing one of 200 bytes
+        or more, so the old buffer must stay alive as well."""
+        import gc
+
+        configure_logging(error_prefix="[KEPT] ")
+
+        with pytest.raises(ValueError, match="error_prefix must be shorter than 200"):
+            configure_logging(error_prefix="x" * 200)
+        with pytest.raises(ValueError, match="log_prefix must be shorter than 200"):
+            configure_logging(log_prefix="\u00e9" * 100)
+
+        gc.collect()
+        _junk = [b"\xcc" * 64 for _ in range(20000)]
+
+        messages = self._emit_error_message()
+
+        assert messages
+        assert messages[0].startswith("[KEPT] ")
+
+        # The longest accepted prefix
+        configure_logging(error_prefix="y" * 199)
+        configure_logging(error_prefix="Error: ")
+
     def test_empty_prefix_clears_previous_prefix(self) -> None:
         """An empty string removes a previously configured prefix."""
         configure_logging(error_prefix="[GONE] ")
