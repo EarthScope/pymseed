@@ -26,6 +26,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Iterating over them is checked at each step, and `generate()` raises `ValueError`
   if the trace list is closed or has data removed while it is suspended.
 
+### Changed
+- Document when data sample and raw record views become invalid, for `MS3Record`,
+  `MS3RecordReader` and `MS3TraceSeg`.
+
 ## [1.0.0] - 2026-09-25
 
 ### Fixed

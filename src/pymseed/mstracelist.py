@@ -365,12 +365,12 @@ class MS3TraceSeg:
         """Return data samples as a memoryview (no copy)
 
         A view of the data samples in a buffer owned by the trace list is
-        returned.  The view holds the trace list, so it cannot be freed while the
-        view exists, but the samples are only valid until the trace list is next
-        changed: adding data can move a segment's buffer, and packing with
-        ``remove_packed=True`` releases it.  Copy the samples to keep them across
-        such calls, or use :meth:`take_np_datasamples` to detach the buffer
-        itself.
+        returned.  The view holds the trace list object, but the samples are only
+        valid until the trace list is next changed or closed: adding data can
+        move a segment's buffer, packing with ``remove_packed=True`` releases it,
+        and :meth:`MS3TraceList.close` frees it.  Reading a view after that reads
+        freed memory, so copy the samples to keep them across such calls, or use
+        :meth:`take_np_datasamples` to detach the buffer itself.
 
         The returned view can be used directly with slicing and indexing
         from `0` to `MS3TraceSeg.numsamples - 1`.
@@ -431,10 +431,10 @@ class MS3TraceSeg:
         """Return data samples as a numpy array (no copy)
 
         A view of the data samples in a buffer owned by the trace list is
-        returned, with the same lifetime as :attr:`datasamples`: the trace list
-        is held by the view, but the samples are only valid until the trace list
-        is next changed.  See :meth:`take_np_datasamples` for a numpy array that
-        outlives the trace list instead.
+        returned, with the same lifetime as :attr:`datasamples`: the samples are
+        only valid until the trace list is next changed or closed.  See
+        :meth:`take_np_datasamples` for a numpy array that outlives the trace
+        list instead.
         """
         np = require_numpy()
 
@@ -1020,11 +1020,12 @@ class MS3TraceList:
 
         .. warning::
             Every :class:`~pymseed.mstracelist.MS3TraceID`,
-            :class:`~pymseed.mstracelist.MS3TraceSeg`, record list, and
-            data sample view obtained from this trace list is invalidated.
-            Reading one after this call reads freed memory.  The trace list
-            itself reports the closure, raising :class:`ValueError` for any
-            further operation on it.
+            :class:`~pymseed.mstracelist.MS3TraceSeg`, record list, and record
+            entry obtained from this trace list is invalidated, and raises
+            :class:`ValueError` when used.  Data sample views and raw record
+            views (``record_mv``) are not guarded: reading one after this call
+            reads freed memory, so copy what is needed first.  The trace list
+            itself raises :class:`ValueError` for any further operation on it.
         """
         if self._mstl != ffi.NULL:
             mstl_ptr = ffi.new("MS3TraceList **")

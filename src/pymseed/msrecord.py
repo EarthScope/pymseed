@@ -477,8 +477,9 @@ class MS3Record:
         memory alive for as long as the view is used. It is still tied to
         this record's current state: re-parsing, repacking, or freeing the
         record invalidates the underlying bytes even though the view itself
-        stays reachable. Copy with ``bytes(...)`` or ``.tobytes()`` to
-        detach from the underlying record.
+        stays reachable, as does advancing the reader or iterator that yielded
+        it. Copy with ``bytes(...)`` or ``.tobytes()`` to detach from the
+        underlying record.
         """
         if self._msr.record == ffi.NULL:
             raise ValueError("No raw record available")
@@ -1274,8 +1275,11 @@ class MS3Record:
         - Text data: memoryview of bytes
 
         Note:
-            The returned view is only valid while this MS3Record exists.
-            If data is needed beyond the record's lifetime, make a copy.
+            The view holds this MS3Record, but the samples are only valid until
+            the record next changes: unpacking or re-parsing it can move or free
+            them, as can advancing the reader or iterator that yielded it.  Reading
+            a view after that reads freed memory, so copy the samples to keep them,
+            e.g. ``msr.datasamples[:]``.
 
         Returns:
             memoryview: Direct view of sample data, indexed 0 to numsamples-1
@@ -1337,8 +1341,8 @@ class MS3Record:
             ValueError: If sample type is unknown or unsupported
 
         Note:
-            Requires NumPy to be installed. The returned array is only valid
-            while this MS3Record exists. For permanent storage, make a copy.
+            Requires NumPy to be installed. The array has the lifetime of the
+            :attr:`datasamples` view, so make a copy for permanent storage.
 
         Examples:
             >>> from pymseed import MS3Record
