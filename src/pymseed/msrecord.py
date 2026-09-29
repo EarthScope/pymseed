@@ -262,11 +262,17 @@ class MS3Record:
         "_msr_allocated",
         "_owner",
         "_raw_reclen",
+        "_temp_samples",
     )
 
     # Declared explicitly so mypy infers Any rather than None: __init__ always
     # sets it to None, but _wrap()/_borrow() set it to the owning object.
     _owner: Any
+
+    # Owner of the samples set by with_datasamples() while its context is active,
+    # otherwise None.  Views of those samples hold it, and it bars the calls that
+    # would reallocate or free samples libmseed does not own.
+    _temp_samples: Any
 
     def __init__(self, reclen: int | None = None, encoding: int | None = None) -> None:
         """
@@ -317,6 +323,7 @@ class MS3Record:
         self._pin_raw_reclen()
 
         self._owner = None
+        self._temp_samples = None
 
     @classmethod
     def _wrap(cls, recordptr: Any, *, owns: bool = False, owner: Any = None) -> MS3Record:
@@ -335,6 +342,7 @@ class MS3Record:
         obj._msr_allocated = owns
         obj._raw_reclen = recordptr.reclen if recordptr.record != ffi.NULL else None
         obj._owner = owner
+        obj._temp_samples = None
         return obj
 
     @classmethod
@@ -358,6 +366,7 @@ class MS3Record:
         obj._msr_allocated = False
         obj._raw_reclen = recordptr.reclen if recordptr.record != ffi.NULL else None
         obj._owner = owner
+        obj._temp_samples = None
         return obj
 
     def __del__(self) -> None:
@@ -1304,7 +1313,8 @@ class MS3Record:
 
         ptr = ffi.cast("char *", self._msr.datasamples)
         nbytes = self._msr.numsamples * itemsize
-        return owned_memoryview(ptr, nbytes, fmt, self)
+        owner = self if self._temp_samples is None else self._temp_samples
+        return owned_memoryview(ptr, nbytes, fmt, owner)
 
     @property
     def np_datasamples(self) -> Any:
@@ -1462,6 +1472,12 @@ class MS3Record:
         """
         clibmseed.msr3_print(self._msr, details)
 
+    def _check_no_temp_samples(self, operation: str) -> None:
+        """Refuse `operation`, which reallocates the record's data samples,
+        while with_datasamples() has set samples that libmseed does not own."""
+        if self._temp_samples is not None:
+            raise ValueError(f"{operation} cannot be used within with_datasamples()")
+
     def unpack_data(self, verbose: int = 0) -> int:
         """Unpack the record's data samples
 
@@ -1479,6 +1495,8 @@ class MS3Record:
         Raises:
             MiniSEEDError: If unpacking fails
         """
+        self._check_no_temp_samples("unpack_data()")
+
         begin_operation()
 
         samples_unpacked = clibmseed.msr3_unpack_data(self._msr, verbose)
@@ -1565,6 +1583,11 @@ class MS3Record:
             ``BufferError``; PyPy keeps no export count, so there such a resize is
             undefined behavior that nothing reports.
 
+            Within the context, :meth:`unpack_data` and :meth:`parse_into` raise
+            ``ValueError``, as they would reallocate the temporary samples.  A
+            view taken from ``datasamples`` keeps the temporary samples alive
+            after the context exits.
+
         See Also:
             MS3TraceList.add_data(): Add data samples to a trace list
         """
@@ -1589,6 +1612,8 @@ class MS3Record:
         orig_sampletype = self._msr.sampletype
 
         buffer_export = None
+        orig_temp_samples = self._temp_samples
+        temp_samples = None
         try:
             # Set temporary data directly (inlined implementation)
             if sample_type in _NUMERIC_SAMPLE_SPECS:
@@ -1600,6 +1625,8 @@ class MS3Record:
                     # bound for the whole context to keep the source pinned.
                     buffer_export = ffi.from_buffer(data_samples)
                     sample_array = ffi.cast(f"{ctype} *", buffer_export)
+                    # Views of the samples hold this export of the source
+                    temp_samples = mv
                 except (TypeError, ValueError, BufferError):
                     # Not a buffer, or one that cannot be shared as it is
                     # (incompatible format, not contiguous) - need conversion.
@@ -1615,6 +1642,7 @@ class MS3Record:
                         sample_array = ffi.new(
                             f"{ctype}[]", [convert(sample) for sample in data_samples]
                         )
+                    temp_samples = sample_array
 
                 self._msr.datasamples = sample_array
                 self._msr.numsamples = len(data_samples)
@@ -1642,6 +1670,7 @@ class MS3Record:
                     text_bytes = bytes(byte_values)
 
                 sample_array = ffi.new("char[]", text_bytes)
+                temp_samples = sample_array
                 self._msr.datasamples = sample_array
                 self._msr.numsamples = len(text_bytes)
                 self._msr.datasize = len(text_bytes)
@@ -1650,6 +1679,7 @@ class MS3Record:
 
             self._msr.samplecnt = self._msr.numsamples
             self._msr.sampletype = sample_type.encode("ascii")
+            self._temp_samples = temp_samples
 
             yield self
         finally:
@@ -1659,6 +1689,7 @@ class MS3Record:
             self._msr.samplecnt = orig_samplecnt
             self._msr.numsamples = orig_numsamples
             self._msr.sampletype = orig_sampletype
+            self._temp_samples = orig_temp_samples
             if buffer_export is not None:
                 ffi.release(buffer_export)
 
@@ -2516,6 +2547,8 @@ class MS3Record:
                 "record, or call parse_into() on a wrapper created with "
                 "MS3Record()."
             )
+
+        self._check_no_temp_samples("parse_into()")
 
         begin_operation()
 

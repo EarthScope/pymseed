@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Release the remaining cffi buffer exports explicitly: in `MS3TraceList.add_buffer()`
   on an invalid selection, and in `MS3Record.from_filelike()` and the file-like
   validator source.
+- `MS3Record.unpack_data()` and `parse_into()` within `with_datasamples()` raise
+  `ValueError` instead of aborting the process, and a view taken within it stays
+  valid after the context exits.
 
 ## [1.0.0] - 2026-09-25
 

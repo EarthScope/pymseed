@@ -393,6 +393,100 @@ def test_with_datasamples_holds_the_numpy_export():
                 data.resize(1000, refcheck=True)
 
 
+def _header_only_record():
+    with open(test_repack2_input, "rb") as f:
+        return MS3Record.parse(f.read(512))
+
+
+def test_with_datasamples_rejects_unpack_data():
+    """Unpacking reallocates the samples, which libmseed does not own here."""
+    msr = _header_only_record()
+
+    with msr.with_datasamples([1, 2, 3], "i"):
+        with pytest.raises(ValueError, match="unpack_data"):
+            msr.unpack_data()
+        assert list(msr.datasamples) == [1, 2, 3]
+
+    assert msr.unpack_data() > 0
+
+
+def test_with_datasamples_rejects_parse_into():
+    with open(test_repack2_input, "rb") as f:
+        raw = f.read(512)
+    msr = MS3Record.parse(raw, unpack_data=True)
+
+    with msr.with_datasamples([1, 2, 3], "i"):
+        with pytest.raises(ValueError, match="parse_into"):
+            msr.parse_into(raw, unpack_data=True)
+
+    msr.parse_into(raw, unpack_data=True)
+    assert msr.numsamples > 0
+
+
+def test_with_datasamples_nested_contexts_restore_the_guard():
+    msr = _header_only_record()
+
+    with msr.with_datasamples([1, 2, 3], "i"):
+        with msr.with_datasamples([4, 5], "i"):
+            with pytest.raises(ValueError, match="unpack_data"):
+                msr.unpack_data()
+        with pytest.raises(ValueError, match="unpack_data"):
+            msr.unpack_data()
+
+    assert msr.unpack_data() > 0
+
+
+def test_with_datasamples_guard_clears_after_an_error():
+    msr = _header_only_record()
+
+    with pytest.raises(RuntimeError):
+        with msr.with_datasamples([1, 2, 3], "i"):
+            raise RuntimeError
+
+    assert msr.unpack_data() > 0
+
+
+@pytest.mark.parametrize(
+    "data, sample_type, expected",
+    [
+        ([1, 2, 3], "i", [1, 2, 3]),
+        ([1.5, 2.5], "f", [1.5, 2.5]),
+        (array.array("i", [4, 5, 6]), "i", [4, 5, 6]),
+        (array.array("d", [0.5, 1.5]), "d", [0.5, 1.5]),
+        ("abc", "t", [97, 98, 99]),
+    ],
+)
+def test_with_datasamples_view_outlives_the_context(data, sample_type, expected):
+    """A view taken within the context keeps the temporary samples alive."""
+    msr = MS3Record()
+    msr.sourceid = "FDSN:XX_TEST__B_H_Z"
+
+    with msr.with_datasamples(data, sample_type):
+        view = msr.datasamples
+
+    del data
+    _churn_heap()
+    assert list(view) == expected
+
+
+@requires_buffer_export_lock
+def test_with_datasamples_view_holds_the_source_export():
+    """A zero-copy view keeps its source from being resized until it is gone."""
+    msr = MS3Record()
+    msr.sourceid = "FDSN:XX_TEST__B_H_Z"
+    data = array.array("i", [1, 2, 3])
+
+    with msr.with_datasamples(data, "i"):
+        view = msr.datasamples
+
+    with pytest.raises(BufferError):
+        data.append(4)
+
+    del view
+    gc.collect()
+    data.append(4)
+
+
 def test_msrecord_encoding_setter():
     """Encoding setter validates against the 0..255 miniSEED on-wire range."""
     msr = MS3Record()
