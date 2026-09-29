@@ -477,7 +477,7 @@ class MS3TraceSeg:
         dtype = numpy_dtype(np, self.sampletype)
         nbytes = numsamples * dtype.itemsize
 
-        # Windows preallocates buffer growth in blocks, so the segment's
+        # Preallocation grows buffers in blocks, so the segment's
         # buffer can be larger than its samples; shrink it to size so the
         # array doesn't retain the unused tail for its entire lifetime.
         if self._seg.datasize > nbytes:
