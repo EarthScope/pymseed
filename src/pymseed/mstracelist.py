@@ -1327,7 +1327,6 @@ class MS3TraceList:
 
         # Create a reference to the current trace list pointer
         self._check_open()
-        self._segment_epoch += 1
         mstl_ptr = ffi.new("MS3TraceList **")
         mstl_ptr[0] = self._mstl
 
@@ -1343,6 +1342,8 @@ class MS3TraceList:
 
         # Build selections, if sourceid, starttime, or endtime are specified
         selections_ptr, free_selections = build_selections(sourceid, starttime, endtime)
+
+        self._segment_epoch += 1
 
         try:
             status = clibmseed.ms3_readtracelist_selection(
@@ -1507,7 +1508,6 @@ class MS3TraceList:
 
         # Create a reference to the current trace list pointer
         self._check_open()
-        self._segment_epoch += 1
         mstl_ptr = ffi.new("MS3TraceList **")
         mstl_ptr[0] = self._mstl
 
@@ -1529,6 +1529,8 @@ class MS3TraceList:
         # only needed for this call, and is released once it returns.
         if record_list:
             self._buffer_refs.append(buffer_ptr)
+
+        self._segment_epoch += 1
 
         try:
             status = clibmseed.mstl3_readbuffer_selection(
@@ -1683,7 +1685,6 @@ class MS3TraceList:
         )
 
         self._check_open()
-        self._segment_epoch += 1
 
         flags = clibmseed.MSF_PPUPDATETIME | parse_flags(
             validate_crc=validate_crc, record_list=record_list
@@ -1698,6 +1699,7 @@ class MS3TraceList:
         added_bytes = 0
         for msr in records:
             added_bytes += msr._msr.reclen
+            self._segment_epoch += 1
 
             # A record added directly carries no source reference, msr->record
             # included, matching source bytes that do not outlive the read.
@@ -1835,7 +1837,6 @@ class MS3TraceList:
         """
 
         self._check_open()
-        self._segment_epoch += 1
 
         begin_operation()
 
@@ -1868,6 +1869,8 @@ class MS3TraceList:
 
         # Set data samples array, type, and counts temporarily for potential zero-copy operations
         with msr.with_datasamples(data_samples, sample_type):
+            self._segment_epoch += 1
+
             # Add the MS3Record to the trace list, setting auto-heal flag to 1 (true)
             segptr = clibmseed.mstl3_addmsr_recordptr(
                 self._mstl, msr._msr, ffi.NULL, 0, 1, flags, ffi.NULL

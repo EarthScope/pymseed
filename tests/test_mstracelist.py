@@ -2139,6 +2139,45 @@ def test_segment_and_record_wrappers_invalid_after_add():
     assert len(traces[0][0].recordlist) > 0
 
 
+def test_wrappers_valid_after_rejected_add():
+    """A call rejected before it touches the list leaves existing wrappers valid."""
+    traces = _traces_with_two_segments()
+    seg = traces[0][1]
+
+    with pytest.raises(ValueError):
+        traces.add_file(test_path3, starttime="not-a-time")
+    with pytest.raises(ValueError):
+        traces.add_buffer(b"", starttime="not-a-time")
+    with pytest.raises(ValueError):
+        traces.add_filelike(io.BytesIO(b""), starttime="not-a-time")
+    with pytest.raises(ValueError):
+        traces.add_data(_SID, [1], "i", 10, starttime_str="not-a-time")
+    with pytest.raises(ValueError):
+        traces.add_data(_SID, [1], "i", 10)
+
+    assert seg.samplecnt == 3
+
+
+def test_segment_invalid_after_add_from_sources():
+    """add_file(), add_buffer() and add_filelike() invalidate segment wrappers."""
+    with open(test_path3, "rb") as fp:
+        buf = fp.read()
+
+    adders = {
+        "add_file": lambda t: t.add_file(test_path3),
+        "add_buffer": lambda t: t.add_buffer(buf),
+        "add_filelike": lambda t: t.add_filelike(io.BytesIO(buf)),
+    }
+    for name, add in adders.items():
+        traces = _traces_with_two_segments()
+        seg = traces[0][0]
+
+        add(traces)
+
+        with pytest.raises(ValueError, match="MS3TraceList was modified"):
+            seg.samplecnt
+
+
 def test_traceid_remains_valid_after_add():
     """Adding data never frees a trace ID."""
     traces = _traces_with_two_segments()
