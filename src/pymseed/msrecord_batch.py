@@ -107,6 +107,18 @@ def _import_pyarrow() -> Any:
     return pa
 
 
+def _schema_capsule() -> Any:
+    """The batch schema as an ``arrow_schema`` PyCapsule: a struct with a field per column.
+
+    Not exported as ``__arrow_c_schema__``, which marks schema-like objects: batches
+    and readers are data, and carry their schema in their array and stream exports.
+    """
+    _pycapsule_new()  # fail before allocating anything, outside CPython
+    return _capsule(
+        clibmseed.pm_arrow_new_schema(), _ARROW_SCHEMA, "pm_arrow_schema_capsule_destructor"
+    )
+
+
 def _capsule(pointer: Any, name: bytes, destructor: str) -> Any:
     """Wrap a C struct that the named C destructor frees in a PyCapsule."""
     if pointer == ffi.NULL:
@@ -278,16 +290,6 @@ class MS3RecordBatch:
         """Source identifier of the batch's `i`-th record."""
         return self._sourceids[self.sourceid_indices[i]]
 
-    def __arrow_c_schema__(self) -> Any:
-        """Export the batch's schema as an ``arrow_schema`` PyCapsule.
-
-        A struct with one field per column; see :meth:`to_arrow` for the columns.
-        """
-        _pycapsule_new()  # fail before allocating anything, outside CPython
-        return _capsule(
-            clibmseed.pm_arrow_new_schema(), _ARROW_SCHEMA, "pm_arrow_schema_capsule_destructor"
-        )
-
     def __arrow_c_array__(self, requested_schema: Any = None) -> tuple[Any, Any]:
         """Export the batch as ``arrow_schema`` and ``arrow_array`` PyCapsules.
 
@@ -296,7 +298,7 @@ class MS3RecordBatch:
         The batch stays alive until the consumer releases the array.
         ``requested_schema`` is ignored; the batch is always exported as it is.
         """
-        schema = self.__arrow_c_schema__()
+        schema = _schema_capsule()
         owner = _export_handle(_exports, self)
         array = clibmseed.pm_arrow_new_array(self._cols, self._pointer + self._base, owner)
         return schema, _capsule(array, _ARROW_ARRAY, "pm_arrow_array_capsule_destructor")

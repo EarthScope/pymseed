@@ -300,14 +300,17 @@ def test_arrow_arrays_keep_their_batch_alive():
 
 
 @cpython_only
-def test_arrow_schema_from_capsule():
-    pa = pytest.importorskip("pyarrow")
+def test_arrow_schema():
+    pytest.importorskip("pyarrow")
     batch = next(MS3RecordBatch.from_buffer(MIXED))
 
-    schema = pa.schema(batch)
+    schema = batch.to_arrow().schema
 
-    assert schema == batch.to_arrow().schema
+    assert schema == MS3RecordBatch.from_buffer(MIXED).to_arrow().schema
     assert not any(field.nullable for field in schema)
+    # Data, not schema-like: the schema comes with the array and stream exports
+    assert not hasattr(batch, "__arrow_c_schema__")
+    assert not hasattr(MS3RecordBatch.from_buffer(MIXED), "__arrow_c_schema__")
 
 
 @cpython_only
