@@ -422,6 +422,7 @@ extern nstime_t lmp_systemtime (void);
 // pymseed's column scanner, see pymseed_scan.h
 #define PM_SCAN_NEEDMORE 0
 #define PM_SCAN_FULL 1
+#define PM_SCAN_SKIP 2
 
 typedef struct PMRecordColumns {
   int64_t capacity;

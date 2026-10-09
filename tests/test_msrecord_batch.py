@@ -276,6 +276,59 @@ def test_records_before_an_error_are_yielded(batch_size):
     assert excinfo.value.status_code == clibmseed.MS_NOTSEED
 
 
+@pytest.mark.parametrize(
+    "read_batches",
+    [
+        pytest.param(
+            lambda data: MS3RecordBatchReader.from_buffer(data, skip_not_data=True), id="buffer"
+        ),
+        pytest.param(
+            lambda data: MS3RecordBatchReader.from_filelike(
+                io.BytesIO(data), block_size=1000, skip_not_data=True
+            ),
+            id="filelike-small-blocks",
+        ),
+        pytest.param(
+            lambda data: MS3RecordBatchReader.from_buffer(data, batch_size=7, skip_not_data=True),
+            id="small-batches",
+        ),
+    ],
+)
+def test_skip_not_data(read_batches):
+    data3, data2 = read(test_path3), read(test_path2)
+    # Junk before, between and after records, and zero padding at the end
+    data = b"x" * 100 + data3 + b"\0" * 512 + data2 + b"junk" + read(test_60sec) + b"\0" * 512
+
+    assert batch_records(read_batches(data)) == expected_records(MIXED)
+
+
+def test_skipped_input_ends_a_batch():
+    data3 = read(test_path3)
+    batches = list(
+        MS3RecordBatchReader.from_buffer(data3 + b"\0" * 512 + data3, skip_not_data=True)
+    )
+
+    assert [len(b) for b in batches] == [len(expected_records(data3))] * 2
+    assert all(bytes(b.records) == data3 for b in batches)
+
+
+@pytest.mark.parametrize("block_size", [100, 1 << 20])
+def test_skip_not_data_ends_cleanly(block_size):
+    data = read(test_path3)
+
+    def read_batches(data):
+        return batch_records(
+            MS3RecordBatchReader.from_filelike(
+                io.BytesIO(data), block_size=block_size, skip_not_data=True
+            )
+        )
+
+    # A truncated record or too few bytes for one at the end, or no records at all
+    assert read_batches(data + data[:200]) == expected_records(data)
+    assert read_batches(data + b"x") == expected_records(data)
+    assert read_batches(b"x" * 4096) == []
+
+
 def test_invalid_crc_raises_unless_not_validated():
     data = bytearray(read(test_path3))
     data[100] ^= 0xFF  # inside the first record's data payload

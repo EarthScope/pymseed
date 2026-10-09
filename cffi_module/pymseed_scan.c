@@ -95,6 +95,21 @@ pm_scan_records (const char *buffer, uint64_t buflen, uint32_t flags, int8_t ver
 
     status = msr3_parse (buffer + offset, buflen - offset, &msr, flags, verbose);
 
+    /* Skip what isn't a record, or claims to be longer than any can be */
+    if ((flags & MSF_SKIPNOTDATA) &&
+        (status < 0 || (status > 0 && buflen - offset + (uint64_t)status > MAXRECLEN)))
+    {
+      /* A batch's records are back to back, so end it before the gap */
+      if (n > 0)
+      {
+        result = PM_SCAN_SKIP;
+        break;
+      }
+      offset++;
+      cols->base = (int64_t)offset;
+      continue;
+    }
+
     if (status > 0) /* More data needed to finish this record */
       break;
 

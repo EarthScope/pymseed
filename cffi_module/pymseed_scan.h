@@ -8,6 +8,9 @@
 #define PM_SCAN_NEEDMORE 0
 /* pm_scan_records() stopped because the batch is full */
 #define PM_SCAN_FULL 1
+/* pm_scan_records() stopped before input it will skip (MSF_SKIPNOTDATA), so a
+   batch's records stay back to back */
+#define PM_SCAN_SKIP 2
 
 /* Column arrays for a batch of consecutive records, one element per record.
    The caller allocates the arrays of the columns it wants, leaving the others
@@ -45,8 +48,12 @@ typedef struct PMRecordColumns
    buffer ends, a record continues past it, or `cols` is full. Sets
    `*consumed` to the end of the last record scanned.
 
-   Returns PM_SCAN_NEEDMORE, PM_SCAN_FULL, or a negative libmseed error code
-   for the record at `*consumed`. */
+   With MSF_SKIPNOTDATA in `flags`, input that isn't a record is skipped a byte
+   at a time, as libmseed's reader does, and `*consumed` includes it. A batch
+   starts after skipped input and ends before it.
+
+   Returns PM_SCAN_NEEDMORE, PM_SCAN_FULL, PM_SCAN_SKIP, or a negative libmseed
+   error code for the record at `*consumed`. */
 extern int pm_scan_records (const char *buffer, uint64_t buflen, uint32_t flags, int8_t verbose,
                             PMRecordColumns *cols, uint64_t *consumed);
 

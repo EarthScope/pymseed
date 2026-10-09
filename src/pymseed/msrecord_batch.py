@@ -400,6 +400,7 @@ class MS3RecordBatchReader:
         *,
         columns: Iterable[Column] | None = None,
         batch_size: int = DEFAULT_BATCH_SIZE,
+        skip_not_data: bool = False,
         validate_crc: bool = True,
         verbose: int = 0,
     ) -> MS3RecordBatchReader:
@@ -411,15 +412,18 @@ class MS3RecordBatchReader:
                 default. Others are neither filled nor allocated, and without
                 ``record``, batches don't keep the buffer alive.
             batch_size: Records per batch, at most. A batch may hold fewer at the
-                end of a block.
+                end of a block, or before input skipped with ``skip_not_data``.
+            skip_not_data: Skip input that isn't miniSEED, a byte at a time, until
+                a record is found, including an incomplete record at the end.
             validate_crc: Validate CRCs when present (miniSEED 3).
             verbose: libmseed verbosity.
 
         Raises:
             MiniSEEDError: While reading, if a record can't be parsed, or the buffer
                 ends partway through one, after yielding the records before it.
+                Not raised for either with ``skip_not_data``.
         """
-        scanner = _Scanner(columns, batch_size, validate_crc, verbose)
+        scanner = _Scanner(columns, batch_size, skip_not_data, validate_crc, verbose)
         return cls(_read_buffer(scanner, buffer), scanner.field_mask)
 
     @classmethod
@@ -430,6 +434,7 @@ class MS3RecordBatchReader:
         columns: Iterable[Column] | None = None,
         block_size: int = DEFAULT_BLOCK_SIZE,
         batch_size: int = DEFAULT_BATCH_SIZE,
+        skip_not_data: bool = False,
         validate_crc: bool = True,
         verbose: int = 0,
     ) -> MS3RecordBatchReader:
@@ -441,14 +446,15 @@ class MS3RecordBatchReader:
         Args:
             fh: An object with a ``read(n)`` method returning bytes.
             block_size: Bytes read at a time.
-            columns, batch_size, validate_crc, verbose: As for :meth:`from_buffer`.
+            columns, batch_size, skip_not_data, validate_crc, verbose: As for
+                :meth:`from_buffer`.
 
         Raises:
             MiniSEEDError: As for :meth:`from_buffer`.
         """
         if block_size <= 0:
             raise ValueError("block_size must be greater than 0")
-        scanner = _Scanner(columns, batch_size, validate_crc, verbose)
+        scanner = _Scanner(columns, batch_size, skip_not_data, validate_crc, verbose)
         return cls(_read_filelike(scanner, fh, block_size), scanner.field_mask)
 
     @classmethod
@@ -459,6 +465,7 @@ class MS3RecordBatchReader:
         columns: Iterable[Column] | None = None,
         block_size: int = DEFAULT_BLOCK_SIZE,
         batch_size: int = DEFAULT_BATCH_SIZE,
+        skip_not_data: bool = False,
         validate_crc: bool = True,
         verbose: int = 0,
     ) -> MS3RecordBatchReader:
@@ -469,7 +476,7 @@ class MS3RecordBatchReader:
         """
         if block_size <= 0:
             raise ValueError("block_size must be greater than 0")
-        scanner = _Scanner(columns, batch_size, validate_crc, verbose)
+        scanner = _Scanner(columns, batch_size, skip_not_data, validate_crc, verbose)
         return cls(_read_file(scanner, filename, block_size), scanner.field_mask)
 
     def __iter__(self) -> MS3RecordBatchReader:
@@ -546,7 +553,12 @@ class _Scanner:
     """Runs `pm_scan_records` over a buffer, a batch at a time."""
 
     def __init__(
-        self, columns: Iterable[Column] | None, batch_size: int, validate_crc: bool, verbose: int
+        self,
+        columns: Iterable[Column] | None,
+        batch_size: int,
+        skip_not_data: bool,
+        validate_crc: bool,
+        verbose: int,
     ) -> None:
         if isinstance(columns, str):
             raise TypeError("columns must be a list of column names, not a string")
@@ -559,7 +571,9 @@ class _Scanner:
             raise ValueError("batch_size must be greater than 0")
         self.field_mask = sum(1 << i for i, c in enumerate(COLUMNS) if c in self.columns)
         self.batch_size = batch_size
-        self.flags = clibmseed.MSF_VALIDATECRC if validate_crc else 0
+        self.flags = (clibmseed.MSF_VALIDATECRC if validate_crc else 0) | (
+            clibmseed.MSF_SKIPNOTDATA if skip_not_data else 0
+        )
         self.verbose = verbose
         self.consumed = ffi.new("uint64_t *")
         if "sourceid" in self.columns:
@@ -575,7 +589,8 @@ class _Scanner:
     ) -> Generator[MS3RecordBatch, None, int]:
         """Yield batches of the records in `data` from `start`; return where they end.
 
-        At the end of the stream (`at_end`), raise if anything follows the last record.
+        At the end of the stream (`at_end`), raise if anything follows the last record,
+        unless skipping non-data.
         `position` is the offset of `data` in the stream, for error messages.
         """
         flags = self.flags | (clibmseed.MSF_ATENDOFFILE if at_end else 0)
@@ -610,6 +625,8 @@ class _Scanner:
                 break
 
         consumed = self.consumed[0]
+        if at_end and self.flags & clibmseed.MSF_SKIPNOTDATA:
+            return size
         if at_end and consumed < size:
             code = (
                 clibmseed.MS_NOTSEED
