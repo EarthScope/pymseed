@@ -24,6 +24,11 @@ def read(path: str) -> bytes:
         return fh.read()
 
 
+# Arrow export creates PyCapsules with CPython's C API
+cpython_only = pytest.mark.skipif(
+    sys.implementation.name != "cpython", reason="Arrow export requires CPython"
+)
+
 # miniSEED 3 and 2 records of three channels, then 60-second period records
 MIXED = read(test_path3) + read(test_path2) + read(test_60sec)
 
@@ -143,6 +148,7 @@ def test_columns_as_numpy_arrays():
     assert starttimes.tolist() == list(batch.starttimes)
 
 
+@cpython_only
 def test_to_arrow():
     pa = pytest.importorskip("pyarrow")
     expected = expected_records(MIXED)
@@ -181,6 +187,7 @@ def test_to_arrow():
     assert rows == expected
 
 
+@cpython_only
 def test_to_arrow_does_not_copy_records():
     pa = pytest.importorskip("pyarrow")
     data = pa.py_buffer(MIXED)
@@ -249,6 +256,7 @@ def live_exports() -> tuple[int, int]:
     return len(pymseed.msrecord_batch._exports), len(pymseed.msrecord_batch._streams)
 
 
+@cpython_only
 def test_capsules_follow_the_arrow_pycapsule_interface():
     batch = next(MS3RecordBatch.from_buffer(MIXED))
 
@@ -261,6 +269,7 @@ def test_capsules_follow_the_arrow_pycapsule_interface():
     assert "arrow_array_stream" in repr(batch.__arrow_c_stream__())
 
 
+@cpython_only
 def test_unconsumed_capsules_release_the_batch():
     batch = next(MS3RecordBatch.from_buffer(MIXED))
 
@@ -271,6 +280,7 @@ def test_unconsumed_capsules_release_the_batch():
     assert live_exports() == (0, 0)
 
 
+@cpython_only
 def test_arrow_arrays_keep_their_batch_alive():
     pa = pytest.importorskip("pyarrow")
     batch = next(MS3RecordBatch.from_buffer(MIXED))
@@ -289,6 +299,7 @@ def test_arrow_arrays_keep_their_batch_alive():
     assert live_exports() == (0, 0)
 
 
+@cpython_only
 def test_arrow_schema_from_capsule():
     pa = pytest.importorskip("pyarrow")
     batch = next(MS3RecordBatch.from_buffer(MIXED))
@@ -299,6 +310,7 @@ def test_arrow_schema_from_capsule():
     assert not any(field.nullable for field in schema)
 
 
+@cpython_only
 def test_arrays_released_on_other_threads():
     pytest.importorskip("pyarrow")
     arrays = [b.to_arrow() for b in MS3RecordBatch.from_buffer(MIXED, batch_size=10)]
@@ -314,6 +326,7 @@ def test_arrays_released_on_other_threads():
     assert live_exports() == (0, 0)
 
 
+@cpython_only
 def test_reader_as_arrow_stream():
     pa = pytest.importorskip("pyarrow")
     expected = expected_records(MIXED)
@@ -329,6 +342,7 @@ def test_reader_as_arrow_stream():
     assert live_exports() == (0, 0)
 
 
+@cpython_only
 def test_stream_continues_where_iteration_left_off():
     pytest.importorskip("pyarrow")
     reader = MS3RecordBatch.from_buffer(MIXED, batch_size=10)
@@ -339,6 +353,7 @@ def test_stream_continues_where_iteration_left_off():
     assert len(first) + rest.num_rows == len(expected_records(MIXED))
 
 
+@cpython_only
 def test_stream_error_reaches_the_consumer():
     pa = pytest.importorskip("pyarrow")
     reader = MS3RecordBatch.from_filelike(io.BytesIO(MIXED[:-10]), block_size=1000)
@@ -360,6 +375,7 @@ def test_from_file_reader_closes_its_file(tmp_path):
         next(reader)
 
 
+@cpython_only
 def test_polars_reads_batches_and_streams():
     pl = pytest.importorskip("polars")
     n = len(expected_records(MIXED))
@@ -368,6 +384,7 @@ def test_polars_reads_batches_and_streams():
     assert pl.DataFrame(MS3RecordBatch.from_buffer(MIXED, batch_size=50)).height == n
 
 
+@cpython_only
 def test_duckdb_reads_streams():
     duckdb = pytest.importorskip("duckdb")
     pytest.importorskip("pytz")  # needed by DuckDB for timestamps with time zones
@@ -395,3 +412,13 @@ def test_to_arrow_with_old_pyarrow_explains_what_to_install(monkeypatch):
 
     with pytest.raises(ImportError, match=r"found 13\.0\.0"):
         batch.to_arrow()
+
+
+@pytest.mark.skipif(sys.implementation.name == "cpython", reason="CPython supports Arrow export")
+def test_arrow_export_outside_cpython_raises():
+    batch = next(MS3RecordBatch.from_buffer(MIXED))
+
+    with pytest.raises(NotImplementedError, match="requires CPython"):
+        batch.__arrow_c_array__()
+    with pytest.raises(NotImplementedError, match="requires CPython"):
+        MS3RecordBatch.from_buffer(MIXED).__arrow_c_stream__()
