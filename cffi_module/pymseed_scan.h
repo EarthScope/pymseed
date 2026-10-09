@@ -1,0 +1,44 @@
+#ifndef PYMSEED_SCAN_H
+#define PYMSEED_SCAN_H
+
+#include <stdint.h>
+
+/* pm_scan_records() stopped at the end of the buffer, or at a record that
+   continues past it */
+#define PM_SCAN_NEEDMORE 0
+/* pm_scan_records() stopped because the batch is full */
+#define PM_SCAN_FULL 1
+
+/* Column arrays for a batch of consecutive records, one element per record.
+   The caller allocates every array and sets the capacities. */
+typedef struct PMRecordColumns
+{
+  int64_t capacity;     /* Records each per-record array holds */
+  int32_t sid_capacity; /* Source IDs `sids` holds */
+
+  int64_t count;  /* Records scanned */
+  int32_t nsids;  /* Distinct source IDs in `sids` */
+  int64_t base;   /* Offset in the buffer of the batch's first record */
+
+  int32_t *offset;   /* capacity + 1: start of each record relative to `base`, then the end */
+  char *sids;        /* sid_capacity * LM_SIDLEN: distinct source IDs, NUL-terminated */
+  int32_t *sid_index; /* Index of each record's source ID in `sids` */
+  int64_t *starttime; /* Nanoseconds since the epoch */
+  int64_t *endtime;   /* Nanoseconds since the epoch */
+  double *samprate;   /* Hz */
+  int64_t *samplecnt;
+  int16_t *encoding;
+  uint8_t *pubversion;
+  uint8_t *formatversion;
+} PMRecordColumns;
+
+/* Parse records from `buffer`, starting at `*consumed`, into `cols` until the
+   buffer ends, a record continues past it, or `cols` is full. Sets
+   `*consumed` to the end of the last record scanned.
+
+   Returns PM_SCAN_NEEDMORE, PM_SCAN_FULL, or a negative libmseed error code
+   for the record at `*consumed`. */
+extern int pm_scan_records (const char *buffer, uint64_t buflen, uint32_t flags, int8_t verbose,
+                            PMRecordColumns *cols, uint64_t *consumed);
+
+#endif /* PYMSEED_SCAN_H */
