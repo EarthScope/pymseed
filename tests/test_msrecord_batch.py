@@ -264,6 +264,18 @@ def test_errors_report_their_offset_in_the_stream(block_size):
         list(MS3RecordBatchReader.from_filelike(io.BytesIO(data * 3 + b"x"), block_size=block_size))
 
 
+@pytest.mark.parametrize("batch_size", [7, DEFAULT_BATCH_SIZE])
+def test_records_before_an_error_are_yielded(batch_size):
+    read_records = []
+
+    with pytest.raises(MiniSEEDError) as excinfo:
+        for batch in MS3RecordBatchReader.from_buffer(MIXED + b"x" * 4096, batch_size=batch_size):
+            read_records += batch_records([batch])
+
+    assert read_records == expected_records(MIXED)
+    assert excinfo.value.status_code == clibmseed.MS_NOTSEED
+
+
 def test_invalid_crc_raises_unless_not_validated():
     data = bytearray(read(test_path3))
     data[100] ^= 0xFF  # inside the first record's data payload

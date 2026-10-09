@@ -417,7 +417,7 @@ class MS3RecordBatchReader:
 
         Raises:
             MiniSEEDError: While reading, if a record can't be parsed, or the buffer
-                ends partway through one. Batches already yielded are complete and valid.
+                ends partway through one, after yielding the records before it.
         """
         scanner = _Scanner(columns, batch_size, validate_crc, verbose)
         return cls(_read_buffer(scanner, buffer), scanner.field_mask)
@@ -586,10 +586,15 @@ class _Scanner:
         while True:
             cols, arrays = self._columns()
             status = clibmseed.pm_scan_records(ptr, size, flags, self.verbose, cols, self.consumed)
-            if status < 0:
-                raise MiniSEEDError(
+            # Created now to capture libmseed's log, but raised after yielding the
+            # records before the one that failed
+            error = (
+                MiniSEEDError(
                     status, f"Error parsing miniSEED record at byte {position + self.consumed[0]}"
                 )
+                if status < 0
+                else None
+            )
             if cols.count:
                 sourceids = [
                     ffi.string(cols.sids + i * clibmseed.LM_SIDLEN).decode("utf-8")
@@ -599,6 +604,8 @@ class _Scanner:
                     yield MS3RecordBatch(data, ptr, cols, arrays, sourceids)
                 else:
                     yield MS3RecordBatch(None, None, cols, arrays, sourceids)
+            if error is not None:
+                raise error
             if status == clibmseed.PM_SCAN_NEEDMORE:
                 break
 
