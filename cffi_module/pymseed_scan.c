@@ -79,9 +79,11 @@ pm_scan_records (const char *buffer, uint64_t buflen, uint32_t flags, int8_t ver
 
   cols->count = 0;
   cols->nsids = 0;
-  memset (cols->sid_slots, 0xFF, ((size_t)cols->sid_slot_mask + 1) * sizeof (int32_t)); /* all -1 */
-  cols->base = (int64_t)offset;
-  cols->offset[0] = 0;
+  cols->base  = (int64_t)offset;
+  if (cols->sid_index)
+    memset (cols->sid_slots, 0xFF, ((size_t)cols->sid_slot_mask + 1) * sizeof (int32_t)); /* all -1 */
+  if (cols->offset)
+    cols->offset[0] = 0;
 
   while (buflen - offset >= MINRECLEN)
   {
@@ -104,30 +106,41 @@ pm_scan_records (const char *buffer, uint64_t buflen, uint32_t flags, int8_t ver
 
     /* Keep record offsets relative to the batch within int32 range, as Arrow's
        binary type requires */
-    if ((int64_t)(offset - (uint64_t)cols->base) + msr->reclen > INT32_MAX)
+    if (cols->offset && (int64_t)(offset - (uint64_t)cols->base) + msr->reclen > INT32_MAX)
     {
       result = PM_SCAN_FULL;
       break;
     }
 
-    if ((sid = sid_index (cols, msr->sid, &last_sid)) < 0)
+    /* Fill only the columns requested, i.e. allocated */
+    if (cols->sid_index)
     {
-      result = PM_SCAN_FULL;
-      break;
+      if ((sid = sid_index (cols, msr->sid, &last_sid)) < 0)
+      {
+        result = PM_SCAN_FULL;
+        break;
+      }
+      cols->sid_index[n] = sid;
     }
-
-    cols->sid_index[n]     = sid;
-    cols->starttime[n]     = msr->starttime;
-    cols->endtime[n]       = msr3_endtime (msr);
-    cols->samprate[n]      = msr3_sampratehz (msr);
-    cols->samplecnt[n]     = msr->samplecnt;
-    cols->encoding[n]      = msr->encoding;
-    cols->pubversion[n]    = msr->pubversion;
-    cols->formatversion[n] = msr->formatversion;
+    if (cols->starttime)
+      cols->starttime[n] = msr->starttime;
+    if (cols->endtime)
+      cols->endtime[n] = msr3_endtime (msr);
+    if (cols->samprate)
+      cols->samprate[n] = msr3_sampratehz (msr);
+    if (cols->samplecnt)
+      cols->samplecnt[n] = msr->samplecnt;
+    if (cols->encoding)
+      cols->encoding[n] = msr->encoding;
+    if (cols->pubversion)
+      cols->pubversion[n] = msr->pubversion;
+    if (cols->formatversion)
+      cols->formatversion[n] = msr->formatversion;
 
     offset += (uint64_t)msr->reclen;
     n++;
-    cols->offset[n] = (int32_t)(offset - (uint64_t)cols->base);
+    if (cols->offset)
+      cols->offset[n] = (int32_t)(offset - (uint64_t)cols->base);
   }
 
   msr3_free (&msr);

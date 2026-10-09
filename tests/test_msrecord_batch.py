@@ -12,7 +12,7 @@ import pymseed.msrecord_batch
 from pymseed import DataEncoding, MS3Record, MS3RecordBatchReader
 from pymseed.clib import clibmseed
 from pymseed.exceptions import MiniSEEDError
-from pymseed.msrecord_batch import DEFAULT_BATCH_SIZE
+from pymseed.msrecord_batch import COLUMNS, DEFAULT_BATCH_SIZE
 
 test_dir = os.path.abspath(os.path.dirname(__file__))
 test_path3 = os.path.join(test_dir, "data", "testdata-COLA-signal.mseed3")
@@ -451,3 +451,83 @@ def test_arrow_export_outside_cpython_raises():
         batch.__arrow_c_array__()
     with pytest.raises(NotImplementedError, match="requires CPython"):
         MS3RecordBatchReader.from_buffer(MIXED).__arrow_c_stream__()
+
+
+# Column projection
+
+
+@pytest.mark.parametrize(
+    "columns",
+    [["record"], ["starttime", "sourceid"], ["samplecnt", "encoding", "formatversion"]],
+)
+def test_batches_hold_only_the_columns_read(columns):
+    expected = expected_records(MIXED)
+    getters = {
+        "sourceid": lambda b, i: b.sourceid(i),
+        "starttime": lambda b, i: b.starttimes[i],
+        "endtime": lambda b, i: b.endtimes[i],
+        "samprate": lambda b, i: b.samprates[i],
+        "samplecnt": lambda b, i: b.samplecnts[i],
+        "encoding": lambda b, i: b.encodings[i],
+        "pubversion": lambda b, i: b.pubversions[i],
+        "formatversion": lambda b, i: b.formatversions[i],
+        "record": lambda b, i: b.record(i),
+    }
+
+    batches = list(MS3RecordBatchReader.from_buffer(MIXED, columns=columns, batch_size=50))
+
+    for c in COLUMNS:
+        if c in columns:
+            values = [getters[c](b, i) for b in batches for i in range(len(b))]
+            assert values == [r[COLUMNS.index(c)] for r in expected]
+        else:
+            with pytest.raises(ValueError, match=f"'{c}' column wasn't read"):
+                getters[c](batches[0], 0)
+
+
+@cpython_only
+def test_arrow_exports_hold_only_the_columns_read():
+    pa = pytest.importorskip("pyarrow")
+    columns = ["record", "endtime", "sourceid"]  # exported in COLUMNS order
+
+    schema = next(MS3RecordBatchReader.from_buffer(MIXED, columns=columns)).to_arrow().schema
+    table = MS3RecordBatchReader.from_buffer(MIXED, columns=columns, batch_size=50).to_arrow()
+
+    assert schema.names == ["sourceid", "endtime", "record"]
+    assert table.schema == schema
+    table = table.read_all()
+    expected = expected_records(MIXED)
+    assert table["record"].to_pylist() == [r[-1] for r in expected]
+    assert table["sourceid"].cast(pa.string()).to_pylist() == [r[0] for r in expected]
+    assert live_exports() == (len(table.to_batches()), 0)
+    del table
+    assert live_exports() == (0, 0)
+
+
+def test_batches_without_records_release_the_buffer():
+    class Buffer(bytearray):
+        pass
+
+    def read(columns):
+        buffer = Buffer(MIXED)
+        ref = weakref.ref(buffer)
+        batches = list(MS3RecordBatchReader.from_buffer(buffer, columns=columns))
+        del buffer
+        gc.collect()
+        return batches, ref
+
+    batches, ref = read(["sourceid", "starttime"])
+    assert ref() is None
+    assert len(batches) > 0
+
+    batches, ref = read(["record"])
+    assert ref() is not None
+
+
+def test_invalid_columns():
+    with pytest.raises(ValueError, match="Unknown columns \\['nope'\\]"):
+        MS3RecordBatchReader.from_buffer(MIXED, columns=["record", "nope"])
+    with pytest.raises(ValueError, match="at least one column"):
+        MS3RecordBatchReader.from_buffer(MIXED, columns=[])
+    with pytest.raises(TypeError, match="not a string"):
+        MS3RecordBatchReader.from_buffer(MIXED, columns="record")

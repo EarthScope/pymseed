@@ -10,7 +10,9 @@
 #define PM_SCAN_FULL 1
 
 /* Column arrays for a batch of consecutive records, one element per record.
-   The caller allocates every array and sets `capacity` and `sid_slot_mask`. */
+   The caller allocates the arrays of the columns it wants, leaving the others
+   NULL, and sets `capacity` (and `sid_slot_mask` with `sid_index`). Source IDs
+   need `sids`, `sid_index`, `sid_slots` and `sid_hashes`; records need `offset`. */
 typedef struct PMRecordColumns
 {
   int64_t capacity; /* Records each per-record array holds */

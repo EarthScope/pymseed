@@ -482,13 +482,14 @@ struct ArrowArrayStream {
 
 #define PM_ARROW_ERROR_LEN 1024
 
-extern int pm_arrow_export_schema (struct ArrowSchema *out);
+extern uint32_t pm_columns_field_mask (const PMRecordColumns *cols);
+extern int pm_arrow_export_schema (struct ArrowSchema *out, uint32_t field_mask);
 extern int pm_arrow_export_array (const PMRecordColumns *cols, const char *records, void *owner,
                                   struct ArrowArray *out);
-extern struct ArrowSchema *pm_arrow_new_schema (void);
+extern struct ArrowSchema *pm_arrow_new_schema (uint32_t field_mask);
 extern struct ArrowArray *pm_arrow_new_array (const PMRecordColumns *cols, const char *records,
                                               void *owner);
-extern struct ArrowArrayStream *pm_arrow_new_stream (void *source);
+extern struct ArrowArrayStream *pm_arrow_new_stream (void *source, uint32_t field_mask);
 extern "Python+C" void pm_arrow_release_owner (void *owner);
 extern "Python+C" int pm_arrow_stream_next (void *source, struct ArrowArray *out, char *error);
 extern "Python+C" void pm_arrow_stream_release (void *source);

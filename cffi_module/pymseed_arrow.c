@@ -64,6 +64,36 @@ static const struct
 };
 #define NUM_FIELDS ((int64_t)(sizeof (fields) / sizeof (fields[0])))
 #define SOURCEID_VALUES_FORMAT "u"
+#define FIELD_SOURCEID 0
+#define FIELD_RECORD (NUM_FIELDS - 1)
+#define FIELD_BIT(i) ((uint32_t)1 << (i))
+
+static int64_t
+count_fields (uint32_t field_mask)
+{
+  int64_t count = 0;
+  int64_t i;
+
+  for (i = 0; i < NUM_FIELDS; i++)
+    count += (field_mask & FIELD_BIT (i)) != 0;
+  return count;
+}
+
+uint32_t
+pm_columns_field_mask (const PMRecordColumns *cols)
+{
+  const void *columns[] = {
+      cols->sid_index, cols->starttime,  cols->endtime,       cols->samprate, cols->samplecnt,
+      cols->encoding,  cols->pubversion, cols->formatversion, cols->offset,
+  };
+  uint32_t field_mask = 0;
+  int64_t i;
+
+  for (i = 0; i < NUM_FIELDS; i++)
+    if (columns[i])
+      field_mask |= FIELD_BIT (i);
+  return field_mask;
+}
 
 /***************************************************************************
  * Schema
@@ -112,38 +142,40 @@ init_schema (struct ArrowSchema *schema, const char *format, const char *name, i
 }
 
 int
-pm_arrow_export_schema (struct ArrowSchema *out)
+pm_arrow_export_schema (struct ArrowSchema *out, uint32_t field_mask)
 {
   struct ArrowSchema *child;
   int64_t i;
 
-  if (init_schema (out, "+s", "", NUM_FIELDS))
+  if (init_schema (out, "+s", "", count_fields (field_mask)))
     return -1;
+  out->n_children = 0; /* Counts the children built, so a failure frees only those */
 
   for (i = 0; i < NUM_FIELDS; i++)
   {
-    /* The parent frees the children allocated so far if this fails */
+    if (!(field_mask & FIELD_BIT (i)))
+      continue;
+
     if (!(child = calloc (1, sizeof (*child))))
     {
-      out->n_children = i;
       release_schema (out);
       return -1;
     }
-    out->children[i] = child;
+    out->children[out->n_children++] = child;
     if (init_schema (child, fields[i].format, fields[i].name, 0))
     {
-      out->n_children = i + 1;
       release_schema (out);
       return -1;
     }
-  }
 
-  /* Source IDs are int32 indices into a dictionary of strings */
-  if (!(child = out->children[0]->dictionary = calloc (1, sizeof (*child))) ||
-      init_schema (child, SOURCEID_VALUES_FORMAT, "", 0))
-  {
-    release_schema (out);
-    return -1;
+    /* Source IDs are int32 indices into a dictionary of strings */
+    if (i == FIELD_SOURCEID &&
+        (!(child->dictionary = calloc (1, sizeof (*child))) ||
+         init_schema (child->dictionary, SOURCEID_VALUES_FORMAT, "", 0)))
+    {
+      release_schema (out);
+      return -1;
+    }
   }
 
   return 0;
@@ -262,9 +294,10 @@ pm_arrow_export_array (const PMRecordColumns *cols, const char *records, void *o
                        struct ArrowArray *out)
 {
   const void *data[] = {
-      cols->sid_index, cols->starttime, cols->endtime,    cols->samprate,
-      cols->samplecnt, cols->encoding,  cols->pubversion, cols->formatversion,
+      cols->sid_index, cols->starttime,  cols->endtime,       cols->samprate, cols->samplecnt,
+      cols->encoding,  cols->pubversion, cols->formatversion, cols->offset,
   };
+  uint32_t field_mask = pm_columns_field_mask (cols);
   PMExport *export;
   struct ArrowArray *parent;
   struct ArrowArray *child;
@@ -280,30 +313,25 @@ pm_arrow_export_array (const PMRecordColumns *cols, const char *records, void *o
   export->refcount = 1;
   export->owner    = owner;
 
-  if (!(parent = new_array (export, n, 1, NUM_FIELDS)))
+  if (!(parent = new_array (export, n, 1, count_fields (field_mask))))
     goto fail;
   parent->n_children = 0; /* Counts the children built, so a failure frees only those */
 
   for (i = 0; i < NUM_FIELDS; i++)
   {
+    if (!(field_mask & FIELD_BIT (i)))
+      continue;
+
     /* Records are variable-length binary: offsets, then data */
-    if (!(child = new_array (export, n, i == NUM_FIELDS - 1 ? 3 : 2, 0)))
+    if (!(child = new_array (export, n, i == FIELD_RECORD ? 3 : 2, 0)))
       goto fail;
     parent->children[parent->n_children++] = child;
-
-    if (i == NUM_FIELDS - 1)
-    {
-      child->buffers[1] = cols->offset;
+    child->buffers[1] = data[i];
+    if (i == FIELD_RECORD)
       child->buffers[2] = records;
-    }
-    else
-    {
-      child->buffers[1] = data[i];
-    }
+    if (i == FIELD_SOURCEID && !(child->dictionary = sourceid_dictionary (export, cols)))
+      goto fail;
   }
-
-  if (!(parent->children[0]->dictionary = sourceid_dictionary (export, cols)))
-    goto fail;
 
   *out = *parent;
   free (parent);
@@ -327,6 +355,7 @@ fail:
 typedef struct PMStream
 {
   void *source;
+  uint32_t field_mask;
   char error[PM_ARROW_ERROR_LEN];
 } PMStream;
 
@@ -335,7 +364,7 @@ stream_get_schema (struct ArrowArrayStream *stream, struct ArrowSchema *out)
 {
   PMStream *private = (PMStream *)stream->private_data;
 
-  if (pm_arrow_export_schema (out))
+  if (pm_arrow_export_schema (out, private->field_mask))
   {
     strcpy (private->error, "Out of memory exporting miniSEED record batch schema");
     return ENOMEM;
@@ -376,7 +405,7 @@ stream_release (struct ArrowArrayStream *stream)
 }
 
 struct ArrowArrayStream *
-pm_arrow_new_stream (void *source)
+pm_arrow_new_stream (void *source, uint32_t field_mask)
 {
   struct ArrowArrayStream *stream = calloc (1, sizeof (*stream));
   PMStream *private = calloc (1, sizeof (*private));
@@ -390,6 +419,7 @@ pm_arrow_new_stream (void *source)
   }
 
   private->source        = source;
+  private->field_mask    = field_mask;
   stream->get_schema     = stream_get_schema;
   stream->get_next       = stream_get_next;
   stream->get_last_error = stream_get_last_error;
@@ -403,11 +433,11 @@ pm_arrow_new_stream (void *source)
  ***************************************************************************/
 
 struct ArrowSchema *
-pm_arrow_new_schema (void)
+pm_arrow_new_schema (uint32_t field_mask)
 {
   struct ArrowSchema *schema = malloc (sizeof (*schema));
 
-  if (schema && pm_arrow_export_schema (schema))
+  if (schema && pm_arrow_export_schema (schema, field_mask))
   {
     free (schema);
     return NULL;

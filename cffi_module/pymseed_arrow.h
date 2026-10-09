@@ -58,11 +58,18 @@ struct ArrowArrayStream
 
 #define PM_ARROW_ERROR_LEN 1024
 
-/* Fill `out` with the schema of an exported batch: a struct with one field per column. */
-extern int pm_arrow_export_schema (struct ArrowSchema *out);
+/* The fields an export of `cols` holds, one bit per column allocated, in field
+   order: sourceid, starttime, endtime, samprate, samplecnt, encoding,
+   pubversion, formatversion, record. */
+extern uint32_t pm_columns_field_mask (const PMRecordColumns *cols);
+
+/* Fill `out` with the schema of an exported batch: a struct with a field per
+   column in `field_mask`. */
+extern int pm_arrow_export_schema (struct ArrowSchema *out, uint32_t field_mask);
 
 /* Fill `out` with a struct array over a scanned batch's columns, without copying
-   them. `records` is where the batch's records start (the buffer plus `cols->base`).
+   them: a field per column allocated. `records` is where the batch's records
+   start (the buffer plus `cols->base`), if `cols->offset` is allocated.
 
    The columns and records must stay valid until every array exported from them
    is released. `owner` identifies what keeps them valid: once the last is
@@ -74,15 +81,16 @@ extern int pm_arrow_export_array (const PMRecordColumns *cols, const char *recor
 
 /* As pm_arrow_export_schema() and pm_arrow_export_array(), into structs they
    allocate for a PyCapsule to own. Return NULL if memory runs out. */
-extern struct ArrowSchema *pm_arrow_new_schema (void);
+extern struct ArrowSchema *pm_arrow_new_schema (uint32_t field_mask);
 extern struct ArrowArray *pm_arrow_new_array (const PMRecordColumns *cols, const char *records,
                                               void *owner);
 
-/* A stream of batches pulled from `source` with pm_arrow_stream_next(), in a
+/* A stream of batches with the fields in `field_mask`, pulled from `source`
+   with pm_arrow_stream_next(), in a
    struct allocated for a PyCapsule to own. pm_arrow_stream_release(source) is
    called when the stream is released, or if this fails. Returns NULL if memory
    runs out. */
-extern struct ArrowArrayStream *pm_arrow_new_stream (void *source);
+extern struct ArrowArrayStream *pm_arrow_new_stream (void *source, uint32_t field_mask);
 
 /* Implemented in Python: release what kept an export's columns valid */
 extern void pm_arrow_release_owner (void *owner);
