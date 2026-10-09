@@ -6,7 +6,8 @@ and a call per field, which dominates the cost of reading headers. An
 filled in C, plus the raw records themselves, so they can be handed to numpy or
 Arrow as whole columns without a per-record loop in Python.
 
-Batches, and the readers that yield them, implement the Arrow PyCapsule
+Read batches with :class:`MS3RecordBatchReader`. Batches, and the readers that
+yield them, implement the Arrow PyCapsule
 interface, so Arrow libraries (pyarrow, polars, DuckDB, nanoarrow, ...) can read
 them directly, without copying and without pymseed depending on any of them.
 """
@@ -165,15 +166,15 @@ _COLUMNS: dict[str, tuple[str, Any]] = {
 class MS3RecordBatch:
     """Header fields and raw bytes of consecutive miniSEED records, as columns.
 
-    Create batches with :meth:`from_buffer`, :meth:`from_file` or
-    :meth:`from_filelike`. Each column is a read-only :class:`memoryview` with one
+    Read batches with :class:`MS3RecordBatchReader`. Each column is a read-only
+    :class:`memoryview` with one
     element per record, e.g. ``batch.starttimes[i]``; wrap one with
     ``numpy.frombuffer`` for an array without copying. :meth:`to_arrow` converts
     the batch to a ``pyarrow.RecordBatch``, also without copying.
 
     Records' bytes are not copied: a batch references the buffer it was read
-    from, keeping it alive. Don't modify a buffer passed to :meth:`from_buffer`
-    while batches read from it are in use.
+    from, keeping it alive. Don't modify a buffer passed to
+    :meth:`MS3RecordBatchReader.from_buffer` while batches read from it are in use.
     """
 
     __slots__ = (
@@ -324,6 +325,23 @@ class MS3RecordBatch:
         pa = _import_pyarrow()
         return pa.record_batch(self)
 
+
+class MS3RecordBatchReader:
+    """Reads miniSEED records as :class:`MS3RecordBatch` es; also an Arrow stream.
+
+    Create one with :meth:`from_file`, :meth:`from_buffer` or :meth:`from_filelike`.
+    Iterate over it for batches, or pass it to an Arrow library to read them all
+    as one stream, e.g. ``pyarrow.RecordBatchReader.from_stream(reader)``,
+    ``polars.DataFrame(reader)`` or a DuckDB query. Either way, each batch is read
+    once: a stream continues from wherever iteration left off.
+    """
+
+    __slots__ = ("_batches",)
+
+    def __init__(self, batches: Iterator[MS3RecordBatch]) -> None:
+        # Internal: use from_buffer(), from_file() or from_filelike()
+        self._batches = batches
+
     @classmethod
     def from_buffer(
         cls,
@@ -348,7 +366,7 @@ class MS3RecordBatch:
                 ends partway through one. Batches already yielded are complete and valid.
         """
         scanner = _Scanner(batch_size, validate_crc, verbose)
-        return MS3RecordBatchReader(_read_buffer(scanner, buffer))
+        return cls(_read_buffer(scanner, buffer))
 
     @classmethod
     def from_filelike(
@@ -376,7 +394,7 @@ class MS3RecordBatch:
         if block_size <= 0:
             raise ValueError("block_size must be greater than 0")
         scanner = _Scanner(batch_size, validate_crc, verbose)
-        return MS3RecordBatchReader(_read_filelike(scanner, fh, block_size))
+        return cls(_read_filelike(scanner, fh, block_size))
 
     @classmethod
     def from_file(
@@ -396,23 +414,7 @@ class MS3RecordBatch:
         if block_size <= 0:
             raise ValueError("block_size must be greater than 0")
         scanner = _Scanner(batch_size, validate_crc, verbose)
-        return MS3RecordBatchReader(_read_file(scanner, filename, block_size))
-
-
-class MS3RecordBatchReader:
-    """An iterator over :class:`MS3RecordBatch` es, which is also an Arrow stream.
-
-    Iterate over it for batches, or pass it to an Arrow library to read them all
-    as one stream, e.g. ``pyarrow.RecordBatchReader.from_stream(reader)``,
-    ``polars.DataFrame(reader)`` or a DuckDB query. Either way, each batch is read
-    once: a stream continues from wherever iteration left off.
-    """
-
-    __slots__ = ("_batches",)
-
-    def __init__(self, batches: Iterator[MS3RecordBatch]) -> None:
-        # Internal: use MS3RecordBatch.from_buffer(), from_file() or from_filelike()
-        self._batches = batches
+        return cls(_read_file(scanner, filename, block_size))
 
     def __iter__(self) -> MS3RecordBatchReader:
         return self
@@ -421,7 +423,7 @@ class MS3RecordBatchReader:
         return next(self._batches)
 
     def close(self) -> None:
-        """Stop reading, closing a file opened by :meth:`MS3RecordBatch.from_file`."""
+        """Stop reading, closing a file opened by :meth:`from_file`."""
         close = getattr(self._batches, "close", None)
         if close is not None:
             close()
