@@ -39,9 +39,6 @@ DEFAULT_BLOCK_SIZE = 8 * 1024**2
 """Bytes read from a file or stream at a time. A batch never spans blocks, so with
 records of 4096 bytes or more, a batch holds at most a block's worth."""
 
-DEFAULT_MAX_SOURCEIDS = 256
-"""Distinct source IDs per batch; a batch ends early if it would hold more."""
-
 # Exported batches, by the address of the handle each export's C state holds, so
 # a batch stays alive until every consumer has released its arrays
 _exports: dict[int, Any] = {}
@@ -355,9 +352,8 @@ class MS3RecordBatchReader:
 
         Args:
             buffer: A bytes-like object holding miniSEED records back to back.
-            batch_size: Records per batch, at most. A batch may hold fewer, e.g. at
-                the end of a block or if its records come from more than
-                ``DEFAULT_MAX_SOURCEIDS`` sources.
+            batch_size: Records per batch, at most. A batch may hold fewer at the
+                end of a block.
             validate_crc: Validate CRCs when present (miniSEED 3).
             verbose: libmseed verbosity.
 
@@ -494,6 +490,12 @@ class _Scanner:
         self.flags = clibmseed.MSF_VALIDATECRC if validate_crc else 0
         self.verbose = verbose
         self.consumed = ffi.new("uint64_t *")
+        # Scratch space for finding source IDs, reused for every batch: a hash
+        # table at most half full, since a batch has no more source IDs than records
+        slots = 1 << (2 * batch_size - 1).bit_length()
+        self.sid_slots = _new("int32_t[]", slots)
+        self.sid_slot_mask = slots - 1
+        self.sid_hashes = _new("uint32_t[]", batch_size)
 
     def scan(self, data: Any, start: int, at_end: bool) -> Generator[MS3RecordBatch, None, int]:
         """Yield batches of the records in `data` from `start`; return where they end.
@@ -536,10 +538,13 @@ class _Scanner:
         n = self.batch_size
         arrays = {name: _new(f"{ctype}[]", n) for name, (ctype, _) in _COLUMNS.items()}
         arrays["offset"] = _new("int32_t[]", n + 1)
-        arrays["sids"] = _new("char[]", DEFAULT_MAX_SOURCEIDS * clibmseed.LM_SIDLEN)
+        # Pages are only touched for the source IDs a batch actually holds
+        arrays["sids"] = _new("char[]", n * clibmseed.LM_SIDLEN)
         cols = ffi.new("PMRecordColumns *")
         cols.capacity = n
-        cols.sid_capacity = DEFAULT_MAX_SOURCEIDS
         for name, array in arrays.items():
             setattr(cols, name, array)
+        cols.sid_slots = self.sid_slots
+        cols.sid_slot_mask = self.sid_slot_mask
+        cols.sid_hashes = self.sid_hashes
         return cols, arrays

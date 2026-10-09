@@ -10,19 +10,26 @@
 #define PM_SCAN_FULL 1
 
 /* Column arrays for a batch of consecutive records, one element per record.
-   The caller allocates every array and sets the capacities. */
+   The caller allocates every array and sets `capacity` and `sid_slot_mask`. */
 typedef struct PMRecordColumns
 {
-  int64_t capacity;     /* Records each per-record array holds */
-  int32_t sid_capacity; /* Source IDs `sids` holds */
+  int64_t capacity; /* Records each per-record array holds */
 
   int64_t count;  /* Records scanned */
   int32_t nsids;  /* Distinct source IDs in `sids` */
   int64_t base;   /* Offset in the buffer of the batch's first record */
 
   int32_t *offset;   /* capacity + 1: start of each record relative to `base`, then the end */
-  char *sids;        /* sid_capacity * LM_SIDLEN: distinct source IDs, NUL-terminated */
+  char *sids;        /* capacity * LM_SIDLEN: distinct source IDs, NUL-terminated */
   int32_t *sid_index; /* Index of each record's source ID in `sids` */
+
+  /* Scratch space for finding source IDs while scanning: a hash table of
+     indices into `sids`, with a power-of-two number of slots of at least twice
+     `capacity`, and each source ID's hash. Not part of the batch once scanned. */
+  int32_t *sid_slots;
+  int32_t sid_slot_mask; /* Slots - 1 */
+  uint32_t *sid_hashes;  /* capacity */
+
   int64_t *starttime; /* Nanoseconds since the epoch */
   int64_t *endtime;   /* Nanoseconds since the epoch */
   double *samprate;   /* Hz */

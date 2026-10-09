@@ -9,9 +9,10 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 
 import pymseed.msrecord_batch
-from pymseed import MS3Record, MS3RecordBatchReader
+from pymseed import DataEncoding, MS3Record, MS3RecordBatchReader
 from pymseed.clib import clibmseed
 from pymseed.exceptions import MiniSEEDError
+from pymseed.msrecord_batch import DEFAULT_BATCH_SIZE
 
 test_dir = os.path.abspath(os.path.dirname(__file__))
 test_path3 = os.path.join(test_dir, "data", "testdata-COLA-signal.mseed3")
@@ -117,13 +118,32 @@ def test_batch_size_bounds_batches():
     assert max(sizes) == 10
 
 
-def test_batch_ends_when_its_source_id_table_is_full(monkeypatch):
-    monkeypatch.setattr(pymseed.msrecord_batch, "DEFAULT_MAX_SOURCEIDS", 1)
+def interleaved(channels: int, records_each: int) -> bytes:
+    """Records of many channels, interleaved record by record, as in a real-time feed."""
+    per_channel = []
+    for c in range(channels):
+        msr = MS3Record()
+        msr.sourceid = f"FDSN:XX_S{c:04d}_00_B_H_Z"
+        msr.reclen = 512
+        msr.formatversion = 3
+        msr.samprate = 1.0
+        msr.encoding = DataEncoding.INT32
+        msr.set_starttime_str("2026-01-01T00:00:00Z")
+        records = list(msr.generate(list(range(records_each * 100)), "i"))
+        per_channel.append(records[:records_each])
+    return b"".join(per_channel[c][i] for i in range(records_each) for c in range(channels))
 
-    batches = list(MS3RecordBatchReader.from_buffer(MIXED))
 
-    assert all(len(b.sourceids) == 1 for b in batches)
-    assert batch_records(batches) == expected_records(MIXED)
+@pytest.mark.parametrize("batch_size", [7, 300, DEFAULT_BATCH_SIZE])
+def test_batches_of_interleaved_channels_are_full(batch_size):
+    data = interleaved(channels=1000, records_each=2)
+
+    batches = list(MS3RecordBatchReader.from_buffer(data, batch_size=batch_size))
+
+    # A batch holds as many source IDs as it needs; only its size ends it
+    assert [len(b) for b in batches[:-1]] == [batch_size] * (len(batches) - 1)
+    assert max(len(b.sourceids) for b in batches) == min(batch_size, 1000)
+    assert batch_records(batches) == expected_records(data)
 
 
 def test_records_and_offsets_cover_each_batch():

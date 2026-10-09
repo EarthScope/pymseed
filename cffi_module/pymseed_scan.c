@@ -13,31 +13,56 @@
 #include "libmseed.h"
 #include "pymseed_scan.h"
 
-/* Find `sid` in the batch's source ID table, adding it if there's room.
- * Returns its index, or -1 if the table is full. */
+/* FNV-1a hash of a NUL-terminated source ID */
+static uint32_t
+hash_sid (const char *sid)
+{
+  uint32_t hash = 2166136261u;
+  int i;
+
+  for (i = 0; i < LM_SIDLEN && sid[i]; i++)
+  {
+    hash ^= (uint8_t)sid[i];
+    hash *= 16777619u;
+  }
+  return hash;
+}
+
+/* Find `sid` in the batch's source ID table, adding it if it's new.
+ * Returns its index, or -1 if the table is full (it can't be: a batch has no
+ * more source IDs than records). */
 static int32_t
 sid_index (PMRecordColumns *cols, const char *sid, int32_t *last)
 {
-  char *entry;
+  uint32_t hash;
+  uint32_t slot;
   int32_t idx;
+  char *entry;
 
   /* Consecutive records are usually from the same source */
   if (*last >= 0 && strncmp (cols->sids + (int64_t)*last * LM_SIDLEN, sid, LM_SIDLEN) == 0)
     return *last;
 
-  for (idx = 0; idx < cols->nsids; idx++)
+  /* Open addressing with linear probing; the table is at most half full */
+  hash = hash_sid (sid);
+  for (slot = hash & (uint32_t)cols->sid_slot_mask; (idx = cols->sid_slots[slot]) >= 0;
+       slot = (slot + 1) & (uint32_t)cols->sid_slot_mask)
   {
-    if (strncmp (cols->sids + (int64_t)idx * LM_SIDLEN, sid, LM_SIDLEN) == 0)
+    if (cols->sid_hashes[idx] == hash &&
+        strncmp (cols->sids + (int64_t)idx * LM_SIDLEN, sid, LM_SIDLEN) == 0)
       return *last = idx;
   }
 
-  if (cols->nsids >= cols->sid_capacity)
+  if (cols->nsids >= cols->capacity)
     return -1;
 
-  entry = cols->sids + (int64_t)cols->nsids * LM_SIDLEN;
+  idx   = cols->nsids++;
+  entry = cols->sids + (int64_t)idx * LM_SIDLEN;
   strncpy (entry, sid, LM_SIDLEN - 1);
-  entry[LM_SIDLEN - 1] = '\0';
-  return *last = cols->nsids++;
+  entry[LM_SIDLEN - 1]   = '\0';
+  cols->sid_hashes[idx]  = hash;
+  cols->sid_slots[slot]  = idx;
+  return *last = idx;
 }
 
 int
@@ -54,6 +79,7 @@ pm_scan_records (const char *buffer, uint64_t buflen, uint32_t flags, int8_t ver
 
   cols->count = 0;
   cols->nsids = 0;
+  memset (cols->sid_slots, 0xFF, ((size_t)cols->sid_slot_mask + 1) * sizeof (int32_t)); /* all -1 */
   cols->base = (int64_t)offset;
   cols->offset[0] = 0;
 

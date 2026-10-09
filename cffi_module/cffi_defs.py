@@ -425,13 +425,15 @@ extern nstime_t lmp_systemtime (void);
 
 typedef struct PMRecordColumns {
   int64_t capacity;
-  int32_t sid_capacity;
   int64_t count;
   int32_t nsids;
   int64_t base;
   int32_t *offset;
   char *sids;
   int32_t *sid_index;
+  int32_t *sid_slots;
+  int32_t sid_slot_mask;
+  uint32_t *sid_hashes;
   int64_t *starttime;
   int64_t *endtime;
   double *samprate;
