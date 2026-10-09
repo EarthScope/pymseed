@@ -25,6 +25,16 @@ def read(path: str) -> bytes:
         return fh.read()
 
 
+class ReadOnly:
+    """A file-like object with read() but not readinto()"""
+
+    def __init__(self, data: bytes) -> None:
+        self._fh = io.BytesIO(data)
+
+    def read(self, n: int = -1) -> bytes:
+        return self._fh.read(n)
+
+
 # Arrow export creates PyCapsules with CPython's C API
 cpython_only = pytest.mark.skipif(
     sys.implementation.name != "cpython", reason="Arrow export requires CPython"
@@ -89,6 +99,11 @@ def batch_records(batches) -> list[tuple]:
             lambda data: MS3RecordBatchReader.from_filelike(io.BytesIO(data), block_size=100),
             id="filelike-tiny-blocks",
         ),
+        # Without readinto()
+        pytest.param(
+            lambda data: MS3RecordBatchReader.from_filelike(ReadOnly(data), block_size=1000),
+            id="filelike-read-only",
+        ),
         pytest.param(
             lambda data: MS3RecordBatchReader.from_buffer(data, batch_size=7), id="small-batches"
         ),
@@ -100,6 +115,47 @@ def test_batches_hold_the_same_records_as_ms3record(read_batches):
     assert {r[7] for r in expected} == {2, 3}
 
     assert batch_records(read_batches(MIXED)) == expected
+
+
+class RecordingReader(io.BytesIO):
+    """Records each read() and readinto(), and the blocks read() returns"""
+
+    def __init__(self, data: bytes) -> None:
+        super().__init__(data)
+        self.calls: list[tuple[str, int]] = []
+        self.blocks: list[bytes] = []
+
+    def read(self, n=-1):
+        self.blocks.append(super().read(n))
+        self.calls.append(("read", len(self.blocks[-1])))
+        return self.blocks[-1]
+
+    def readinto(self, b):
+        self.calls.append(("readinto", super().readinto(b)))
+        return self.calls[-1][1]
+
+
+def test_records_straddling_blocks_join_the_next_blocks_batch():
+    fh = RecordingReader(MIXED)
+    # Doesn't divide into records, so they straddle blocks
+    batches = list(MS3RecordBatchReader.from_filelike(fh, block_size=100_000))
+
+    assert batch_records(batches) == expected_records(MIXED)
+    # A batch per block read, with no small batches for records straddling blocks
+    assert len(batches) == len([n for _, n in fh.calls if n])
+    # Blocks after a straddling record are read in after it, not copied
+    assert fh.calls[0][0] == "read"
+    assert [method for method, _ in fh.calls].count("readinto") > len(fh.calls) // 2
+
+
+def test_blocks_of_whole_records_are_not_copied():
+    data = read(test_path2) * 4  # 512-byte records
+    fh = RecordingReader(data)
+    batches = list(MS3RecordBatchReader.from_filelike(fh, block_size=512 * 100))
+
+    assert batch_records(batches) == expected_records(data)
+    assert {method for method, _ in fh.calls} == {"read"}
+    assert all(any(b._data is block for block in fh.blocks) for b in batches)
 
 
 def test_from_file(tmp_path):

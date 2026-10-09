@@ -36,8 +36,9 @@ of the common lengths (512 or 4096 bytes) divides into whole batches rather than
 ending with a smaller one."""
 
 DEFAULT_BLOCK_SIZE = 8 * 1024**2
-"""Bytes read from a file or stream at a time. A batch never spans blocks, so with
-records of 4096 bytes or more, a batch holds at most a block's worth."""
+"""Bytes read from a file or stream at a time. A batch never spans blocks: a record
+straddling two is read with the second, so with records of 4096 bytes or more, a
+batch holds at most a block's worth, plus that record."""
 
 # Exported batches, by the address of the handle each export's C state holds, so
 # a batch stays alive until every consumer has released its arrays
@@ -441,7 +442,10 @@ class MS3RecordBatchReader:
         """Read batches of the records read from a file-like object.
 
         Reads ``block_size`` bytes at a time with ``fh.read``. A batch never spans
-        blocks, and with the ``record`` column, references the block it was read from.
+        blocks: a record straddling two is read with the second, which is read in
+        after a copy of the record with ``fh.readinto`` if ``fh`` has it, else copied
+        after the record. With the ``record`` column, a batch references the block
+        it was read from.
 
         Args:
             fh: An object with a ``read(n)`` method returning bytes.
@@ -527,19 +531,35 @@ def _read_buffer(scanner: _Scanner, buffer: Any) -> Iterator[MS3RecordBatch]:
 
 def _read_filelike(scanner: _Scanner, fh: Any, block_size: int) -> Iterator[MS3RecordBatch]:
     begin_operation()
+    readinto = getattr(fh, "readinto", None)
     tail = b""
-    position = 0  # Offset in the stream of `data`
+    position = 0  # Offset in the stream of `tail`
     while True:
-        chunk = fh.read(block_size)
-        at_end = not chunk
-        data = tail + chunk if tail else chunk
+        data = _read_block(fh, readinto, tail, block_size)
         if not data:
             return
+        at_end = len(data) == len(tail)
         consumed = yield from scanner.scan(data, 0, at_end, position)
         tail = data[consumed:]
         position += consumed
         if at_end:
             return
+
+
+def _read_block(fh: Any, readinto: Any, tail: bytes, block_size: int) -> Any:
+    """`tail`, the start of a record straddling blocks, then the next block from `fh`.
+
+    Without a tail, the block is used as `fh.read` returns it. With one, and with
+    `readinto`, the block is read in after a copy of `tail`, rather than copied after
+    it. Each block is newly allocated, since batches keep referencing theirs.
+    """
+    if not tail or readinto is None:
+        chunk = fh.read(block_size) or b""
+        return tail + chunk if tail else chunk
+    block = _new("char[]", len(tail) + block_size)
+    ffi.memmove(block, tail, len(tail))
+    read = readinto(ffi.buffer(block + len(tail), block_size)) or 0
+    return ffi.buffer(block, len(tail) + read)
 
 
 def _read_file(
