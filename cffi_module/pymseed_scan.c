@@ -77,8 +77,9 @@ pm_scan_records (const char *buffer, uint64_t buflen, uint32_t flags, int8_t ver
   int status;
   int result = PM_SCAN_NEEDMORE;
 
-  cols->count = 0;
-  cols->nsids = 0;
+  cols->count         = 0;
+  cols->nsids         = 0;
+  cols->endtime_nulls = 0;
   cols->base  = (int64_t)offset;
   if (cols->sid_index)
     memset (cols->sid_slots, 0xFF, ((size_t)cols->sid_slot_mask + 1) * sizeof (int32_t)); /* all -1 */
@@ -140,7 +141,18 @@ pm_scan_records (const char *buffer, uint64_t buflen, uint32_t flags, int8_t ver
     if (cols->starttime)
       cols->starttime[n] = msr->starttime;
     if (cols->endtime)
+    {
+      /* NSTERROR if the record's time span isn't representable, e.g. with a
+         corrupt sample rate */
       cols->endtime[n] = msr3_endtime (msr);
+      if (cols->endtime[n] == NSTERROR && cols->endtime_validity)
+      {
+        /* The first null marks every record valid, then each null clears its bit */
+        if (cols->endtime_nulls++ == 0)
+          memset (cols->endtime_validity, 0xFF, ((size_t)cols->capacity + 7) / 8);
+        cols->endtime_validity[n / 8] &= (uint8_t) ~(1u << (n % 8));
+      }
+    }
     if (cols->samprate)
       cols->samprate[n] = msr3_sampratehz (msr);
     if (cols->samplecnt)

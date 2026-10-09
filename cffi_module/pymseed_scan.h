@@ -36,8 +36,12 @@ typedef struct PMRecordColumns
   uint32_t *sid_hashes;  /* capacity */
 
   int64_t *starttime; /* Nanoseconds since the epoch */
-  int64_t *endtime;   /* Nanoseconds since the epoch */
-  double *samprate;   /* Hz */
+  int64_t *endtime;   /* Nanoseconds since the epoch, NSTERROR if not representable */
+  /* (capacity + 7) / 8, with `endtime`: an Arrow validity bitmap of `endtime`,
+     set only once `endtime_nulls` > 0 */
+  uint8_t *endtime_validity;
+  int64_t endtime_nulls; /* Records whose end time is NSTERROR */
+  double *samprate;      /* Hz */
   int64_t *samplecnt;
   int16_t *encoding;
   uint8_t *pubversion;

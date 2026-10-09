@@ -437,6 +437,8 @@ typedef struct PMRecordColumns {
   uint32_t *sid_hashes;
   int64_t *starttime;
   int64_t *endtime;
+  uint8_t *endtime_validity;
+  int64_t endtime_nulls;
   double *samprate;
   int64_t *samplecnt;
   int16_t *encoding;

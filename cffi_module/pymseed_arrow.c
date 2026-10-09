@@ -51,20 +51,22 @@ static const struct
 {
   const char *name;
   const char *format;
+  int64_t flags;
 } fields[] = {
-    {"sourceid", "i"}, /* dictionary-encoded, see SOURCEID_VALUES_FORMAT */
-    {"starttime", "tsn:UTC"},
-    {"endtime", "tsn:UTC"},
-    {"samprate", "g"},
-    {"samplecnt", "l"},
-    {"encoding", "s"},
-    {"pubversion", "C"},
-    {"formatversion", "C"},
-    {"record", "z"},
+    {"sourceid", "i", 0}, /* dictionary-encoded, see SOURCEID_VALUES_FORMAT */
+    {"starttime", "tsn:UTC", 0},
+    {"endtime", "tsn:UTC", ARROW_FLAG_NULLABLE}, /* Null where not representable */
+    {"samprate", "g", 0},
+    {"samplecnt", "l", 0},
+    {"encoding", "s", 0},
+    {"pubversion", "C", 0},
+    {"formatversion", "C", 0},
+    {"record", "z", 0},
 };
 #define NUM_FIELDS ((int64_t)(sizeof (fields) / sizeof (fields[0])))
 #define SOURCEID_VALUES_FORMAT "u"
 #define FIELD_SOURCEID 0
+#define FIELD_ENDTIME 2
 #define FIELD_RECORD (NUM_FIELDS - 1)
 #define FIELD_BIT(i) ((uint32_t)1 << (i))
 
@@ -167,6 +169,7 @@ pm_arrow_export_schema (struct ArrowSchema *out, uint32_t field_mask)
       release_schema (out);
       return -1;
     }
+    child->flags = fields[i].flags;
 
     /* Source IDs are int32 indices into a dictionary of strings */
     if (i == FIELD_SOURCEID &&
@@ -329,6 +332,12 @@ pm_arrow_export_array (const PMRecordColumns *cols, const char *records, void *o
     child->buffers[1] = data[i];
     if (i == FIELD_RECORD)
       child->buffers[2] = records;
+    /* Without nulls, no validity bitmap */
+    if (i == FIELD_ENDTIME && cols->endtime_nulls)
+    {
+      child->buffers[0]  = cols->endtime_validity;
+      child->null_count = cols->endtime_nulls;
+    }
     if (i == FIELD_SOURCEID && !(child->dictionary = sourceid_dictionary (export, cols)))
       goto fail;
   }

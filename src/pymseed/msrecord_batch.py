@@ -287,7 +287,11 @@ class MS3RecordBatch:
 
     @property
     def endtimes(self) -> memoryview:
-        """Each record's last sample time, in nanoseconds since the epoch (int64)."""
+        """Each record's last sample time, in nanoseconds since the epoch (int64).
+
+        :data:`~pymseed.NSTERROR` where it isn't representable, e.g. with a corrupt
+        sample rate; Arrow exports have nulls there.
+        """
         return self._column("endtime")
 
     @property
@@ -366,7 +370,8 @@ class MS3RecordBatch:
         Columns, of those read: ``sourceid`` (dictionary of string), ``starttime`` and ``endtime``
         (timestamp[ns, UTC]), ``samprate`` (float64), ``samplecnt`` (int64),
         ``encoding`` (int16), ``pubversion`` and ``formatversion`` (uint8), and
-        ``record`` (binary, the raw record).
+        ``record`` (binary, the raw record). Only ``endtime`` is nullable: null
+        where the end time isn't representable, see :attr:`endtimes`.
 
         Requires ``pyarrow`` 14 or later, which pymseed doesn't install. Other Arrow
         libraries can read a batch directly, e.g. ``polars.DataFrame(batch)``.
@@ -673,6 +678,9 @@ class _Scanner:
         if "sourceid" in self.columns:
             # Pages are only touched for the source IDs a batch actually holds
             arrays["sids"] = _new("char[]", n * clibmseed.LM_SIDLEN)
+        if "endtime" in self.columns:
+            # Only written if the batch has a null
+            arrays["endtime_validity"] = _new("uint8_t[]", (n + 7) // 8)
         cols = ffi.new("PMRecordColumns *")
         cols.capacity = n
         for name, array in arrays.items():

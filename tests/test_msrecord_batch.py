@@ -1,6 +1,7 @@
 import gc
 import io
 import os
+import struct
 import sys
 import types
 import weakref
@@ -9,7 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 
 import pymseed.msrecord_batch
-from pymseed import DataEncoding, MS3Record, MS3RecordBatchReader
+from pymseed import NSTERROR, DataEncoding, MS3Record, MS3RecordBatchReader
 from pymseed.clib import clibmseed
 from pymseed.exceptions import MiniSEEDError
 from pymseed.msrecord_batch import COLUMNS, DEFAULT_BATCH_SIZE
@@ -465,10 +466,55 @@ def test_arrow_schema():
     schema = batch.to_arrow().schema
 
     assert schema == MS3RecordBatchReader.from_buffer(MIXED).to_arrow().schema
-    assert not any(field.nullable for field in schema)
+    assert [field.name for field in schema if field.nullable] == ["endtime"]
     # Data, not schema-like: the schema comes with the array and stream exports
     assert not hasattr(batch, "__arrow_c_schema__")
     assert not hasattr(MS3RecordBatchReader.from_buffer(MIXED), "__arrow_c_schema__")
+
+
+def with_unrepresentable_endtimes(data: bytes, indices: set[int]) -> bytes:
+    """miniSEED 3 `data` with a sample rate so small at `indices` that the end time
+    overflows, invalidating those records' CRCs"""
+    data = bytearray(data)
+    offset = 0
+    for i, r in enumerate(MS3Record.from_buffer(bytes(data))):
+        if i in indices:
+            struct.pack_into("<d", data, offset + 16, 1e-300)  # Sample rate
+        offset += r.reclen
+    return bytes(data)
+
+
+NULL_ENDTIMES = {0, 9}  # Either side of a byte boundary in the validity bitmap
+
+
+def test_unrepresentable_endtimes_are_nsterror():
+    data = with_unrepresentable_endtimes(read(test_path3), NULL_ENDTIMES)
+    expected = [r[2] for r in expected_records(read(test_path3))]
+
+    batch = next(MS3RecordBatchReader.from_buffer(data, validate_crc=False, batch_size=16))
+
+    assert list(batch.endtimes) == [
+        NSTERROR if i in NULL_ENDTIMES else t for i, t in enumerate(expected[:16])
+    ]
+
+
+@cpython_only
+def test_unrepresentable_endtimes_are_null_in_arrow():
+    pa = pytest.importorskip("pyarrow")
+    data = with_unrepresentable_endtimes(read(test_path3), NULL_ENDTIMES)
+    expected = [r[2] for r in expected_records(read(test_path3))]
+
+    table = (
+        MS3RecordBatchReader.from_buffer(data, validate_crc=False, batch_size=16)
+        .to_arrow()
+        .read_all()
+    )
+
+    endtimes = table["endtime"].cast(pa.int64()).to_pylist()
+    assert endtimes == [None if i in NULL_ENDTIMES else t for i, t in enumerate(expected)]
+    assert table["endtime"].null_count == len(NULL_ENDTIMES)
+    # Batches without nulls have no validity bitmap
+    assert all(chunk.buffers()[0] is None for chunk in table["endtime"].chunks[1:])
 
 
 @cpython_only
