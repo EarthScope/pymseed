@@ -521,14 +521,16 @@ def _read_buffer(scanner: _Scanner, buffer: Any) -> Iterator[MS3RecordBatch]:
 def _read_filelike(scanner: _Scanner, fh: Any, block_size: int) -> Iterator[MS3RecordBatch]:
     begin_operation()
     tail = b""
+    position = 0  # Offset in the stream of `data`
     while True:
         chunk = fh.read(block_size)
         at_end = not chunk
         data = tail + chunk if tail else chunk
         if not data:
             return
-        consumed = yield from scanner.scan(data, 0, at_end)
+        consumed = yield from scanner.scan(data, 0, at_end, position)
         tail = data[consumed:]
+        position += consumed
         if at_end:
             return
 
@@ -568,10 +570,13 @@ class _Scanner:
             self.sid_slot_mask = slots - 1
             self.sid_hashes = _new("uint32_t[]", batch_size)
 
-    def scan(self, data: Any, start: int, at_end: bool) -> Generator[MS3RecordBatch, None, int]:
+    def scan(
+        self, data: Any, start: int, at_end: bool, position: int = 0
+    ) -> Generator[MS3RecordBatch, None, int]:
         """Yield batches of the records in `data` from `start`; return where they end.
 
         At the end of the stream (`at_end`), raise if anything follows the last record.
+        `position` is the offset of `data` in the stream, for error messages.
         """
         flags = self.flags | (clibmseed.MSF_ATENDOFFILE if at_end else 0)
         ptr = ffi.from_buffer(data)
@@ -583,7 +588,7 @@ class _Scanner:
             status = clibmseed.pm_scan_records(ptr, size, flags, self.verbose, cols, self.consumed)
             if status < 0:
                 raise MiniSEEDError(
-                    status, f"Error parsing miniSEED record at byte {self.consumed[0]}"
+                    status, f"Error parsing miniSEED record at byte {position + self.consumed[0]}"
                 )
             if cols.count:
                 sourceids = [
@@ -605,7 +610,9 @@ class _Scanner:
                 else clibmseed.MS_ENDOFFILE
             )
             raise MiniSEEDError(
-                code, f"Stream ends with {size - consumed} bytes of an incomplete record"
+                code,
+                f"Stream ends with {size - consumed} bytes of an incomplete record "
+                f"at byte {position + consumed}",
             )
         return consumed
 

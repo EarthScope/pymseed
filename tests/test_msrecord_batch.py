@@ -253,6 +253,17 @@ def test_data_that_is_not_miniseed_raises():
     assert excinfo.value.status_code == clibmseed.MS_NOTSEED
 
 
+@pytest.mark.parametrize("block_size", [100, 1000, 1 << 20])
+def test_errors_report_their_offset_in_the_stream(block_size):
+    data = read(test_path3)
+    bad = data * 3 + b"x" * 4096
+
+    with pytest.raises(MiniSEEDError, match=f"at byte {len(data) * 3}"):
+        list(MS3RecordBatchReader.from_filelike(io.BytesIO(bad), block_size=block_size))
+    with pytest.raises(MiniSEEDError, match=f"at byte {len(data) * 3}"):
+        list(MS3RecordBatchReader.from_filelike(io.BytesIO(data * 3 + b"x"), block_size=block_size))
+
+
 def test_invalid_crc_raises_unless_not_validated():
     data = bytearray(read(test_path3))
     data[100] ^= 0xFF  # inside the first record's data payload
