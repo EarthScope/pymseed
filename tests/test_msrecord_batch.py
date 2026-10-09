@@ -1,0 +1,711 @@
+import gc
+import io
+import os
+import struct
+import sys
+import types
+import weakref
+from concurrent.futures import ThreadPoolExecutor
+
+import pytest
+
+import pymseed.msrecord_batch
+from pymseed import NSTERROR, DataEncoding, MS3Record, MS3RecordBatchReader
+from pymseed.clib import clibmseed
+from pymseed.exceptions import MiniSEEDError
+from pymseed.msrecord_batch import COLUMNS, DEFAULT_BATCH_SIZE
+
+test_dir = os.path.abspath(os.path.dirname(__file__))
+test_path3 = os.path.join(test_dir, "data", "testdata-COLA-signal.mseed3")
+test_path2 = os.path.join(test_dir, "data", "testdata-COLA-signal.mseed2")
+test_60sec = os.path.join(test_dir, "data", "testdata-60sec-period.mseed3")
+
+
+def read(path: str) -> bytes:
+    with open(path, "rb") as fh:
+        return fh.read()
+
+
+class ReadOnly:
+    """A file-like object with read() but not readinto()"""
+
+    def __init__(self, data: bytes) -> None:
+        self._fh = io.BytesIO(data)
+
+    def read(self, n: int = -1) -> bytes:
+        return self._fh.read(n)
+
+
+# Arrow export creates PyCapsules with CPython's C API
+cpython_only = pytest.mark.skipif(
+    sys.implementation.name != "cpython", reason="Arrow export requires CPython"
+)
+
+# miniSEED 3 and 2 records of three channels, then 60-second period records
+MIXED = read(test_path3) + read(test_path2) + read(test_60sec)
+
+
+def expected_records(data: bytes) -> list[tuple]:
+    return [
+        (
+            r.sourceid,
+            r.starttime,
+            r.endtime,
+            r.samprate,
+            r.samplecnt,
+            r.encoding,
+            r.pubversion,
+            r.formatversion,
+            r.record,
+        )
+        for r in MS3Record.from_buffer(data)
+    ]
+
+
+def batch_records(batches) -> list[tuple]:
+    return [
+        (
+            batch.sourceid(i),
+            batch.starttimes[i],
+            batch.endtimes[i],
+            batch.samprates[i],
+            batch.samplecnts[i],
+            batch.encodings[i],
+            batch.pubversions[i],
+            batch.formatversions[i],
+            batch.record(i),
+        )
+        for batch in batches
+        for i in range(len(batch))
+    ]
+
+
+@pytest.mark.parametrize(
+    "read_batches",
+    [
+        pytest.param(lambda data: MS3RecordBatchReader.from_buffer(data), id="buffer"),
+        pytest.param(
+            lambda data: MS3RecordBatchReader.from_buffer(bytearray(data)), id="bytearray"
+        ),
+        pytest.param(
+            lambda data: MS3RecordBatchReader.from_filelike(io.BytesIO(data)), id="filelike"
+        ),
+        # Records split across blocks
+        pytest.param(
+            lambda data: MS3RecordBatchReader.from_filelike(io.BytesIO(data), block_size=1000),
+            id="filelike-small-blocks",
+        ),
+        # Records larger than a block
+        pytest.param(
+            lambda data: MS3RecordBatchReader.from_filelike(io.BytesIO(data), block_size=100),
+            id="filelike-tiny-blocks",
+        ),
+        # Without readinto()
+        pytest.param(
+            lambda data: MS3RecordBatchReader.from_filelike(ReadOnly(data), block_size=1000),
+            id="filelike-read-only",
+        ),
+        pytest.param(
+            lambda data: MS3RecordBatchReader.from_buffer(data, batch_size=7), id="small-batches"
+        ),
+    ],
+)
+def test_batches_hold_the_same_records_as_ms3record(read_batches):
+    expected = expected_records(MIXED)
+    assert len({r[0] for r in expected}) > 1
+    assert {r[7] for r in expected} == {2, 3}
+
+    assert batch_records(read_batches(MIXED)) == expected
+
+
+class RecordingReader(io.BytesIO):
+    """Records each read() and readinto(), and the blocks read() returns"""
+
+    def __init__(self, data: bytes) -> None:
+        super().__init__(data)
+        self.calls: list[tuple[str, int]] = []
+        self.blocks: list[bytes] = []
+
+    def read(self, n=-1):
+        self.blocks.append(super().read(n))
+        self.calls.append(("read", len(self.blocks[-1])))
+        return self.blocks[-1]
+
+    def readinto(self, b):
+        self.calls.append(("readinto", super().readinto(b)))
+        return self.calls[-1][1]
+
+
+def test_records_straddling_blocks_join_the_next_blocks_batch():
+    fh = RecordingReader(MIXED)
+    # Doesn't divide into records, so they straddle blocks
+    batches = list(MS3RecordBatchReader.from_filelike(fh, block_size=100_000))
+
+    assert batch_records(batches) == expected_records(MIXED)
+    # A batch per block read, with no small batches for records straddling blocks
+    assert len(batches) == len([n for _, n in fh.calls if n])
+    # Blocks after a straddling record are read in after it, not copied
+    assert fh.calls[0][0] == "read"
+    assert [method for method, _ in fh.calls].count("readinto") > len(fh.calls) // 2
+
+
+def test_blocks_of_whole_records_are_not_copied():
+    data = read(test_path2) * 4  # 512-byte records
+    fh = RecordingReader(data)
+    batches = list(MS3RecordBatchReader.from_filelike(fh, block_size=512 * 100))
+
+    assert batch_records(batches) == expected_records(data)
+    assert {method for method, _ in fh.calls} == {"read"}
+    assert all(any(b._data is block for block in fh.blocks) for b in batches)
+
+
+def test_from_file(tmp_path):
+    path = tmp_path / "mixed.mseed"
+    path.write_bytes(MIXED)
+
+    assert batch_records(MS3RecordBatchReader.from_file(path, block_size=4096)) == expected_records(
+        MIXED
+    )
+
+
+def test_batch_size_bounds_batches():
+    sizes = [len(b) for b in MS3RecordBatchReader.from_buffer(MIXED, batch_size=10)]
+
+    assert sum(sizes) == len(expected_records(MIXED))
+    assert max(sizes) == 10
+
+
+def interleaved(channels: int, records_each: int) -> bytes:
+    """Records of many channels, interleaved record by record, as in a real-time feed."""
+    per_channel = []
+    for c in range(channels):
+        msr = MS3Record()
+        msr.sourceid = f"FDSN:XX_S{c:04d}_00_B_H_Z"
+        msr.reclen = 512
+        msr.formatversion = 3
+        msr.samprate = 1.0
+        msr.encoding = DataEncoding.INT32
+        msr.set_starttime_str("2026-01-01T00:00:00Z")
+        records = list(msr.generate(list(range(records_each * 100)), "i"))
+        per_channel.append(records[:records_each])
+    return b"".join(per_channel[c][i] for i in range(records_each) for c in range(channels))
+
+
+@pytest.mark.parametrize("batch_size", [7, 300, DEFAULT_BATCH_SIZE])
+def test_batches_of_interleaved_channels_are_full(batch_size):
+    data = interleaved(channels=1000, records_each=2)
+
+    batches = list(MS3RecordBatchReader.from_buffer(data, batch_size=batch_size))
+
+    # A batch holds as many source IDs as it needs; only its size ends it
+    assert [len(b) for b in batches[:-1]] == [batch_size] * (len(batches) - 1)
+    assert max(len(b.sourceids) for b in batches) == min(batch_size, 1000)
+    assert batch_records(batches) == expected_records(data)
+
+
+def test_records_and_offsets_cover_each_batch():
+    for batch in MS3RecordBatchReader.from_buffer(MIXED, batch_size=10):
+        offsets = batch.record_offsets
+        assert len(offsets) == len(batch) + 1
+        assert offsets[0] == 0
+        assert len(batch.records) == offsets[-1]
+        assert bytes(batch.records[offsets[1] : offsets[2]]) == batch.record(1)
+
+
+def test_columns_outlive_their_batch():
+    batch = next(MS3RecordBatchReader.from_buffer(MIXED))
+    expected = list(batch.starttimes)
+    starttimes = batch.starttimes
+    del batch
+    gc.collect()
+
+    assert list(starttimes) == expected
+
+
+def test_columns_as_numpy_arrays():
+    np = pytest.importorskip("numpy")
+    batch = next(MS3RecordBatchReader.from_buffer(MIXED))
+
+    starttimes = np.frombuffer(batch.starttimes, dtype=np.int64)
+
+    assert starttimes.tolist() == list(batch.starttimes)
+
+
+@cpython_only
+def test_to_arrow():
+    pa = pytest.importorskip("pyarrow")
+    expected = expected_records(MIXED)
+
+    batches = [b.to_arrow() for b in MS3RecordBatchReader.from_buffer(MIXED, batch_size=100)]
+    gc.collect()  # the Arrow arrays must keep the C arrays and buffer alive
+    table = pa.Table.from_batches(batches)
+
+    assert table.schema.names == [
+        "sourceid",
+        "starttime",
+        "endtime",
+        "samprate",
+        "samplecnt",
+        "encoding",
+        "pubversion",
+        "formatversion",
+        "record",
+    ]
+    assert table["sourceid"].type == pa.dictionary(pa.int32(), pa.string())
+    assert table["starttime"].type == pa.timestamp("ns", tz="UTC")
+    rows = list(
+        zip(
+            table["sourceid"].cast(pa.string()).to_pylist(),
+            table["starttime"].cast(pa.int64()).to_pylist(),
+            table["endtime"].cast(pa.int64()).to_pylist(),
+            table["samprate"].to_pylist(),
+            table["samplecnt"].to_pylist(),
+            table["encoding"].to_pylist(),
+            table["pubversion"].to_pylist(),
+            table["formatversion"].to_pylist(),
+            table["record"].to_pylist(),
+            strict=True,
+        )
+    )
+    assert rows == expected
+
+
+@cpython_only
+def test_to_arrow_does_not_copy_records():
+    pa = pytest.importorskip("pyarrow")
+    data = pa.py_buffer(MIXED)
+    batch = next(MS3RecordBatchReader.from_buffer(MIXED))
+
+    record_data = batch.to_arrow()["record"].buffers()[2]
+
+    assert record_data.address == data.address
+
+
+def test_empty_input_yields_nothing():
+    assert list(MS3RecordBatchReader.from_buffer(b"")) == []
+    assert list(MS3RecordBatchReader.from_filelike(io.BytesIO(b""))) == []
+
+
+@pytest.mark.parametrize("block_size", [100, 1000, 1 << 20])
+def test_truncated_input_raises(block_size):
+    data = read(test_path3)[:-10]
+
+    with pytest.raises(MiniSEEDError) as excinfo:
+        list(MS3RecordBatchReader.from_filelike(io.BytesIO(data), block_size=block_size))
+
+    assert excinfo.value.status_code == clibmseed.MS_ENDOFFILE
+
+
+def test_input_too_short_for_a_record_is_not_miniseed():
+    with pytest.raises(MiniSEEDError) as excinfo:
+        list(MS3RecordBatchReader.from_buffer(b"too short"))
+
+    assert excinfo.value.status_code == clibmseed.MS_NOTSEED
+
+
+def test_data_that_is_not_miniseed_raises():
+    with pytest.raises(MiniSEEDError) as excinfo:
+        list(MS3RecordBatchReader.from_buffer(b"x" * 4096))
+
+    assert excinfo.value.status_code == clibmseed.MS_NOTSEED
+
+
+@pytest.mark.parametrize("block_size", [100, 1000, 1 << 20])
+def test_errors_report_their_offset_in_the_stream(block_size):
+    data = read(test_path3)
+    bad = data * 3 + b"x" * 4096
+
+    with pytest.raises(MiniSEEDError, match=f"at byte {len(data) * 3}"):
+        list(MS3RecordBatchReader.from_filelike(io.BytesIO(bad), block_size=block_size))
+    with pytest.raises(MiniSEEDError, match=f"at byte {len(data) * 3}"):
+        list(MS3RecordBatchReader.from_filelike(io.BytesIO(data * 3 + b"x"), block_size=block_size))
+
+
+@pytest.mark.parametrize("batch_size", [7, DEFAULT_BATCH_SIZE])
+def test_records_before_an_error_are_yielded(batch_size):
+    read_records = []
+
+    with pytest.raises(MiniSEEDError) as excinfo:
+        for batch in MS3RecordBatchReader.from_buffer(MIXED + b"x" * 4096, batch_size=batch_size):
+            read_records += batch_records([batch])
+
+    assert read_records == expected_records(MIXED)
+    assert excinfo.value.status_code == clibmseed.MS_NOTSEED
+
+
+@pytest.mark.parametrize(
+    "read_batches",
+    [
+        pytest.param(
+            lambda data: MS3RecordBatchReader.from_buffer(data, skip_not_data=True), id="buffer"
+        ),
+        pytest.param(
+            lambda data: MS3RecordBatchReader.from_filelike(
+                io.BytesIO(data), block_size=1000, skip_not_data=True
+            ),
+            id="filelike-small-blocks",
+        ),
+        pytest.param(
+            lambda data: MS3RecordBatchReader.from_buffer(data, batch_size=7, skip_not_data=True),
+            id="small-batches",
+        ),
+    ],
+)
+def test_skip_not_data(read_batches):
+    data3, data2 = read(test_path3), read(test_path2)
+    # Junk before, between and after records, and zero padding at the end
+    data = b"x" * 100 + data3 + b"\0" * 512 + data2 + b"junk" + read(test_60sec) + b"\0" * 512
+
+    assert batch_records(read_batches(data)) == expected_records(MIXED)
+
+
+def test_skipped_input_ends_a_batch():
+    data3 = read(test_path3)
+    batches = list(
+        MS3RecordBatchReader.from_buffer(data3 + b"\0" * 512 + data3, skip_not_data=True)
+    )
+
+    assert [len(b) for b in batches] == [len(expected_records(data3))] * 2
+    assert all(bytes(b.records) == data3 for b in batches)
+
+
+@pytest.mark.parametrize("block_size", [100, 1 << 20])
+def test_skip_not_data_ends_cleanly(block_size):
+    data = read(test_path3)
+
+    def read_batches(data):
+        return batch_records(
+            MS3RecordBatchReader.from_filelike(
+                io.BytesIO(data), block_size=block_size, skip_not_data=True
+            )
+        )
+
+    # A truncated record or too few bytes for one at the end, or no records at all
+    assert read_batches(data + data[:200]) == expected_records(data)
+    assert read_batches(data + b"x") == expected_records(data)
+    assert read_batches(b"x" * 4096) == []
+
+
+def test_invalid_crc_raises_unless_not_validated():
+    data = bytearray(read(test_path3))
+    data[100] ^= 0xFF  # inside the first record's data payload
+
+    with pytest.raises(MiniSEEDError) as excinfo:
+        list(MS3RecordBatchReader.from_buffer(data))
+    assert excinfo.value.status_code == clibmseed.MS_INVALIDCRC
+
+    assert len(batch_records(MS3RecordBatchReader.from_buffer(data, validate_crc=False))) == len(
+        expected_records(read(test_path3))
+    )
+
+
+def test_invalid_arguments():
+    with pytest.raises(ValueError):
+        list(MS3RecordBatchReader.from_buffer(MIXED, batch_size=0))
+    with pytest.raises(ValueError):
+        list(MS3RecordBatchReader.from_filelike(io.BytesIO(MIXED), block_size=0))
+
+
+# Arrow PyCapsule interface
+
+
+def live_exports() -> tuple[int, int]:
+    """Batch arrays and streams still held by Arrow consumers."""
+    gc.collect()
+    return len(pymseed.msrecord_batch._exports), len(pymseed.msrecord_batch._streams)
+
+
+@cpython_only
+def test_capsules_follow_the_arrow_pycapsule_interface():
+    batch = next(MS3RecordBatchReader.from_buffer(MIXED))
+
+    schema, array = batch.__arrow_c_array__()
+
+    assert type(schema).__name__ == "PyCapsule"
+    assert type(array).__name__ == "PyCapsule"
+    assert "arrow_schema" in repr(schema)
+    assert "arrow_array" in repr(array)
+    assert "arrow_array_stream" in repr(batch.__arrow_c_stream__())
+
+
+@cpython_only
+def test_unconsumed_capsules_release_the_batch():
+    batch = next(MS3RecordBatchReader.from_buffer(MIXED))
+
+    capsules = (batch.__arrow_c_array__(), batch.__arrow_c_stream__())
+    assert live_exports() == (1, 1)
+    del capsules
+
+    assert live_exports() == (0, 0)
+
+
+@cpython_only
+def test_arrow_arrays_keep_their_batch_alive():
+    pa = pytest.importorskip("pyarrow")
+    batch = next(MS3RecordBatchReader.from_buffer(MIXED))
+    expected = batch.record(0)
+    ref = weakref.ref(batch)
+
+    arrow = pa.record_batch(batch)
+    del batch
+    gc.collect()
+    assert ref() is not None
+    assert arrow["record"][0].as_py() == expected
+
+    del arrow
+    gc.collect()
+    assert ref() is None
+    assert live_exports() == (0, 0)
+
+
+@cpython_only
+def test_arrow_schema():
+    pytest.importorskip("pyarrow")
+    batch = next(MS3RecordBatchReader.from_buffer(MIXED))
+
+    schema = batch.to_arrow().schema
+
+    assert schema == MS3RecordBatchReader.from_buffer(MIXED).to_arrow().schema
+    assert [field.name for field in schema if field.nullable] == ["endtime"]
+    # Data, not schema-like: the schema comes with the array and stream exports
+    assert not hasattr(batch, "__arrow_c_schema__")
+    assert not hasattr(MS3RecordBatchReader.from_buffer(MIXED), "__arrow_c_schema__")
+
+
+def with_unrepresentable_endtimes(data: bytes, indices: set[int]) -> bytes:
+    """miniSEED 3 `data` with a sample rate so small at `indices` that the end time
+    overflows, invalidating those records' CRCs"""
+    data = bytearray(data)
+    offset = 0
+    for i, r in enumerate(MS3Record.from_buffer(bytes(data))):
+        if i in indices:
+            struct.pack_into("<d", data, offset + 16, 1e-300)  # Sample rate
+        offset += r.reclen
+    return bytes(data)
+
+
+NULL_ENDTIMES = {0, 9}  # Either side of a byte boundary in the validity bitmap
+
+
+def test_unrepresentable_endtimes_are_nsterror():
+    data = with_unrepresentable_endtimes(read(test_path3), NULL_ENDTIMES)
+    expected = [r[2] for r in expected_records(read(test_path3))]
+
+    batch = next(MS3RecordBatchReader.from_buffer(data, validate_crc=False, batch_size=16))
+
+    assert list(batch.endtimes) == [
+        NSTERROR if i in NULL_ENDTIMES else t for i, t in enumerate(expected[:16])
+    ]
+
+
+@cpython_only
+def test_unrepresentable_endtimes_are_null_in_arrow():
+    pa = pytest.importorskip("pyarrow")
+    data = with_unrepresentable_endtimes(read(test_path3), NULL_ENDTIMES)
+    expected = [r[2] for r in expected_records(read(test_path3))]
+
+    table = (
+        MS3RecordBatchReader.from_buffer(data, validate_crc=False, batch_size=16)
+        .to_arrow()
+        .read_all()
+    )
+
+    endtimes = table["endtime"].cast(pa.int64()).to_pylist()
+    assert endtimes == [None if i in NULL_ENDTIMES else t for i, t in enumerate(expected)]
+    assert table["endtime"].null_count == len(NULL_ENDTIMES)
+    # Batches without nulls have no validity bitmap
+    assert all(chunk.buffers()[0] is None for chunk in table["endtime"].chunks[1:])
+
+
+@cpython_only
+def test_arrays_released_on_other_threads():
+    pytest.importorskip("pyarrow")
+    arrays = [b.to_arrow() for b in MS3RecordBatchReader.from_buffer(MIXED, batch_size=10)]
+    assert live_exports()[0] == len(arrays)
+
+    def release(i):
+        arrays[i] = None
+        gc.collect()
+
+    with ThreadPoolExecutor(4) as pool:
+        list(pool.map(release, range(len(arrays))))
+
+    assert live_exports() == (0, 0)
+
+
+@cpython_only
+def test_reader_as_arrow_stream():
+    pa = pytest.importorskip("pyarrow")
+    expected = expected_records(MIXED)
+
+    reader = MS3RecordBatchReader.from_filelike(io.BytesIO(MIXED), block_size=1000, batch_size=50)
+    table = pa.RecordBatchReader.from_stream(reader).read_all()
+
+    assert table.num_rows == len(expected)
+    assert table["record"].to_pylist() == [r[-1] for r in expected]
+    assert table["sourceid"].cast(pa.string()).to_pylist() == [r[0] for r in expected]
+    assert live_exports() == (len(table.to_batches()), 0)
+    del table
+    assert live_exports() == (0, 0)
+
+
+@cpython_only
+def test_stream_continues_where_iteration_left_off():
+    pytest.importorskip("pyarrow")
+    reader = MS3RecordBatchReader.from_buffer(MIXED, batch_size=10)
+    first = next(reader)
+
+    rest = reader.to_arrow().read_all()
+
+    assert len(first) + rest.num_rows == len(expected_records(MIXED))
+
+
+@cpython_only
+def test_stream_error_reaches_the_consumer():
+    pa = pytest.importorskip("pyarrow")
+    reader = MS3RecordBatchReader.from_filelike(io.BytesIO(MIXED[:-10]), block_size=1000)
+
+    with pytest.raises(OSError, match="MiniSEEDError: Stream ends with"):
+        pa.RecordBatchReader.from_stream(reader).read_all()
+
+    assert live_exports() == (0, 0)
+
+
+def test_from_file_reader_closes_its_file(tmp_path):
+    path = tmp_path / "mixed.mseed"
+    path.write_bytes(MIXED)
+
+    with MS3RecordBatchReader.from_file(path, block_size=1000) as reader:
+        next(reader)
+
+    with pytest.raises(StopIteration):
+        next(reader)
+
+
+@cpython_only
+def test_polars_reads_batches_and_streams():
+    pl = pytest.importorskip("polars")
+    n = len(expected_records(MIXED))
+
+    assert pl.DataFrame(next(MS3RecordBatchReader.from_buffer(MIXED))).height > 0
+    assert pl.DataFrame(MS3RecordBatchReader.from_buffer(MIXED, batch_size=50)).height == n
+
+
+@cpython_only
+def test_duckdb_reads_streams():
+    duckdb = pytest.importorskip("duckdb")
+    pytest.importorskip("pytz")  # needed by DuckDB for timestamps with time zones
+    reader = MS3RecordBatchReader.from_buffer(MIXED, batch_size=50)  # noqa: F841 (read by name in the query)
+
+    rows = duckdb.sql("select sourceid::varchar, count(*) from reader group by 1").fetchall()
+
+    expected = expected_records(MIXED)
+    assert dict(rows) == {s: sum(r[0] == s for r in expected) for s in {r[0] for r in expected}}
+
+
+def test_to_arrow_without_pyarrow_explains_what_to_install(monkeypatch):
+    batch = next(MS3RecordBatchReader.from_buffer(MIXED))
+    monkeypatch.setitem(sys.modules, "pyarrow", None)  # import fails
+
+    with pytest.raises(ImportError, match=r"requires pyarrow 14 or later"):
+        batch.to_arrow()
+    with pytest.raises(ImportError, match=r"requires pyarrow 14 or later"):
+        MS3RecordBatchReader.from_buffer(MIXED).to_arrow()
+
+
+def test_to_arrow_with_old_pyarrow_explains_what_to_install(monkeypatch):
+    batch = next(MS3RecordBatchReader.from_buffer(MIXED))
+    monkeypatch.setitem(sys.modules, "pyarrow", types.SimpleNamespace(__version__="13.0.0"))
+
+    with pytest.raises(ImportError, match=r"found 13\.0\.0"):
+        batch.to_arrow()
+
+
+@pytest.mark.skipif(sys.implementation.name == "cpython", reason="CPython supports Arrow export")
+def test_arrow_export_outside_cpython_raises():
+    batch = next(MS3RecordBatchReader.from_buffer(MIXED))
+
+    with pytest.raises(NotImplementedError, match="requires CPython"):
+        batch.__arrow_c_array__()
+    with pytest.raises(NotImplementedError, match="requires CPython"):
+        MS3RecordBatchReader.from_buffer(MIXED).__arrow_c_stream__()
+
+
+# Column projection
+
+
+@pytest.mark.parametrize(
+    "columns",
+    [["record"], ["starttime", "sourceid"], ["samplecnt", "encoding", "formatversion"]],
+)
+def test_batches_hold_only_the_columns_read(columns):
+    expected = expected_records(MIXED)
+    getters = {
+        "sourceid": lambda b, i: b.sourceid(i),
+        "starttime": lambda b, i: b.starttimes[i],
+        "endtime": lambda b, i: b.endtimes[i],
+        "samprate": lambda b, i: b.samprates[i],
+        "samplecnt": lambda b, i: b.samplecnts[i],
+        "encoding": lambda b, i: b.encodings[i],
+        "pubversion": lambda b, i: b.pubversions[i],
+        "formatversion": lambda b, i: b.formatversions[i],
+        "record": lambda b, i: b.record(i),
+    }
+
+    batches = list(MS3RecordBatchReader.from_buffer(MIXED, columns=columns, batch_size=50))
+
+    for c in COLUMNS:
+        if c in columns:
+            values = [getters[c](b, i) for b in batches for i in range(len(b))]
+            assert values == [r[COLUMNS.index(c)] for r in expected]
+        else:
+            with pytest.raises(ValueError, match=f"'{c}' column wasn't read"):
+                getters[c](batches[0], 0)
+
+
+@cpython_only
+def test_arrow_exports_hold_only_the_columns_read():
+    pa = pytest.importorskip("pyarrow")
+    columns = ["record", "endtime", "sourceid"]  # exported in COLUMNS order
+
+    schema = next(MS3RecordBatchReader.from_buffer(MIXED, columns=columns)).to_arrow().schema
+    table = MS3RecordBatchReader.from_buffer(MIXED, columns=columns, batch_size=50).to_arrow()
+
+    assert schema.names == ["sourceid", "endtime", "record"]
+    assert table.schema == schema
+    table = table.read_all()
+    expected = expected_records(MIXED)
+    assert table["record"].to_pylist() == [r[-1] for r in expected]
+    assert table["sourceid"].cast(pa.string()).to_pylist() == [r[0] for r in expected]
+    assert live_exports() == (len(table.to_batches()), 0)
+    del table
+    assert live_exports() == (0, 0)
+
+
+def test_batches_without_records_release_the_buffer():
+    class Buffer(bytearray):
+        pass
+
+    def read(columns):
+        buffer = Buffer(MIXED)
+        ref = weakref.ref(buffer)
+        batches = list(MS3RecordBatchReader.from_buffer(buffer, columns=columns))
+        del buffer
+        gc.collect()
+        return batches, ref
+
+    batches, ref = read(["sourceid", "starttime"])
+    assert ref() is None
+    assert len(batches) > 0
+
+    batches, ref = read(["record"])
+    assert ref() is not None
+
+
+def test_invalid_columns():
+    with pytest.raises(ValueError, match="Unknown columns \\['nope'\\]"):
+        MS3RecordBatchReader.from_buffer(MIXED, columns=["record", "nope"])
+    with pytest.raises(ValueError, match="at least one column"):
+        MS3RecordBatchReader.from_buffer(MIXED, columns=[])
+    with pytest.raises(TypeError, match="not a string"):
+        MS3RecordBatchReader.from_buffer(MIXED, columns="record")

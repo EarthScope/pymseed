@@ -418,4 +418,85 @@ extern nstime_t ms_sampletime (nstime_t time, int64_t offset, double samprate);
 extern int ms_bigendianhost (void);
 
 extern nstime_t lmp_systemtime (void);
+
+// pymseed's column scanner, see pymseed_scan.h
+#define PM_SCAN_NEEDMORE 0
+#define PM_SCAN_FULL 1
+#define PM_SCAN_SKIP 2
+
+typedef struct PMRecordColumns {
+  int64_t capacity;
+  int64_t count;
+  int32_t nsids;
+  int64_t base;
+  int32_t *offset;
+  char *sids;
+  int32_t *sid_index;
+  int32_t *sid_slots;
+  int32_t sid_slot_mask;
+  uint32_t *sid_hashes;
+  int64_t *starttime;
+  int64_t *endtime;
+  uint8_t *endtime_validity;
+  int64_t endtime_nulls;
+  double *samprate;
+  int64_t *samplecnt;
+  int16_t *encoding;
+  uint8_t *pubversion;
+  uint8_t *formatversion;
+} PMRecordColumns;
+
+extern int pm_scan_records (const char *buffer, uint64_t buflen, uint32_t flags, int8_t verbose,
+                            PMRecordColumns *cols, uint64_t *consumed);
+
+// pymseed's Arrow C data interface export, see pymseed_arrow.h
+struct ArrowSchema {
+  const char *format;
+  const char *name;
+  const char *metadata;
+  int64_t flags;
+  int64_t n_children;
+  struct ArrowSchema **children;
+  struct ArrowSchema *dictionary;
+  void (*release) (struct ArrowSchema *);
+  void *private_data;
+};
+
+struct ArrowArray {
+  int64_t length;
+  int64_t null_count;
+  int64_t offset;
+  int64_t n_buffers;
+  int64_t n_children;
+  const void **buffers;
+  struct ArrowArray **children;
+  struct ArrowArray *dictionary;
+  void (*release) (struct ArrowArray *);
+  void *private_data;
+};
+
+struct ArrowArrayStream {
+  int (*get_schema) (struct ArrowArrayStream *, struct ArrowSchema *out);
+  int (*get_next) (struct ArrowArrayStream *, struct ArrowArray *out);
+  const char *(*get_last_error) (struct ArrowArrayStream *);
+  void (*release) (struct ArrowArrayStream *);
+  void *private_data;
+};
+
+#define PM_ARROW_ERROR_LEN 1024
+
+extern uint32_t pm_columns_field_mask (const PMRecordColumns *cols);
+extern int pm_arrow_export_schema (struct ArrowSchema *out, uint32_t field_mask);
+extern int pm_arrow_export_array (const PMRecordColumns *cols, const char *records, void *owner,
+                                  struct ArrowArray *out);
+extern struct ArrowSchema *pm_arrow_new_schema (uint32_t field_mask);
+extern struct ArrowArray *pm_arrow_new_array (const PMRecordColumns *cols, const char *records,
+                                              void *owner);
+extern struct ArrowArrayStream *pm_arrow_new_stream (void *source, uint32_t field_mask);
+extern "Python+C" void pm_arrow_release_owner (void *owner);
+extern "Python+C" int pm_arrow_stream_next (void *source, struct ArrowArray *out, char *error);
+extern "Python+C" void pm_arrow_stream_release (void *source);
+extern void pm_arrow_schema_capsule_destructor (void *capsule);
+extern void pm_arrow_array_capsule_destructor (void *capsule);
+extern void pm_arrow_stream_capsule_destructor (void *capsule);
 """

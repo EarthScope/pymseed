@@ -12,6 +12,7 @@ from .logging import (
     get_error_messages,
 )
 from .msrecord import MS3Record
+from .msrecord_batch import MS3RecordBatch, MS3RecordBatchReader
 from .msrecord_reader import MS3RecordReader
 from .msrecord_validator import MS3RecordValidator, ValidationError
 from .mstracelist import MS3TraceList
@@ -50,6 +51,8 @@ __all__ = [
     "PymseedError",
     "MiniSEEDError",
     "MS3Record",
+    "MS3RecordBatch",
+    "MS3RecordBatchReader",
     "MS3RecordReader",
     "MS3RecordValidator",
     "ValidationError",
