@@ -364,7 +364,11 @@ class MS3TraceSeg:
 
     @property
     def recordlist(self) -> MS3RecordList | None:
-        """Return the record list structure"""
+        """Return the record list structure
+
+        Packing with ``remove_packed=True`` removes samples from the segment but
+        not their records from its record list, which then no longer matches it.
+        """
         if not self._seg.recordlist:
             return None
         return MS3RecordList(self._seg.recordlist, self._parent_tracelist)
@@ -517,6 +521,9 @@ class MS3TraceSeg:
         file, reading with ``unpack_data=True`` and calling
         :meth:`take_np_datasamples` is usually faster.  The record list is still
         preferable to decode only some segments, or into a caller's own buffer.
+
+        Not for a segment that packing with ``remove_packed=True`` has trimmed,
+        whose record list no longer matches it, see :attr:`recordlist`.
         """
         np = require_optional("numpy", "numpy")
 
@@ -587,6 +594,8 @@ class MS3TraceSeg:
 
         Note:
             - Requires the segment to have been created with `record_list=True`
+            - Not for a segment that packing with `remove_packed=True` has trimmed,
+              whose record list no longer matches it, see :attr:`recordlist`
             - Can only be called once per segment if using internal memory (buffer=None)
             - If using a provided buffer, the buffer format must match the segment's
               sample type (int32 for "i", float32 for "f", float64 for "d", bytes for "t")
@@ -1966,7 +1975,9 @@ class MS3TraceList(_AdvanceGuard):
 
             remove_packed: If True, data samples packed into records will be
                 removed from the trace list.  See "Rolling buffer" section below
-                for more details. Default is False.
+                for more details. Default is False.  Their records are not
+                removed from a segment's record list, which then no longer
+                matches the segment.
 
             verbose: Verbosity level for libmseed output (0=quiet, 1=info,
                 2=detailed). Default is 0 (quiet).
