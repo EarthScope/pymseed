@@ -578,7 +578,7 @@ def test_reader_as_arrow_stream():
     expected = expected_records(MIXED)
 
     reader = MS3RecordBatchReader.from_filelike(io.BytesIO(MIXED), block_size=1000, batch_size=50)
-    table = pa.RecordBatchReader.from_stream(reader).read_all()
+    table = pa.table(reader)
 
     assert table.num_rows == len(expected)
     assert table["record"].to_pylist() == [r[-1] for r in expected]
@@ -604,7 +604,7 @@ def test_stream_error_reaches_the_consumer():
     with pytest.raises(MiniSEEDError, match="Stream ends with"):
         reader().to_arrow().read_all()
     with pytest.raises(pa.ArrowInvalid, match="Stream ends with"):
-        pa.RecordBatchReader.from_stream(reader()).read_all()
+        pa.table(reader())
 
 
 def test_from_file_reader_closes_its_file(tmp_path):

@@ -313,7 +313,7 @@ class MS3RecordBatchReader:
 
     Create one with :meth:`from_file`, :meth:`from_buffer` or :meth:`from_filelike`.
     Iterate over it for batches, or pass it to an Arrow library to read them all
-    as one stream, e.g. ``pyarrow.RecordBatchReader.from_stream(reader)``,
+    as one stream, e.g. ``pyarrow.table(reader)``,
     ``polars.DataFrame(reader)`` or a DuckDB query. Either way, each batch is read
     once: a stream continues from wherever iteration left off.
     """
