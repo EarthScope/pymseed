@@ -10,7 +10,7 @@ from typing import Any
 
 from .clib import clibmseed, ffi
 from .exceptions import MiniSEEDError
-from .logging import begin_operation
+from .logging import begin_operation, clear_error_messages
 from .msrecord import MS3Record, _AdvanceGuard, _truncated_source_message
 from .selections import build_selections
 from .util import parse_flags
@@ -308,6 +308,7 @@ class MS3RecordReader(_AdvanceGuard):
             raise ValueError("I/O operation on closed MS3RecordReader")
 
         self._check_advance()
+        clear_error_messages()
 
         status = clibmseed.ms3_readmsr_selection(
             self._msfp_ptr,

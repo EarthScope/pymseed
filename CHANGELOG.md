@@ -31,6 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   segment's samples.
 - `MS3RecordBatchReader.from_filelike()` reports a short remnant after records as truncated,
   not as non-miniSEED.
+- Errors raised while iterating records or packing carry libmseed diagnostics of that step only,
+  not of earlier records.
 
 ## [1.0.1] - 2026-09-29
 

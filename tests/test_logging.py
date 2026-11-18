@@ -307,3 +307,38 @@ class TestLoggingCapture:
 
         # Nothing left in the registry to fetch.
         assert get_error_messages() == []
+
+
+def _warning_record() -> bytes:
+    """A miniSEED 2 record that parses with a libmseed warning."""
+    with open(os.path.join(TEST_DATA_DIR, "testdata-COLA-signal.mseed2"), "rb") as f:
+        record = bytearray(f.read(512))
+    # Turn the Blockette 1001 into a 405, which libmseed discards with a warning
+    record[56:58] = (405).to_bytes(2, "big")
+    return bytes(record)
+
+
+@pytest.mark.parametrize("reader", ["from_buffer", "from_filelike", "from_file", "batch"])
+def test_error_carries_only_messages_of_the_failing_record(reader, tmp_path) -> None:
+    """Warnings for records read earlier are not attached to a later error."""
+    import io
+
+    from pymseed import MiniSEEDError, MS3Record, MS3RecordBatchReader
+
+    data = _warning_record() + get_corrupted_record()
+    path = tmp_path / "data.mseed"
+    path.write_bytes(data)
+
+    readers = {
+        "from_buffer": lambda: MS3Record.from_buffer(data),
+        "from_filelike": lambda: MS3Record.from_filelike(io.BytesIO(data)),
+        "from_file": lambda: MS3Record.from_file(path),
+        "batch": lambda: MS3RecordBatchReader.from_buffer(data, batch_size=1),
+    }
+
+    with pytest.raises(MiniSEEDError) as excinfo:
+        for _ in readers[reader]():
+            pass
+
+    assert excinfo.value.error_messages
+    assert not any("405" in message for message in excinfo.value.error_messages)

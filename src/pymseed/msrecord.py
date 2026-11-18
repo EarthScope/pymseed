@@ -27,7 +27,7 @@ from ._json import json_dumps_minified, json_loads
 from .clib import buffer_pointer, clibmseed, ffi, owned_memoryview
 from .definitions import SubSecond, TimeFormat
 from .exceptions import MiniSEEDError
-from .logging import begin_operation
+from .logging import begin_operation, clear_error_messages
 from .selections import build_selections
 from .util import (
     SAMPLE_FORMATS,
@@ -1873,6 +1873,7 @@ class MS3Record:
 
             try:
                 while True:
+                    clear_error_messages()
                     # 1 = record available, 0 = finished, < 0 = error
                     status = clibmseed.msr3_pack_next(packer, record_pp, reclen_p)
 
@@ -2178,6 +2179,8 @@ class MS3Record:
                     )
 
                 struct._check_advance()
+                # Diagnostics of this record only
+                clear_error_messages()
 
                 status = clibmseed.msr3_parse(
                     buf_ptr + offset,
@@ -2358,6 +2361,8 @@ class MS3Record:
                     if buf_ptr is None:
                         buf_ptr = ffi.from_buffer(buf)
                     struct._check_advance()
+                    # Diagnostics of this record only
+                    clear_error_messages()
 
                     # Once the stream is exhausted libmseed can size a version 2
                     # record carrying no Blockette 1000 from what is left.

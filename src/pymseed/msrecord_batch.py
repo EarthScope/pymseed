@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Any, Literal, get_args
 
 from .clib import buffer_pointer, clibmseed, ffi
 from .exceptions import MiniSEEDError
-from .logging import begin_operation
+from .logging import begin_operation, clear_error_messages
 from .util import require_optional
 
 if TYPE_CHECKING:
@@ -553,6 +553,7 @@ class _Scanner:
         self.consumed[0] = start
         while True:
             cols, arrays = self._columns()
+            clear_error_messages()
             status = clibmseed.pm_scan_records(ptr, size, flags, self.verbose, cols, self.consumed)
             # Created now to capture libmseed's log, but raised after yielding the
             # records before the one that failed

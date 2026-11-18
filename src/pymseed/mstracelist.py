@@ -21,7 +21,7 @@ from .clib import (
 )
 from .definitions import DataEncoding, SubSecond, TimeFormat
 from .exceptions import MiniSEEDError
-from .logging import begin_operation
+from .logging import begin_operation, clear_error_messages
 from .msrecord import MS3Record, _AdvanceGuard
 from .selections import build_selections
 from .util import (
@@ -2121,6 +2121,7 @@ class MS3TraceList(_AdvanceGuard):
                     self._segment_epoch += 1
                     id_epoch = self._id_epoch
 
+                clear_error_messages()
                 # 1 = record available, 0 = finished, < 0 = error
                 status = clibmseed.mstl3_pack_next(packer, flags, record_pp, reclen_p)
 
