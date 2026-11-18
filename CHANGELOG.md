@@ -46,6 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `MS3Record.get_extra_header()` returns an empty string value rather than `None`.
 - Out-of-range `encoding`, `flush_idle_seconds`, trace ID `version` and extra header int values
   raise `ValueError` rather than `OverflowError`.
+- `MS3TraceList.generate()` raises `ValueError` when the list is closed before the first record.
 
 ## [1.0.1] - 2026-09-29
 

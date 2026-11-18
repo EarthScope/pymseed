@@ -605,6 +605,15 @@ def test_tracelist_rejects_use_after_close(tmp_path):
     assert not (tmp_path / "out.mseed").exists()
 
 
+def test_tracelist_generate_closed_before_first_record():
+    traces = MS3TraceList(file_name=test_path3, unpack_data=True)
+    records = traces.generate()
+    traces.close()
+
+    with pytest.raises(ValueError, match="closed MS3TraceList"):
+        next(records)
+
+
 def test_tracelist_objects_reject_use_after_close():
     """MS3TraceID, MS3TraceSeg, MS3RecordList, MS3RecordPtr, and the MS3Record
     from MS3RecordPtr.record all read through to the trace list's own open

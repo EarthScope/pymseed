@@ -2080,6 +2080,8 @@ class MS3TraceList(_AdvanceGuard):
     ) -> Iterator[bytes]:
         """Generator body for :meth:`generate`. Kept private so the public
         wrapper can validate arguments eagerly before the first yield."""
+        # The list may be closed between generate() and the first next()
+        self._check_open()
         begin_operation()
 
         flags = 0
