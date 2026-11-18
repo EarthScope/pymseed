@@ -467,6 +467,10 @@ class MS3TraceSeg:
         :meth:`unpack_recordlist` can still decode fresh samples if a record
         list is available.
 
+        The segment is left describing samples it does not hold, as after
+        reading with ``unpack_data=False``, so it must not be packed, nor have
+        data added to it: added samples would be stored at its start time.
+
         Any view taken earlier from :attr:`datasamples` or :attr:`np_datasamples`
         still addresses this buffer, so it stays valid only as long as the
         array returned here does; dropping the array while such a view is
