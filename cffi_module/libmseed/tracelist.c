@@ -36,9 +36,12 @@ static MS3TraceSeg *lm_addsegtoseg (MS3TraceSeg *seg1, MS3TraceSeg *seg2);
 static MS3RecordPtr *lm_add_recordptr (MS3TraceSeg *seg, const MS3Record *msr, nstime_t endtime,
                                        int8_t whence, uint32_t flags);
 
+static void lm_sort_segment (MS3TraceID *id, MS3TraceSeg *seg);
 static void lm_recentseg_touch (LMTraceIDNode *idnode, MS3TraceSeg *seg);
 static void lm_recentseg_remove (LMTraceIDNode *idnode, MS3TraceSeg *seg);
 static void lm_endbound_fold (LMTraceIDNode *idnode, nstime_t endtime);
+static void lm_recent_sync (const MS3TraceList *mstl, MS3TraceID *id);
+static void lm_recent_check (const MS3TraceList *mstl, MS3TraceID *id);
 static int lm_seg_listorder (const MS3TraceSeg *a, const MS3TraceSeg *b, int *order);
 static int lm_scan_recent (LMTraceIDNode *idnode, const MS3Record *msr, nstime_t endtime,
                            nstime_t nsperiod, nstime_t nstimetol, nstime_t nnstimetol,
@@ -92,7 +95,7 @@ mstl3_init (MS3TraceList *mstl)
     mstl3_free (&mstl, 1);
   }
 
-  mstl = (MS3TraceList *)libmseed_memory.malloc (sizeof (LMTraceListNode));
+  mstl = (MS3TraceList *)libmseed_memory.malloc (sizeof (MS3TraceList));
 
   if (mstl == NULL)
   {
@@ -100,7 +103,8 @@ mstl3_init (MS3TraceList *mstl)
     return NULL;
   }
 
-  memset (mstl, 0, sizeof (LMTraceListNode));
+  memset (mstl, 0, sizeof (MS3TraceList));
+  memcpy (mstl->traces.sid, LM_TRACELIST_TAG, sizeof (LM_TRACELIST_TAG));
 
   /* Seed PRNG with 1, we only need random distribution */
   mstl->prngstate = 1;
@@ -308,7 +312,7 @@ mstl3_addID (MS3TraceList *mstl, MS3TraceID *id, MS3TraceID **prev)
    * tail this library allocates internally, so disable the state that
    * relies on it for the containing list. */
   if (mstl)
-    ((LMTraceListNode *)mstl)->foreignid = 1;
+    memset (mstl->traces.sid, 0, sizeof (mstl->traces.sid));
 
   return lm_addID (mstl, id, prev);
 } /* End of mstl3_addID() */
@@ -438,6 +442,60 @@ lm_endbound_fold (LMTraceIDNode *idnode, nstime_t endtime)
   if (endtime > idnode->nonrecentendbound)
     idnode->nonrecentendbound = endtime;
 } /* End of lm_endbound_fold() */
+
+/***************************************************************************
+ * Record a trace ID's segment count and first and last segments after the
+ * library changes its segment list.
+ ***************************************************************************/
+static void
+lm_recent_sync (const MS3TraceList *mstl, MS3TraceID *id)
+{
+  LMTraceIDNode *idnode = (LMTraceIDNode *)id;
+
+  if (!lm_tracelist_native (mstl))
+    return;
+
+  idnode->seen_numsegments = id->numsegments;
+  idnode->seen_first = id->first;
+  idnode->seen_last = id->last;
+} /* End of lm_recent_sync() */
+
+/***************************************************************************
+ * Rebuild a trace ID's recent set state if its segment list was changed by
+ * the caller since the library last changed it.  The recent set, whose
+ * pointers may refer to freed segments, is replaced without being
+ * dereferenced by the last segments of the list, and the end-time bound is
+ * recomputed from the remaining segments.
+ ***************************************************************************/
+static void
+lm_recent_check (const MS3TraceList *mstl, MS3TraceID *id)
+{
+  LMTraceIDNode *idnode = (LMTraceIDNode *)id;
+  MS3TraceSeg *seg;
+  int i;
+
+  if (!lm_tracelist_native (mstl))
+    return;
+
+  if (idnode->seen_numsegments == id->numsegments && idnode->seen_first == id->first &&
+      idnode->seen_last == id->last)
+    return;
+
+  for (i = 0, seg = id->last; i < LM_RECENTSEGS; i++)
+  {
+    idnode->recentseg[i] = seg;
+
+    if (seg)
+      seg = seg->prev;
+  }
+
+  idnode->nonrecentendbound = INT64_MIN;
+
+  for (; seg; seg = seg->prev)
+    lm_endbound_fold (idnode, seg->endtime);
+
+  lm_recent_sync (mstl, id);
+} /* End of lm_recent_check() */
 
 /***************************************************************************
  * Determine the list order of two segments: starttime ascending, endtime
@@ -637,6 +695,68 @@ lm_scan_recent (LMTraceIDNode *idnode, const MS3Record *msr, nstime_t endtime, n
 } /* End of lm_scan_recent() */
 
 /***************************************************************************
+ * Move a segment within its trace ID's list to restore the order of start
+ * time ascending, then end time descending.
+ ***************************************************************************/
+static void
+lm_sort_segment (MS3TraceID *id, MS3TraceSeg *seg)
+{
+  MS3TraceSeg *segafter;
+  MS3TraceSeg *segbefore;
+
+  while (seg->next &&
+         (seg->starttime > seg->next->starttime ||
+          (seg->starttime == seg->next->starttime && seg->endtime < seg->next->endtime)))
+  {
+    /* Move segment down list, swap seg and seg->next */
+    segafter = seg->next;
+
+    if (seg->prev)
+      seg->prev->next = segafter;
+
+    if (segafter->next)
+      segafter->next->prev = seg;
+
+    segafter->prev = seg->prev;
+    seg->prev = segafter;
+    seg->next = segafter->next;
+    segafter->next = seg;
+
+    /* Reset first and last segment pointers if replaced */
+    if (id->first == seg)
+      id->first = segafter;
+
+    if (id->last == segafter)
+      id->last = seg;
+  }
+  while (seg->prev &&
+         (seg->starttime < seg->prev->starttime ||
+          (seg->starttime == seg->prev->starttime && seg->endtime > seg->prev->endtime)))
+  {
+    /* Move segment up list, swap seg and seg->prev */
+    segbefore = seg->prev;
+
+    if (seg->next)
+      seg->next->prev = segbefore;
+
+    if (segbefore->prev)
+      segbefore->prev->next = seg;
+
+    segbefore->next = seg->next;
+    seg->next = segbefore;
+    seg->prev = segbefore->prev;
+    segbefore->prev = seg;
+
+    /* Reset first and last segment pointers if replaced */
+    if (id->first == segbefore)
+      id->first = seg;
+
+    if (id->last == seg)
+      id->last = segbefore;
+  }
+} /* End of lm_sort_segment() */
+
+/***************************************************************************
  * Implementation of MS3TraceList addition functions
  *
  * @see mstl3_addmsr()
@@ -735,6 +855,9 @@ _mstl3_addmsr_impl (MS3TraceList *mstl, const MS3Record *msr, MS3RecordPtr **ppr
   /* Add data coverage to the matching MS3TraceID */
   else
   {
+    /* Recent set state is rebuilt if the segment list was changed by the caller */
+    lm_recent_check (mstl, id);
+
     /* Calculate nanosecond sample period */
     nsperiod = msr3_nsperiod (msr);
 
@@ -806,7 +929,7 @@ _mstl3_addmsr_impl (MS3TraceList *mstl, const MS3Record *msr, MS3RecordPtr **ppr
       if (pprecptr && !(*pprecptr = lm_add_recordptr (seg, msr, endtime, 1, flags)))
       {
         /* seg's end time was already extended above; keep the end-time bound valid */
-        if (!((LMTraceListNode *)mstl)->foreignid)
+        if (lm_tracelist_native (mstl))
           lm_endbound_fold ((LMTraceIDNode *)id, seg->endtime);
         return NULL;
       }
@@ -830,7 +953,7 @@ _mstl3_addmsr_impl (MS3TraceList *mstl, const MS3Record *msr, MS3RecordPtr **ppr
       if (pprecptr && !(*pprecptr = lm_add_recordptr (seg, msr, endtime, 0, flags)))
       {
         /* seg is already linked into the list; keep the end-time bound valid */
-        if (!((LMTraceListNode *)mstl)->foreignid)
+        if (lm_tracelist_native (mstl))
           lm_endbound_fold ((LMTraceIDNode *)id, seg->endtime);
         return NULL;
       }
@@ -854,7 +977,7 @@ _mstl3_addmsr_impl (MS3TraceList *mstl, const MS3Record *msr, MS3RecordPtr **ppr
       if (pprecptr && !(*pprecptr = lm_add_recordptr (seg, msr, endtime, 0, flags)))
       {
         /* seg is already linked into the list; keep the end-time bound valid */
-        if (!((LMTraceListNode *)mstl)->foreignid)
+        if (lm_tracelist_native (mstl))
           lm_endbound_fold ((LMTraceIDNode *)id, seg->endtime);
         return NULL;
       }
@@ -921,7 +1044,7 @@ _mstl3_addmsr_impl (MS3TraceList *mstl, const MS3Record *msr, MS3RecordPtr **ppr
       }
       /* If every segment outside the recent set is provably too old to match,
        * the recent set alone determines the result of the search below. */
-      else if (!((LMTraceListNode *)mstl)->foreignid &&
+      else if (lm_tracelist_native (mstl) &&
                (msr->starttime - nsperiod - nstimetol) > ((LMTraceIDNode *)id)->nonrecentendbound &&
                lm_scan_recent ((LMTraceIDNode *)id, msr, endtime, nsperiod, nstimetol, nnstimetol,
                                sampratehz, sampratetol, autoheal, &segbefore, &segafter,
@@ -1000,7 +1123,7 @@ _mstl3_addmsr_impl (MS3TraceList *mstl, const MS3Record *msr, MS3RecordPtr **ppr
         if (pprecptr && !(*pprecptr = lm_add_recordptr (segbefore, msr, endtime, 1, flags)))
         {
           /* segbefore's end time was already extended above; keep the end-time bound valid */
-          if (!((LMTraceListNode *)mstl)->foreignid)
+          if (lm_tracelist_native (mstl))
             lm_endbound_fold ((LMTraceIDNode *)id, segbefore->endtime);
           return NULL;
         }
@@ -1011,7 +1134,7 @@ _mstl3_addmsr_impl (MS3TraceList *mstl, const MS3Record *msr, MS3RecordPtr **ppr
           /* Add segafter coverage to segbefore */
           if (!lm_addsegtoseg (segbefore, segafter))
           {
-            if (!((LMTraceListNode *)mstl)->foreignid)
+            if (lm_tracelist_native (mstl))
               lm_endbound_fold ((LMTraceIDNode *)id, segbefore->endtime);
             return NULL;
           }
@@ -1027,7 +1150,7 @@ _mstl3_addmsr_impl (MS3TraceList *mstl, const MS3Record *msr, MS3RecordPtr **ppr
             segafter->next->prev = segafter->prev;
 
           /* Drop segafter from the recent set before it is freed */
-          if (!((LMTraceListNode *)mstl)->foreignid)
+          if (lm_tracelist_native (mstl))
             lm_recentseg_remove ((LMTraceIDNode *)id, segafter);
 
           /* Free all memory associated with the segment after that has been merged */
@@ -1110,62 +1233,14 @@ _mstl3_addmsr_impl (MS3TraceList *mstl, const MS3Record *msr, MS3RecordPtr **ppr
   } /* End of adding coverage to matching ID */
 
   /* Sort modified segment into place, logic above should limit these to few shifts if any */
-  while (seg->next &&
-         (seg->starttime > seg->next->starttime ||
-          (seg->starttime == seg->next->starttime && seg->endtime < seg->next->endtime)))
-  {
-    /* Move segment down list, swap seg and seg->next */
-    segafter = seg->next;
-
-    if (seg->prev)
-      seg->prev->next = segafter;
-
-    if (segafter->next)
-      segafter->next->prev = seg;
-
-    segafter->prev = seg->prev;
-    seg->prev = segafter;
-    seg->next = segafter->next;
-    segafter->next = seg;
-
-    /* Reset first and last segment pointers if replaced */
-    if (id->first == seg)
-      id->first = segafter;
-
-    if (id->last == segafter)
-      id->last = seg;
-  }
-  while (seg->prev &&
-         (seg->starttime < seg->prev->starttime ||
-          (seg->starttime == seg->prev->starttime && seg->endtime > seg->prev->endtime)))
-  {
-    /* Move segment up list, swap seg and seg->prev */
-    segbefore = seg->prev;
-
-    if (seg->next)
-      seg->next->prev = segbefore;
-
-    if (segbefore->prev)
-      segbefore->prev->next = seg;
-
-    segbefore->next = seg->next;
-    seg->next = segbefore;
-    seg->prev = segbefore->prev;
-    segbefore->prev = seg;
-
-    /* Reset first and last segment pointers if replaced */
-    if (id->first == segbefore)
-      id->first = seg;
-
-    if (id->last == seg)
-      id->last = segbefore;
-  }
+  lm_sort_segment (id, seg);
 
   /* Track the most-recently-active segments to bound future searches */
-  if (seg && !((LMTraceListNode *)mstl)->foreignid)
+  if (seg && lm_tracelist_native (mstl))
   {
     lm_recentseg_touch ((LMTraceIDNode *)id, seg);
     lm_recentseg_touch ((LMTraceIDNode *)id, id->last);
+    lm_recent_sync (mstl, id);
   }
 
   /* Store update time at seg.prvtptr, allocate if needed */
@@ -1218,6 +1293,12 @@ _mstl3_addmsr_impl (MS3TraceList *mstl, const MS3Record *msr, MS3RecordPtr **ppr
  * While header-only miniSEED records, with no data payload, can be added to a
  * trace list they will be represented as empty segments with no time coverage
  * for informational purposes.
+ *
+ * Segments are expected to be changed only by library functions.  A
+ * segment removed by the caller must be unlinked with the ::MS3TraceID
+ * @c first, @c last and @c numsegments fields updated to match, and
+ * segment times changed by the caller can prevent a later record from
+ * being merged with a segment it fits.
  *
  * If the ::MSF_PPUPDATETIME flag is set in @p flags, the update time of the
  * segment will be stored at ::MS3TraceSeg.prvtptr.  This update time is used to
@@ -2307,6 +2388,16 @@ mstl3_unpack_recordlist (MS3TraceID *id, MS3TraceSeg *seg, void *output, uint64_
       continue;
     }
 
+    /* Data offset must be beyond the fixed header and within the record */
+    if (recordptr->dataoffset < MINRECLEN ||
+        recordptr->dataoffset >= (uint32_t)recordptr->msr->reclen)
+    {
+      ms_log (2, "%s: Data offset value is not valid: %u\n", id->sid, recordptr->dataoffset);
+
+      totalunpackedsamples = -1;
+      break;
+    }
+
     if (ms_encoding_sizetype ((uint8_t)recordptr->msr->encoding, NULL, &recsampletype))
     {
       ms_log (2, "%s: Cannot determine sample type for encoding: %u\n", id->sid,
@@ -2361,7 +2452,7 @@ mstl3_unpack_recordlist (MS3TraceID *id, MS3TraceSeg *seg, void *output, uint64_
             break;
           }
 
-          if ((filelistptr->fileptr = fopen (recordptr->filename, "rb")) == NULL)
+          if ((filelistptr->fileptr = lm_fopen_recordfile (recordptr->filename)) == NULL)
           {
             ms_log (2, "%s: Cannot open file (%s): %s\n", id->sid, recordptr->filename,
                     strerror (errno));
@@ -2431,7 +2522,8 @@ mstl3_unpack_recordlist (MS3TraceID *id, MS3TraceSeg *seg, void *output, uint64_
     unpackedsamples = ms_decode_data (
         input, recordptr->msr->reclen - recordptr->dataoffset, (uint8_t)recordptr->msr->encoding,
         recordptr->msr->samplecnt, (unsigned char *)output + outputoffset,
-        decodedsize - outputoffset, &sampletype, recordptr->msr->swapflag, id->sid, verbose);
+        decodedsize - outputoffset, &sampletype, (recordptr->msr->swapflag & MSSWAP_PAYLOAD),
+        id->sid, verbose);
 
     if (unpackedsamples < 0)
     {
@@ -2631,10 +2723,16 @@ _mstl3_pack_callback (MS3TraceList *mstl, void (*record_handler) (char *, int, v
       totalpackedrecords += segpackedrecords;
       totalpackedsamples += segpackedsamples;
 
-      /* Remove segment if no samples remain and the MSF_MAINTAINMSTL flag is not set */
+      /* Remove segment if no samples remain and the MSF_MAINTAINMSTL flag is not set,
+       * otherwise keep a segment with an advanced start time in list order */
       if ((flags & MSF_MAINTAINMSTL) == 0 && seg->numsamples == 0)
       {
         lm_remove_segment (mstl, id, seg, 1);
+      }
+      else if ((flags & MSF_MAINTAINMSTL) == 0 && segpackedsamples > 0)
+      {
+        lm_sort_segment (id, seg);
+        lm_recent_sync (mstl, id);
       }
 
       seg = nextseg;
@@ -3223,6 +3321,8 @@ mstl3_pack_next (MS3TraceListPacker *packer, uint32_t flags, char **record, int3
           }
 
           lm_update_id_extent (packer->current_id);
+          lm_sort_segment (packer->current_id, packer->current_seg);
+          lm_recent_sync (packer->mstl, packer->current_id);
         }
         else
         {
@@ -3426,9 +3526,9 @@ mstl3_pack_free (MS3TraceListPacker **packer, int64_t *packedsamples)
  * record.
  *
  * If all of the data from the segment is packed into miniSEED records
- * and the ::MSF_MAINTAINMSTL is _not_ set the segment will be removed
- * from the trace list.  All memmory referenced by the segment, including
- * the `prvtptr`s, will also be freed.
+ * and the ::MSF_MAINTAINMSTL is _not_ set the segment is left in the
+ * trace list with no samples, it is not removed.  mstl3_pack() removes
+ * such segments.
  *
  * @param[in] mstl ::MS3TraceList for the relevent ::MS3TraceID (unused for now)
  * @param[in] id ::MS3TraceID for the relevant ::MS3TraceSeg
@@ -3800,6 +3900,9 @@ mstl3_printsynclist (const MS3TraceList *mstl, const char *dccid, ms_subseconds_
   id = mstl->traces.next[0];
   while (id)
   {
+    /* Codes not parsed from the source ID are printed empty */
+    net[0] = sta[0] = loc[0] = chan[0] = '\0';
+
     ms_sid2nslc_n (id->sid, net, sizeof (net), sta, sizeof (sta), loc, sizeof (loc), chan,
                    sizeof (chan));
 
@@ -4034,7 +4137,7 @@ lm_remove_segment (MS3TraceList *mstl, MS3TraceID *id, MS3TraceSeg *seg, int8_t 
   id->numsegments -= 1;
 
   /* Drop the segment from the recent set before it is freed */
-  if (!((LMTraceListNode *)mstl)->foreignid)
+  if (lm_tracelist_native (mstl))
     lm_recentseg_remove ((LMTraceIDNode *)id, seg);
 
   /* Free all memory associated with the segment */
@@ -4093,6 +4196,7 @@ lm_remove_segment (MS3TraceList *mstl, MS3TraceID *id, MS3TraceSeg *seg, int8_t 
   else
   {
     lm_update_id_extent (id);
+    lm_recent_sync (mstl, id);
   }
 
   return 0;

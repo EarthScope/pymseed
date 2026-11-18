@@ -2377,6 +2377,9 @@ TEST (pack, mstl3_pack_next_autoheal_merge)
   int32_t isinedata[SINE_DATA_SAMPLES];
   nstime_t starttime = ms_timestr2nstime ("2012-05-12T00:00:00.0Z");
 
+  /* Suppress expected error messages by accumulating them */
+  ms_rloginit (NULL, NULL, NULL, NULL, 10);
+
   MS3TraceListPacker *packer = NULL;
   char *record = NULL;
   int32_t reclen = 0;
@@ -2448,6 +2451,10 @@ TEST (pack, mstl3_pack_next_autoheal_merge)
   mstl3_pack_free (&packer, &packedsamples);
   CHECK (packedsamples > 0, "mstl3_pack_free() did not report samples packed before the abort");
   mstl3_free (&mstl, 0);
+
+  /* Discard the expected error messages and restore printing */
+  ms_rlog_free (NULL);
+  ms_rloginit (NULL, NULL, NULL, NULL, 0);
 }
 
 /* Count records emitted, without writing them anywhere */
@@ -2497,6 +2504,9 @@ TEST (pack, msr3_pack_v2_samprate_range)
 {
   int records = 0;
 
+  /* Suppress expected error messages by accumulating them */
+  ms_rloginit (NULL, NULL, NULL, NULL, 10);
+
   /* Rates beyond the representable range, and NaN, must be rejected */
   CHECK (pack_v2_at_rate (1.0e10, &records) < 0, "Sample rate 1e10 was not rejected for v2");
   CHECK (pack_v2_at_rate (1.0e30, &records) < 0, "Sample rate 1e30 was not rejected for v2");
@@ -2519,6 +2529,10 @@ TEST (pack, msr3_pack_v2_samprate_range)
          "Sample rate 1/3 was rejected for v2");
   CHECK (pack_v2_at_rate (-10.0, &records) > 0 && records > 0,
          "Sample period -10 (0.1 Hz) was rejected for v2");
+
+  /* Discard the expected error messages and restore printing */
+  ms_rlog_free (NULL);
+  ms_rloginit (NULL, NULL, NULL, NULL, 0);
 }
 
 /* Retain the last record emitted, for parsing back */
@@ -2575,6 +2589,9 @@ TEST (pack, msr3_pack_v2_calibration_abort)
   char gotstr[64];
   int rrv;
 
+  /* Suppress expected error messages by accumulating them */
+  ms_rloginit (NULL, NULL, NULL, NULL, 10);
+
   CHECK (pack_v2_with_extra ("{\"FDSN\":{\"Calibration\":{\"Sequence\":[{\"Type\":\"ABORT\","
                              "\"EndTime\":\"2024-01-02T03:04:09Z\"}]}}}") > 0,
          "A calibration abort sequence was rejected for v2");
@@ -2613,4 +2630,99 @@ TEST (pack, msr3_pack_v2_calibration_abort)
   CHECK (pack_v2_with_extra ("{\"FDSN\":{\"Calibration\":{\"Sequence\":[{\"Type\":\"BOGUS\","
                              "\"EndTime\":\"2024-01-02T03:04:09Z\"}]}}}") < 0,
          "An unrecognized calibration Type was not rejected");
+
+  /* Discard the expected error messages and restore printing */
+  ms_rlog_free (NULL);
+  ms_rloginit (NULL, NULL, NULL, NULL, 0);
+}
+
+/* Extra header numbers that cannot be represented in their miniSEED v2
+ * blockette fields are rejected rather than converted */
+TEST (pack, msr3_pack_v2_blockette_value_range)
+{
+  /* Suppress expected error messages by accumulating them */
+  ms_rloginit (NULL, NULL, NULL, NULL, 10);
+
+  /* Values within range are accepted */
+  CHECK (pack_v2_with_extra ("{\"FDSN\":{\"Calibration\":{\"Sequence\":[{\"Type\":\"STEP\","
+                             "\"Duration\":1.5,\"StepBetween\":2,\"Amplitude\":-3.25,"
+                             "\"ReferenceAmplitude\":7}]}}}") > 0,
+         "In-range calibration values were rejected for v2");
+  CHECK (pack_v2_with_extra ("{\"FDSN\":{\"Event\":{\"Detection\":[{\"Type\":\"MURDOCK\","
+                             "\"SignalAmplitude\":-80.5,\"MEDSNR\":[1,2,3,4,5,255]}]}}}") > 0,
+         "In-range detection values were rejected for v2");
+
+  /* Negative and too large unsigned values */
+  CHECK (pack_v2_with_extra ("{\"FDSN\":{\"Calibration\":{\"Sequence\":[{\"Type\":\"STEP\","
+                             "\"Duration\":-1}]}}}") < 0,
+         "A negative calibration Duration was not rejected");
+  CHECK (pack_v2_with_extra ("{\"FDSN\":{\"Calibration\":{\"Sequence\":[{\"Type\":\"SINE\","
+                             "\"Duration\":1e6}]}}}") < 0,
+         "A calibration Duration beyond 32-bit 0.0001 second units was not rejected");
+  CHECK (pack_v2_with_extra ("{\"FDSN\":{\"Calibration\":{\"Sequence\":[{\"Type\":\"PSEUDORANDOM\","
+                             "\"ReferenceAmplitude\":5e9}]}}}") < 0,
+         "A calibration ReferenceAmplitude beyond 32 bits was not rejected");
+  CHECK (pack_v2_with_extra ("{\"FDSN\":{\"Event\":{\"Detection\":[{\"Type\":\"MURDOCK\","
+                             "\"MEDSNR\":[1,2,300]}]}}}") < 0,
+         "A MEDSNR value beyond 8 bits was not rejected");
+  CHECK (pack_v2_with_extra ("{\"FDSN\":{\"Event\":{\"Detection\":[{\"Type\":\"MURDOCK\","
+                             "\"MEDSNR\":[-1]}]}}}") < 0,
+         "A negative MEDSNR value was not rejected");
+
+  /* Real values beyond single precision */
+  CHECK (pack_v2_with_extra ("{\"FDSN\":{\"Event\":{\"Detection\":[{"
+                             "\"SignalAmplitude\":1e300}]}}}") < 0,
+         "A detection SignalAmplitude beyond single precision was not rejected");
+  CHECK (pack_v2_with_extra ("{\"FDSN\":{\"Time\":{\"Exception\":[{"
+                             "\"VCOCorrection\":-1e40}]}}}") < 0,
+         "A timing exception VCOCorrection beyond single precision was not rejected");
+
+  /* Discard the expected error messages and restore printing */
+  ms_rlog_free (NULL);
+  ms_rloginit (NULL, NULL, NULL, NULL, 0);
+}
+
+/* Headers packed to an unaligned buffer are identical to those packed to
+ * an aligned buffer */
+TEST (pack, msr3_pack_header_unaligned)
+{
+  MS3Record msr = MS3Record_INITIALIZER;
+  static const char extra[] = "{\"FDSN\":{\"Time\":{\"Quality\":80,\"Correction\":-0.5,"
+                              "\"Exception\":[{\"Time\":\"2024-01-02T03:04:05.123456Z\","
+                              "\"VCOCorrection\":12.5,\"Count\":3}]},"
+                              "\"Event\":{\"Detection\":[{\"Type\":\"MURDOCK\","
+                              "\"SignalAmplitude\":80.5,\"OnsetTime\":\"2024-01-02T03:04:06Z\"}]},"
+                              "\"Calibration\":{\"Sequence\":[{\"Type\":\"STEP\","
+                              "\"BeginTime\":\"2024-01-02T03:04:07Z\",\"Duration\":1.5,"
+                              "\"EndTime\":\"2024-01-02T03:04:09Z\"}]}}}";
+  double aligned_storage[1024];
+  double unaligned_storage[1024];
+  char *aligned = (char *)aligned_storage;
+  char *unaligned = (char *)unaligned_storage + 1;
+  int alignedlen;
+  int unalignedlen;
+
+  strcpy (msr.sid, "FDSN:XX_TEST_00_B_H_Z");
+  msr.reclen = 4096;
+  msr.encoding = DE_STEIM2;
+  msr.starttime = ms_timestr2nstime ("2024-01-02T03:04:05.123456789Z");
+  msr.samprate = 40.5;
+  msr.extra = (char *)extra;
+  msr.extralength = (uint16_t)strlen (extra);
+
+  memset (aligned_storage, 0, sizeof (aligned_storage));
+  memset (unaligned_storage, 0, sizeof (unaligned_storage));
+  alignedlen = msr3_pack_header3 (&msr, aligned, sizeof (aligned_storage) - 1, 0);
+  unalignedlen = msr3_pack_header3 (&msr, unaligned, sizeof (unaligned_storage) - 1, 0);
+  REQUIRE (alignedlen > 0, "msr3_pack_header3() failed");
+  CHECK (unalignedlen == alignedlen && memcmp (aligned, unaligned, alignedlen) == 0,
+         "Unaligned v3 header differs from aligned v3 header");
+
+  memset (aligned_storage, 0, sizeof (aligned_storage));
+  memset (unaligned_storage, 0, sizeof (unaligned_storage));
+  alignedlen = msr3_pack_header2 (&msr, aligned, sizeof (aligned_storage) - 1, 0);
+  unalignedlen = msr3_pack_header2 (&msr, unaligned, sizeof (unaligned_storage) - 1, 0);
+  REQUIRE (alignedlen > 0, "msr3_pack_header2() failed");
+  CHECK (unalignedlen == alignedlen && memcmp (aligned, unaligned, alignedlen) == 0,
+         "Unaligned v2 header differs from aligned v2 header");
 }

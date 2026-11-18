@@ -29,8 +29,8 @@ extern "C"
 {
 #endif
 
-#define LIBMSEED_VERSION "3.5.4"    //!< Library version
-#define LIBMSEED_RELEASE "2026.217" //!< Library release date
+#define LIBMSEED_VERSION "3.5.5"    //!< Library version
+#define LIBMSEED_RELEASE "2026.321" //!< Library release date
 
 /** @defgroup io-functions File and URL I/O */
 /** @defgroup miniseed-record Record Handling */
@@ -608,7 +608,12 @@ typedef struct MS3RecordList
 /** @brief Maximum skip list height for MSTraceIDs */
 #define MSTRACEID_SKIPLIST_HEIGHT 8
 
-/** @brief Container for a continuous trace segment, linkable */
+/** @brief Container for a continuous trace segment, linkable
+ *
+ * Segments of a ::MS3TraceList are added and removed by library functions.
+ * A caller that unlinks or frees a segment itself must keep the \a prev and
+ * \a next links and the ::MS3TraceID \a first, \a last and \a numsegments
+ * fields consistent. */
 typedef struct MS3TraceSeg
 {
   nstime_t starttime; //!< Time of first sample
@@ -1400,7 +1405,8 @@ extern nstime_t lmp_systemtime (void);
 /** Portable function for case-insensitive, ASCII-only string comparison */
 extern int lmp_strncasecmp (const char *s1, const char *s2, size_t n);
 
-/** Return CRC32C value of supplied buffer, with optional starting CRC32C value */
+/** Return CRC32C value of supplied buffer, with optional starting CRC32C value,
+    which is returned unchanged when there is no input */
 extern uint32_t ms_crc32c (const uint8_t *input, int length, uint32_t previousCRC32C);
 
 /** In-place byte swapping of 2 byte quantity */
