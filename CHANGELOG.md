@@ -48,6 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `MS3Record.with_datasamples()` raises `ValueError` while `generate()` is packing the record.
 - `MS3TraceList.add_buffer()` and `add_file()` release the buffer and selections when refused
   within a record's `with_datasamples()` or `generate()`.
+- Document the optional `numpy`, `pyarrow` and `jsonschema` dependencies in the installation notes.
 
 ## [1.0.1] - 2026-09-29
 

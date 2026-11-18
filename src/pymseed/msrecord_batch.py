@@ -320,6 +320,7 @@ class MS3RecordBatchReader:
 
     __slots__ = ("_batches", "_columns")
 
+    #: The names of the columns a reader can read, in batch order.
     COLUMNS = COLUMNS
 
     def __init__(self, batches: Iterator[MS3RecordBatch], columns: tuple[Column, ...]) -> None:

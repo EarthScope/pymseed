@@ -178,6 +178,12 @@ nitpick_ignore = [
     # Return type of the optional jsonschema-rs integration; that package
     # ships no Sphinx inventory to link against.
     ("py:class", "JsonSchemaValidationError"),
+    # Type hints of MS3RecordBatchReader: the Literal alias of column names, its
+    # internal constructor's batches, and pyarrow types imported only for typing.
+    ("py:class", "Column"),
+    ("py:class", "MS3RecordBatch"),
+    ("py:class", "pa.RecordBatch"),
+    ("py:class", "pa.RecordBatchReader"),
 ]
 
 # -- Options for the doctest builder ------------------------------------------

@@ -29,6 +29,13 @@ Or from [conda-forge](https://anaconda.org/conda-forge/pymseed):
 conda install -c conda-forge pymseed
 ```
 
+Optional dependencies enable NumPy arrays (`numpy`), Arrow export of record
+batches (`pyarrow`) and extra header schema validation (`jsonschema`):
+
+```bash
+pip install "pymseed[numpy,pyarrow,jsonschema]"
+```
+
 ## Example usage
 
 See the [full documentation](https://earthscope.github.io/pymseed/) for a

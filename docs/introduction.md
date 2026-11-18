@@ -25,6 +25,13 @@ Or from [conda-forge](https://anaconda.org/conda-forge/pymseed):
 conda install -c conda-forge pymseed
 ```
 
+Optional dependencies enable NumPy arrays (`numpy`), Arrow export of record
+batches (`pyarrow`) and extra header schema validation (`jsonschema`):
+
+```bash
+pip install "pymseed[numpy,pyarrow,jsonschema]"
+```
+
 ## A simple reading example
 
 Read a file and print details from each record:
@@ -51,7 +58,7 @@ from pymseed import MS3TraceList
 
 traces = MS3TraceList.from_file("examples/example_data.mseed")
 
-for trace in traces:
+for traceid in traces:
     print(traceid)
 
     for segment in traceid:

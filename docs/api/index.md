@@ -11,6 +11,8 @@ importable directly from the `pymseed` package.
 
    pymseed.MS3Record
    pymseed.MS3RecordReader
+   pymseed.MS3RecordBatchReader
+   pymseed.MS3RecordBatch
    pymseed.MS3RecordValidator
    pymseed.ValidationError
    pymseed.MS3TraceList
