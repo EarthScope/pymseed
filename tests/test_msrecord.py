@@ -1192,6 +1192,27 @@ class TestMS3RecordParse:
             msr.parse_into(f.read())
         assert msr.sourceid == "FDSN:XX_TEST__B_S_X"
 
+    def test_parse_into_detection_error_drops_previous_record(self):
+        """A detection-stage failure must not leave the record referring to the
+        previous buffer, whose export is released."""
+        with open(test_pack3, "rb") as f:
+            held = bytearray(f.read())
+
+        msr = MS3Record()
+        msr.parse_into(held)
+
+        with pytest.raises(MiniSEEDError):
+            msr.parse_into(b"\x00" * 512)
+
+        # The export is released, so the buffer may be resized
+        held.clear()
+        _churn_heap()
+
+        assert msr._msr.record == ffi.NULL
+        assert msr.sourceid == ""
+        with pytest.raises(ValueError):
+            msr.record_mv
+
     def test_parse_survives_temporary_source_buffer(self):
         """parse() must keep the buffer it parsed from alive.
 

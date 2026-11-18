@@ -2629,10 +2629,14 @@ class MS3Record:
 
         # msr3_parse() frees the supplied record and NULLs the pointer when it
         # fails past the header stage (e.g. bad CRC), so adopt what it leaves.
-        if msr_ptr[0] != ffi.NULL:
-            self._msr = msr_ptr[0]
-        else:
+        # An earlier failure leaves the struct referring to the previous buffer,
+        # which is released below, so reset it.
+        if msr_ptr[0] == ffi.NULL:
             self._msr = clibmseed.msr3_init(ffi.NULL)
+        elif status != clibmseed.MS_NOERROR:
+            self._msr = clibmseed.msr3_init(msr_ptr[0])
+        else:
+            self._msr = msr_ptr[0]
 
         self._pin_raw_reclen()
 

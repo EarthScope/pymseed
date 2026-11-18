@@ -20,6 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     * Reject or omit extra header values not representable in miniSEED 2 blockettes
     * Decoding fixes for truncated miniSEED 2 records, Steim frames and BTIME fractions
 
+### Fixed
+- `MS3Record.parse_into()` no longer references a released buffer after a failed parse.
+
 ## [1.0.1] - 2026-09-29
 
 ### Added
