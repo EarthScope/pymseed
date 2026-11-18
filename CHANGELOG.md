@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- refactor: build Arrow exports with pyarrow instead of a C exporter
+
 ## [1.0.1] - 2026-09-29
 
 ### Added

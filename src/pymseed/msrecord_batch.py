@@ -7,15 +7,13 @@ filled in C, plus the raw records themselves, so they can be handed to numpy or
 Arrow as whole columns without a per-record loop in Python.
 
 Read batches with :class:`MS3RecordBatchReader`. Batches, and the readers that
-yield them, implement the Arrow PyCapsule
-interface, so Arrow libraries (pyarrow, polars, DuckDB, nanoarrow, ...) can read
-them directly, without copying and without pymseed depending on any of them.
+yield them, implement the Arrow PyCapsule interface, so Arrow libraries
+(pyarrow, polars, DuckDB, ...) can read them directly, without copying. Arrow
+export requires ``pyarrow``, which pymseed doesn't install.
 """
 
 from __future__ import annotations
 
-import ctypes
-import errno
 import functools
 import os
 from collections.abc import Generator, Iterable, Iterator
@@ -40,111 +38,41 @@ DEFAULT_BLOCK_SIZE = 8 * 1024**2
 straddling two is read with the second, so with records of 4096 bytes or more, a
 batch holds at most a block's worth, plus that record."""
 
-# Exported batches, by the address of the handle each export's C state holds, so
-# a batch stays alive until every consumer has released its arrays
-_exports: dict[int, Any] = {}
-
-
-@ffi.def_extern()  # type: ignore[untyped-decorator]
-def pm_arrow_release_owner(owner: Any) -> None:
-    """Called from C, on any thread, when the last array of an export is released."""
-    _exports.pop(int(ffi.cast("uintptr_t", owner)), None)
-
-
-# Exported readers, by the address of the handle each stream's C state holds
-_streams: dict[int, Any] = {}
-
-
-def _export_handle(registry: dict[int, Any], obj: Any) -> Any:
-    """A handle to `obj` for C to hold, keeping `obj` alive until C releases it."""
-    handle = ffi.new_handle(obj)
-    registry[int(ffi.cast("uintptr_t", handle))] = handle
-    return handle
-
-
-@ffi.def_extern()  # type: ignore[untyped-decorator]
-def pm_arrow_stream_next(source: Any, out: Any, error: Any) -> int:
-    """Called from C, on any thread, for a stream's next batch."""
-    reader: MS3RecordBatchReader = ffi.from_handle(source)
-    try:
-        batch = next(reader, None)
-        if batch is None:
-            out.release = ffi.NULL  # end of stream
-            return 0
-        owner = _export_handle(_exports, batch)
-        if clibmseed.pm_arrow_export_array(batch._cols, batch._records_pointer(), owner, out):
-            raise MemoryError("Cannot export miniSEED record batch")
-        return 0
-    except BaseException as e:  # nothing may propagate into C
-        message = f"{type(e).__name__}: {e}".encode("utf-8", "replace")
-        message = message[: clibmseed.PM_ARROW_ERROR_LEN - 1] + b"\0"
-        ffi.memmove(error, message, len(message))
-        return errno.EIO
-
-
-@ffi.def_extern()  # type: ignore[untyped-decorator]
-def pm_arrow_stream_release(source: Any) -> None:
-    """Called from C, on any thread, when a stream is released."""
-    _streams.pop(int(ffi.cast("uintptr_t", source)), None)
-
 
 def _import_pyarrow() -> Any:
-    """Import pyarrow for the `to_arrow()` conveniences, which need 14 or later."""
+    """Import pyarrow for Arrow export, which needs 14 or later."""
     try:
         import pyarrow as pa
     except ImportError as e:
         raise ImportError(
-            "to_arrow() requires pyarrow 14 or later (pip install 'pyarrow>=14'). "
-            "Other Arrow libraries can read batches and readers directly, e.g. "
-            "polars.DataFrame(reader)."
+            "Arrow export requires pyarrow 14 or later (pip install 'pyarrow>=14')"
         ) from e
     if int(pa.__version__.split(".")[0]) < 14:
         raise ImportError(
-            f"to_arrow() requires pyarrow 14 or later, to import Arrow PyCapsules; "
-            f"found {pa.__version__} (pip install 'pyarrow>=14')"
+            f"Arrow export requires pyarrow 14 or later, for the Arrow PyCapsule "
+            f"interface; found {pa.__version__} (pip install 'pyarrow>=14')"
         )
     return pa
 
 
-def _schema_capsule(field_mask: int) -> Any:
-    """The batch schema as an ``arrow_schema`` PyCapsule: a struct with a field per column.
-
-    Not exported as ``__arrow_c_schema__``, which marks schema-like objects: batches
-    and readers are data, and carry their schema in their array and stream exports.
-    """
-    _pycapsule_new()  # fail before allocating anything, outside CPython
-    return _capsule(
-        clibmseed.pm_arrow_new_schema(field_mask),
-        _ARROW_SCHEMA,
-        "pm_arrow_schema_capsule_destructor",
-    )
-
-
-def _capsule(pointer: Any, name: bytes, destructor: str) -> Any:
-    """Wrap a C struct that the named C destructor frees in a PyCapsule."""
-    if pointer == ffi.NULL:
-        raise MemoryError("Cannot export miniSEED record batch")
-    address = int(ffi.cast("uintptr_t", pointer))
-    destructor_address = int(ffi.cast("uintptr_t", ffi.addressof(clibmseed, destructor)))
-    return _pycapsule_new()(address, name, destructor_address)
-
-
-# The capsule names must outlive their capsules, so they're module-level constants
-_ARROW_SCHEMA = b"arrow_schema"
-_ARROW_ARRAY = b"arrow_array"
-_ARROW_ARRAY_STREAM = b"arrow_array_stream"
-
-
 @functools.cache
-def _pycapsule_new() -> Any:
-    """CPython's PyCapsule_New, which only CPython provides."""
-    pythonapi = getattr(ctypes, "pythonapi", None)
-    if pythonapi is None:
-        raise NotImplementedError("Arrow export requires CPython")
-    new = pythonapi.PyCapsule_New
-    new.restype = ctypes.py_object
-    new.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_void_p]
-    return new
+def _arrow_schema(columns: tuple[Column, ...]) -> pa.Schema:
+    """The schema of a batch with `columns`, in :data:`COLUMNS` order."""
+    pa = _import_pyarrow()
+    timestamp = pa.timestamp("ns", tz="UTC")
+    types = {
+        "sourceid": pa.dictionary(pa.int32(), pa.string()),
+        "starttime": timestamp,
+        "endtime": timestamp,
+        "samprate": pa.float64(),
+        "samplecnt": pa.int64(),
+        "encoding": pa.int16(),
+        "pubversion": pa.uint8(),
+        "formatversion": pa.uint8(),
+        "record": pa.binary(),
+    }
+    # Only endtime is nullable: null where not representable
+    return pa.schema([pa.field(c, types[c], nullable=c == "endtime") for c in columns])
 
 
 Column = Literal[
@@ -211,45 +139,39 @@ class MS3RecordBatch:
 
     __slots__ = (
         "_data",
-        "_pointer",
-        "_cols",
         "_base",
         "_count",
+        "_columns",
         "_arrays",
         "_sourceids",
-        "_field_mask",
+        "_endtime_nulls",
         "__weakref__",
     )
 
     def __init__(
         self,
         data: Any,
-        pointer: Any,
         cols: Any,
+        columns: tuple[Column, ...],
         arrays: dict[str, Any],
         sourceids: list[str],
     ) -> None:
-        # Internal: read batches with MS3RecordBatchReader. `data` and `pointer` are
-        # None without the record column, so the buffer isn't kept alive.
+        # Internal: read batches with MS3RecordBatchReader. `data` is None without
+        # the record column, so the buffer isn't kept alive; a view of it, it keeps
+        # a bytearray from being resized under its records.
         self._data = data
-        # Holds `data`'s buffer export, so a bytearray can't be resized under its records
-        self._pointer = pointer
-        self._cols = cols
         self._base = cols.base
         self._count = cols.count
+        self._columns = columns
         self._arrays = arrays
         self._sourceids = sourceids
-        self._field_mask = clibmseed.pm_columns_field_mask(cols)
+        self._endtime_nulls = cols.endtime_nulls
 
     def __len__(self) -> int:
         return self._count
 
     def __repr__(self) -> str:
         return f"MS3RecordBatch({self._count} records)"
-
-    def _records_pointer(self) -> Any:
-        """Where the batch's records start, or NULL without the record column."""
-        return ffi.NULL if self._pointer is None else self._pointer + self._base
 
     def _array(self, column: str) -> Any:
         array = self._arrays.get(_ARRAYS[column])
@@ -329,7 +251,7 @@ class MS3RecordBatch:
     def records(self) -> memoryview:
         """The batch's raw records, back to back."""
         end = self._base + self._array("record")[self._count]
-        return memoryview(self._data)[self._base : end].toreadonly()
+        return self._data[self._base : end].toreadonly()
 
     def record(self, i: int) -> bytes:
         """Raw bytes of the batch's `i`-th record (copy)."""
@@ -337,7 +259,7 @@ class MS3RecordBatch:
             raise IndexError("record index out of range")
         i %= self._count
         offsets = self._array("record")
-        return bytes(memoryview(self._data)[self._base + offsets[i] : self._base + offsets[i + 1]])
+        return bytes(self._data[self._base + offsets[i] : self._base + offsets[i + 1]])
 
     def sourceid(self, i: int) -> str:
         """Source identifier of the batch's `i`-th record."""
@@ -346,22 +268,18 @@ class MS3RecordBatch:
     def __arrow_c_array__(self, requested_schema: Any = None) -> tuple[Any, Any]:
         """Export the batch as ``arrow_schema`` and ``arrow_array`` PyCapsules.
 
-        The Arrow PyCapsule interface: the array is a struct array with a field per
-        column, referencing the batch's columns and records without copying them.
-        The batch stays alive until the consumer releases the array.
-        ``requested_schema`` is ignored; the batch is always exported as it is.
+        The Arrow PyCapsule interface, through :meth:`to_arrow`: a struct array with
+        a field per column, referencing the batch's columns and records without
+        copying them. Requires ``pyarrow``.
         """
-        schema = _schema_capsule(self._field_mask)
-        owner = _export_handle(_exports, self)
-        array = clibmseed.pm_arrow_new_array(self._cols, self._records_pointer(), owner)
-        return schema, _capsule(array, _ARROW_ARRAY, "pm_arrow_array_capsule_destructor")
+        return self.to_arrow().__arrow_c_array__(requested_schema)
 
     def __arrow_c_stream__(self, requested_schema: Any = None) -> Any:
         """Export the batch as a one-batch ``arrow_array_stream`` PyCapsule.
 
-        For consumers that only read streams, e.g. DuckDB.
+        For consumers that only read streams, e.g. DuckDB. Requires ``pyarrow``.
         """
-        reader = MS3RecordBatchReader(iter([self]), self._field_mask)
+        reader = MS3RecordBatchReader(iter([self]), self._columns)
         return reader.__arrow_c_stream__(requested_schema)
 
     def to_arrow(self) -> pa.RecordBatch:
@@ -373,11 +291,36 @@ class MS3RecordBatch:
         ``record`` (binary, the raw record). Only ``endtime`` is nullable: null
         where the end time isn't representable, see :attr:`endtimes`.
 
-        Requires ``pyarrow`` 14 or later, which pymseed doesn't install. Other Arrow
-        libraries can read a batch directly, e.g. ``polars.DataFrame(batch)``.
+        The Arrow arrays reference the batch's columns and records, keeping them
+        alive. Requires ``pyarrow`` 14 or later, which pymseed doesn't install.
         """
         pa = _import_pyarrow()
-        return pa.record_batch(self)
+        schema = _arrow_schema(self._columns)
+        n = self._count
+        arrays = []
+        for field in schema:
+            column = field.name
+            if column == "sourceid":
+                indices = pa.Array.from_buffers(
+                    pa.int32(), n, [None, pa.py_buffer(self.sourceid_indices)]
+                )
+                array = pa.DictionaryArray.from_arrays(
+                    indices, pa.array(self._sourceids, pa.string())
+                )
+            elif column == "record":
+                buffers = [None, pa.py_buffer(self.record_offsets), pa.py_buffer(self.records)]
+                array = pa.Array.from_buffers(field.type, n, buffers)
+            elif column == "endtime" and self._endtime_nulls:
+                validity = ffi.buffer(self._arrays["endtime_validity"], (n + 7) // 8)
+                buffers = [pa.py_buffer(validity), pa.py_buffer(self.endtimes)]
+                array = pa.Array.from_buffers(
+                    field.type, n, buffers, null_count=self._endtime_nulls
+                )
+            else:
+                buffers = [None, pa.py_buffer(self._column(column))]
+                array = pa.Array.from_buffers(field.type, n, buffers)
+            arrays.append(array)
+        return pa.RecordBatch.from_arrays(arrays, schema=schema)
 
 
 class MS3RecordBatchReader:
@@ -390,14 +333,14 @@ class MS3RecordBatchReader:
     once: a stream continues from wherever iteration left off.
     """
 
-    __slots__ = ("_batches", "_field_mask")
+    __slots__ = ("_batches", "_columns")
 
     COLUMNS = COLUMNS
 
-    def __init__(self, batches: Iterator[MS3RecordBatch], field_mask: int) -> None:
+    def __init__(self, batches: Iterator[MS3RecordBatch], columns: tuple[Column, ...]) -> None:
         # Internal: use from_buffer(), from_file() or from_filelike()
         self._batches = batches
-        self._field_mask = field_mask
+        self._columns = columns
 
     @classmethod
     def from_buffer(
@@ -430,7 +373,7 @@ class MS3RecordBatchReader:
                 Not raised for either with ``skip_not_data``.
         """
         scanner = _Scanner(columns, batch_size, skip_not_data, validate_crc, verbose)
-        return cls(_read_buffer(scanner, buffer), scanner.field_mask)
+        return cls(_read_buffer(scanner, buffer), scanner.columns)
 
     @classmethod
     def from_filelike(
@@ -464,7 +407,7 @@ class MS3RecordBatchReader:
         if block_size <= 0:
             raise ValueError("block_size must be greater than 0")
         scanner = _Scanner(columns, batch_size, skip_not_data, validate_crc, verbose)
-        return cls(_read_filelike(scanner, fh, block_size), scanner.field_mask)
+        return cls(_read_filelike(scanner, fh, block_size), scanner.columns)
 
     @classmethod
     def from_file(
@@ -486,7 +429,7 @@ class MS3RecordBatchReader:
         if block_size <= 0:
             raise ValueError("block_size must be greater than 0")
         scanner = _Scanner(columns, batch_size, skip_not_data, validate_crc, verbose)
-        return cls(_read_file(scanner, filename, block_size), scanner.field_mask)
+        return cls(_read_file(scanner, filename, block_size), scanner.columns)
 
     def __iter__(self) -> MS3RecordBatchReader:
         return self
@@ -509,24 +452,21 @@ class MS3RecordBatchReader:
     def __arrow_c_stream__(self, requested_schema: Any = None) -> Any:
         """Export the remaining batches as an ``arrow_array_stream`` PyCapsule.
 
-        The Arrow PyCapsule interface. The consumer pulls batches as it reads,
-        possibly from another thread. Each is a struct array referencing the
-        batch's columns and records without copying them; see
-        :meth:`MS3RecordBatch.to_arrow` for the columns. A batch that fails to read
-        ends the stream with an error. ``requested_schema`` is ignored.
+        The Arrow PyCapsule interface, through :meth:`to_arrow`. The consumer pulls
+        batches as it reads, each referencing the batch's columns and records
+        without copying them. A batch that fails to read ends the stream with an
+        error. Requires ``pyarrow``.
         """
-        _pycapsule_new()  # fail before allocating anything, outside CPython
-        source = _export_handle(_streams, self)
-        stream = clibmseed.pm_arrow_new_stream(source, self._field_mask)
-        return _capsule(stream, _ARROW_ARRAY_STREAM, "pm_arrow_stream_capsule_destructor")
+        return self.to_arrow().__arrow_c_stream__(requested_schema)
 
     def to_arrow(self) -> pa.RecordBatchReader:
-        """The remaining batches as a ``pyarrow.RecordBatchReader``.
+        """The remaining batches as a ``pyarrow.RecordBatchReader``, read as it's read.
 
         Requires ``pyarrow`` 14 or later, which pymseed doesn't install.
         """
         pa = _import_pyarrow()
-        return pa.RecordBatchReader.from_stream(self)
+        schema = _arrow_schema(self._columns)
+        return pa.RecordBatchReader.from_batches(schema, (batch.to_arrow() for batch in self))
 
 
 def _read_buffer(scanner: _Scanner, buffer: Any) -> Iterator[MS3RecordBatch]:
@@ -587,14 +527,15 @@ class _Scanner:
     ) -> None:
         if isinstance(columns, str):
             raise TypeError("columns must be a list of column names, not a string")
-        self.columns = frozenset(COLUMNS if columns is None else columns)
-        if unknown := self.columns - set(COLUMNS):
+        requested = set(COLUMNS if columns is None else columns)
+        if unknown := requested - set(COLUMNS):
             raise ValueError(f"Unknown columns {sorted(unknown)}; choose from {list(COLUMNS)}")
-        if not self.columns:
+        if not requested:
             raise ValueError("columns must name at least one column")
         if batch_size <= 0:
             raise ValueError("batch_size must be greater than 0")
-        self.field_mask = sum(1 << i for i, c in enumerate(COLUMNS) if c in self.columns)
+        # In COLUMNS order, the order batches hold them
+        self.columns = tuple(c for c in COLUMNS if c in requested)
         self.batch_size = batch_size
         self.flags = (clibmseed.MSF_VALIDATECRC if validate_crc else 0) | (
             clibmseed.MSF_SKIPNOTDATA if skip_not_data else 0
@@ -621,7 +562,8 @@ class _Scanner:
         flags = self.flags | (clibmseed.MSF_ATENDOFFILE if at_end else 0)
         ptr = ffi.from_buffer(data)
         size = len(ptr)
-        keep_data = "record" in self.columns
+        # Keeps a bytearray from being resized under the batches' records
+        view = memoryview(data) if "record" in self.columns else None
         self.consumed[0] = start
         while True:
             cols, arrays = self._columns()
@@ -640,10 +582,7 @@ class _Scanner:
                     ffi.string(cols.sids + i * clibmseed.LM_SIDLEN).decode("utf-8")
                     for i in range(cols.nsids)
                 ]
-                if keep_data:
-                    yield MS3RecordBatch(data, ptr, cols, arrays, sourceids)
-                else:
-                    yield MS3RecordBatch(None, None, cols, arrays, sourceids)
+                yield MS3RecordBatch(view, cols, self.columns, arrays, sourceids)
             if error is not None:
                 raise error
             if status == clibmseed.PM_SCAN_NEEDMORE:

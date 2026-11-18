@@ -5,11 +5,9 @@ import struct
 import sys
 import types
 import weakref
-from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-import pymseed.msrecord_batch
 from pymseed import NSTERROR, DataEncoding, MS3Record, MS3RecordBatchReader
 from pymseed.clib import clibmseed
 from pymseed.exceptions import MiniSEEDError
@@ -35,11 +33,6 @@ class ReadOnly:
     def read(self, n: int = -1) -> bytes:
         return self._fh.read(n)
 
-
-# Arrow export creates PyCapsules with CPython's C API
-cpython_only = pytest.mark.skipif(
-    sys.implementation.name != "cpython", reason="Arrow export requires CPython"
-)
 
 # miniSEED 3 and 2 records of three channels, then 60-second period records
 MIXED = read(test_path3) + read(test_path2) + read(test_60sec)
@@ -156,7 +149,7 @@ def test_blocks_of_whole_records_are_not_copied():
 
     assert batch_records(batches) == expected_records(data)
     assert {method for method, _ in fh.calls} == {"read"}
-    assert all(any(b._data is block for block in fh.blocks) for b in batches)
+    assert all(any(b._data.obj is block for block in fh.blocks) for b in batches)
 
 
 def test_from_file(tmp_path):
@@ -231,7 +224,6 @@ def test_columns_as_numpy_arrays():
     assert starttimes.tolist() == list(batch.starttimes)
 
 
-@cpython_only
 def test_to_arrow():
     pa = pytest.importorskip("pyarrow")
     expected = expected_records(MIXED)
@@ -270,7 +262,6 @@ def test_to_arrow():
     assert rows == expected
 
 
-@cpython_only
 def test_to_arrow_does_not_copy_records():
     pa = pytest.importorskip("pyarrow")
     data = pa.py_buffer(MIXED)
@@ -409,14 +400,12 @@ def test_invalid_arguments():
 # Arrow PyCapsule interface
 
 
-def live_exports() -> tuple[int, int]:
-    """Batch arrays and streams still held by Arrow consumers."""
-    gc.collect()
-    return len(pymseed.msrecord_batch._exports), len(pymseed.msrecord_batch._streams)
+class Buffer(bytearray):
+    """A buffer weak references can track"""
 
 
-@cpython_only
 def test_capsules_follow_the_arrow_pycapsule_interface():
+    pytest.importorskip("pyarrow")
     batch = next(MS3RecordBatchReader.from_buffer(MIXED))
 
     schema, array = batch.__arrow_c_array__()
@@ -428,26 +417,29 @@ def test_capsules_follow_the_arrow_pycapsule_interface():
     assert "arrow_array_stream" in repr(batch.__arrow_c_stream__())
 
 
-@cpython_only
-def test_unconsumed_capsules_release_the_batch():
-    batch = next(MS3RecordBatchReader.from_buffer(MIXED))
+def test_unconsumed_capsules_release_the_buffer():
+    pytest.importorskip("pyarrow")
+    buffer = Buffer(MIXED)
+    ref = weakref.ref(buffer)
+    batch = next(MS3RecordBatchReader.from_buffer(buffer))
+    reader = MS3RecordBatchReader.from_buffer(buffer)
 
-    capsules = (batch.__arrow_c_array__(), batch.__arrow_c_stream__())
-    assert live_exports() == (1, 1)
-    del capsules
+    capsules = (batch.__arrow_c_array__(), batch.__arrow_c_stream__(), reader.__arrow_c_stream__())
+    del buffer, batch, reader, capsules
+    gc.collect()
 
-    assert live_exports() == (0, 0)
+    assert ref() is None
 
 
-@cpython_only
-def test_arrow_arrays_keep_their_batch_alive():
+def test_arrow_arrays_keep_their_records_alive():
     pa = pytest.importorskip("pyarrow")
-    batch = next(MS3RecordBatchReader.from_buffer(MIXED))
+    buffer = Buffer(MIXED)
+    ref = weakref.ref(buffer)
+    batch = next(MS3RecordBatchReader.from_buffer(buffer))
     expected = batch.record(0)
-    ref = weakref.ref(batch)
 
     arrow = pa.record_batch(batch)
-    del batch
+    del batch, buffer
     gc.collect()
     assert ref() is not None
     assert arrow["record"][0].as_py() == expected
@@ -455,10 +447,8 @@ def test_arrow_arrays_keep_their_batch_alive():
     del arrow
     gc.collect()
     assert ref() is None
-    assert live_exports() == (0, 0)
 
 
-@cpython_only
 def test_arrow_schema():
     pytest.importorskip("pyarrow")
     batch = next(MS3RecordBatchReader.from_buffer(MIXED))
@@ -498,7 +488,6 @@ def test_unrepresentable_endtimes_are_nsterror():
     ]
 
 
-@cpython_only
 def test_unrepresentable_endtimes_are_null_in_arrow():
     pa = pytest.importorskip("pyarrow")
     data = with_unrepresentable_endtimes(read(test_path3), NULL_ENDTIMES)
@@ -517,23 +506,6 @@ def test_unrepresentable_endtimes_are_null_in_arrow():
     assert all(chunk.buffers()[0] is None for chunk in table["endtime"].chunks[1:])
 
 
-@cpython_only
-def test_arrays_released_on_other_threads():
-    pytest.importorskip("pyarrow")
-    arrays = [b.to_arrow() for b in MS3RecordBatchReader.from_buffer(MIXED, batch_size=10)]
-    assert live_exports()[0] == len(arrays)
-
-    def release(i):
-        arrays[i] = None
-        gc.collect()
-
-    with ThreadPoolExecutor(4) as pool:
-        list(pool.map(release, range(len(arrays))))
-
-    assert live_exports() == (0, 0)
-
-
-@cpython_only
 def test_reader_as_arrow_stream():
     pa = pytest.importorskip("pyarrow")
     expected = expected_records(MIXED)
@@ -544,12 +516,8 @@ def test_reader_as_arrow_stream():
     assert table.num_rows == len(expected)
     assert table["record"].to_pylist() == [r[-1] for r in expected]
     assert table["sourceid"].cast(pa.string()).to_pylist() == [r[0] for r in expected]
-    assert live_exports() == (len(table.to_batches()), 0)
-    del table
-    assert live_exports() == (0, 0)
 
 
-@cpython_only
 def test_stream_continues_where_iteration_left_off():
     pytest.importorskip("pyarrow")
     reader = MS3RecordBatchReader.from_buffer(MIXED, batch_size=10)
@@ -560,15 +528,16 @@ def test_stream_continues_where_iteration_left_off():
     assert len(first) + rest.num_rows == len(expected_records(MIXED))
 
 
-@cpython_only
 def test_stream_error_reaches_the_consumer():
     pa = pytest.importorskip("pyarrow")
-    reader = MS3RecordBatchReader.from_filelike(io.BytesIO(MIXED[:-10]), block_size=1000)
 
-    with pytest.raises(OSError, match="MiniSEEDError: Stream ends with"):
-        pa.RecordBatchReader.from_stream(reader).read_all()
+    def reader():
+        return MS3RecordBatchReader.from_filelike(io.BytesIO(MIXED[:-10]), block_size=1000)
 
-    assert live_exports() == (0, 0)
+    with pytest.raises(MiniSEEDError, match="Stream ends with"):
+        reader().to_arrow().read_all()
+    with pytest.raises(pa.ArrowInvalid, match="Stream ends with"):
+        pa.RecordBatchReader.from_stream(reader()).read_all()
 
 
 def test_from_file_reader_closes_its_file(tmp_path):
@@ -582,8 +551,8 @@ def test_from_file_reader_closes_its_file(tmp_path):
         next(reader)
 
 
-@cpython_only
 def test_polars_reads_batches_and_streams():
+    pytest.importorskip("pyarrow")
     pl = pytest.importorskip("polars")
     n = len(expected_records(MIXED))
 
@@ -591,8 +560,8 @@ def test_polars_reads_batches_and_streams():
     assert pl.DataFrame(MS3RecordBatchReader.from_buffer(MIXED, batch_size=50)).height == n
 
 
-@cpython_only
 def test_duckdb_reads_streams():
+    pytest.importorskip("pyarrow")
     duckdb = pytest.importorskip("duckdb")
     pytest.importorskip("pytz")  # needed by DuckDB for timestamps with time zones
     reader = MS3RecordBatchReader.from_buffer(MIXED, batch_size=50)  # noqa: F841 (read by name in the query)
@@ -611,6 +580,8 @@ def test_to_arrow_without_pyarrow_explains_what_to_install(monkeypatch):
         batch.to_arrow()
     with pytest.raises(ImportError, match=r"requires pyarrow 14 or later"):
         MS3RecordBatchReader.from_buffer(MIXED).to_arrow()
+    with pytest.raises(ImportError, match=r"requires pyarrow 14 or later"):
+        batch.__arrow_c_array__()
 
 
 def test_to_arrow_with_old_pyarrow_explains_what_to_install(monkeypatch):
@@ -619,16 +590,6 @@ def test_to_arrow_with_old_pyarrow_explains_what_to_install(monkeypatch):
 
     with pytest.raises(ImportError, match=r"found 13\.0\.0"):
         batch.to_arrow()
-
-
-@pytest.mark.skipif(sys.implementation.name == "cpython", reason="CPython supports Arrow export")
-def test_arrow_export_outside_cpython_raises():
-    batch = next(MS3RecordBatchReader.from_buffer(MIXED))
-
-    with pytest.raises(NotImplementedError, match="requires CPython"):
-        batch.__arrow_c_array__()
-    with pytest.raises(NotImplementedError, match="requires CPython"):
-        MS3RecordBatchReader.from_buffer(MIXED).__arrow_c_stream__()
 
 
 # Column projection
@@ -663,7 +624,6 @@ def test_batches_hold_only_the_columns_read(columns):
                 getters[c](batches[0], 0)
 
 
-@cpython_only
 def test_arrow_exports_hold_only_the_columns_read():
     pa = pytest.importorskip("pyarrow")
     columns = ["record", "endtime", "sourceid"]  # exported in COLUMNS order
@@ -677,15 +637,9 @@ def test_arrow_exports_hold_only_the_columns_read():
     expected = expected_records(MIXED)
     assert table["record"].to_pylist() == [r[-1] for r in expected]
     assert table["sourceid"].cast(pa.string()).to_pylist() == [r[0] for r in expected]
-    assert live_exports() == (len(table.to_batches()), 0)
-    del table
-    assert live_exports() == (0, 0)
 
 
 def test_batches_without_records_release_the_buffer():
-    class Buffer(bytearray):
-        pass
-
     def read(columns):
         buffer = Buffer(MIXED)
         ref = weakref.ref(buffer)
