@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Zenodo DOI badge to README.
+
+### Changed
+- libmseed updated to v3.5.5.  Including:
+    * `MS3Record.to_file()` reports a failure to flush or close the output file
+    * Trace segments stay in time order after `generate(remove_packed=True)` trims them
+    * Reject or omit extra header values not representable in miniSEED 2 blockettes
+    * Decoding fixes for truncated miniSEED 2 records, Steim frames and BTIME fractions
+
 ## [1.0.1] - 2026-09-29
 
 ### Added
