@@ -29,6 +29,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Document that a segment must not be packed or added to after `take_np_datasamples()`.
 - `create_numpy_array_from_recordlist()` raises when the record list does not cover the
   segment's samples.
+- `MS3RecordBatchReader.from_filelike()` reports a short remnant after records as truncated,
+  not as non-miniSEED.
 
 ## [1.0.1] - 2026-09-29
 

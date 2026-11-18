@@ -309,6 +309,19 @@ def test_truncated_input_raises(block_size):
     assert excinfo.value.status_code == clibmseed.MS_ENDOFFILE
 
 
+@pytest.mark.parametrize("block_size", [100, 1000, 1 << 20])
+def test_short_tail_after_records_is_truncated(block_size):
+    data = read(test_path3) + b"x" * 10
+
+    with pytest.raises(MiniSEEDError) as excinfo:
+        list(MS3RecordBatchReader.from_buffer(data))
+    assert excinfo.value.status_code == clibmseed.MS_ENDOFFILE
+
+    with pytest.raises(MiniSEEDError) as excinfo:
+        list(MS3RecordBatchReader.from_filelike(io.BytesIO(data), block_size=block_size))
+    assert excinfo.value.status_code == clibmseed.MS_ENDOFFILE
+
+
 def test_input_too_short_for_a_record_is_not_miniseed():
     with pytest.raises(MiniSEEDError) as excinfo:
         list(MS3RecordBatchReader.from_buffer(b"too short"))

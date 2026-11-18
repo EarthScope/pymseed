@@ -580,7 +580,7 @@ class _Scanner:
         if at_end and consumed < size:
             code = (
                 clibmseed.MS_NOTSEED
-                if consumed == 0 and size < clibmseed.MINRECLEN
+                if position + consumed == 0 and size < clibmseed.MINRECLEN
                 else clibmseed.MS_ENDOFFILE
             )
             raise MiniSEEDError(
