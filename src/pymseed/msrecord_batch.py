@@ -9,7 +9,7 @@ Arrow as whole columns without a per-record loop in Python.
 Read batches with :class:`MS3RecordBatchReader`. Batches, and the readers that
 yield them, implement the Arrow PyCapsule interface, so Arrow libraries
 (pyarrow, polars, DuckDB, ...) can read them directly, without copying. Arrow
-export requires ``pyarrow``, which pymseed doesn't install.
+export requires ``pyarrow``, installed with the ``[pyarrow]`` optional dependency.
 """
 
 from __future__ import annotations
@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any, Literal, get_args
 from .clib import clibmseed, ffi
 from .exceptions import MiniSEEDError
 from .logging import begin_operation
+from .util import require_optional
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -39,26 +40,10 @@ straddling two is read with the second, so with records of 4096 bytes or more, a
 batch holds at most a block's worth, plus that record."""
 
 
-def _import_pyarrow() -> Any:
-    """Import pyarrow for Arrow export, which needs 14 or later."""
-    try:
-        import pyarrow as pa
-    except ImportError as e:
-        raise ImportError(
-            "Arrow export requires pyarrow 14 or later (pip install 'pyarrow>=14')"
-        ) from e
-    if int(pa.__version__.split(".")[0]) < 14:
-        raise ImportError(
-            f"Arrow export requires pyarrow 14 or later, for the Arrow PyCapsule "
-            f"interface; found {pa.__version__} (pip install 'pyarrow>=14')"
-        )
-    return pa
-
-
 @functools.cache
 def _arrow_schema(columns: tuple[Column, ...]) -> pa.Schema:
     """The schema of a batch with `columns`, in :data:`COLUMNS` order."""
-    pa = _import_pyarrow()
+    pa = require_optional("pyarrow", "pyarrow", min_version=14)
     timestamp = pa.timestamp("ns", tz="UTC")
     types = {
         "sourceid": pa.dictionary(pa.int32(), pa.string()),
@@ -292,9 +277,9 @@ class MS3RecordBatch:
         where the end time isn't representable, see :attr:`endtimes`.
 
         The Arrow arrays reference the batch's columns and records, keeping them
-        alive. Requires ``pyarrow`` 14 or later, which pymseed doesn't install.
+        alive. Requires ``pyarrow`` 14 or later (the ``[pyarrow]`` optional dependency).
         """
-        pa = _import_pyarrow()
+        pa = require_optional("pyarrow", "pyarrow", min_version=14)
         schema = _arrow_schema(self._columns)
         n = self._count
         arrays = []
@@ -462,9 +447,9 @@ class MS3RecordBatchReader:
     def to_arrow(self) -> pa.RecordBatchReader:
         """The remaining batches as a ``pyarrow.RecordBatchReader``, read as it's read.
 
-        Requires ``pyarrow`` 14 or later, which pymseed doesn't install.
+        Requires ``pyarrow`` 14 or later (the ``[pyarrow]`` optional dependency).
         """
-        pa = _import_pyarrow()
+        pa = require_optional("pyarrow", "pyarrow", min_version=14)
         schema = _arrow_schema(self._columns)
         return pa.RecordBatchReader.from_batches(schema, (batch.to_arrow() for batch in self))
 

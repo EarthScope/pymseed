@@ -40,18 +40,20 @@ dependencies = [
 [project.optional-dependencies]
 numpy = ["numpy>=1.24.0"]
 
+# pyarrow 14+ provides the Arrow PyCapsule interface for Arrow export
+pyarrow = ["pyarrow>=14.0.0"]
+
 # jsonschema-rs validates miniSEED3 extra headers against FDSN schemas
 jsonschema = ["jsonschema-rs>=0.35.0"]
 
-# Testing with numpy and jsonschema
+# Testing with all optional dependencies
 test = [
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
     "pytest-markdown-docs>=0.9.0",
     "pymseed[numpy]",
     "pymseed[jsonschema]",
-    # MS3RecordBatch Arrow tests
-    "pyarrow>=14.0.0",
+    "pymseed[pyarrow]",
 ]
 
 dev = [
@@ -69,6 +71,7 @@ docs = [
     "sphinx-copybutton",
     "pymseed[numpy]",
     "pymseed[jsonschema]",
+    "pymseed[pyarrow]",
 ]
 
 # Release/publishing dependencies (for maintainers only)

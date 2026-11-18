@@ -8,10 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- `MS3RecordBatchReader` reads records' header fields as `MS3RecordBatch` column
-  arrays filled in C, with column projection and optional `skip_not_data`.
-- Arrow export of batches and readers, without copying, via `to_arrow()` and the
-  Arrow PyCapsule interface (pyarrow, polars, DuckDB); requires pyarrow 14 or later.
+- `MS3RecordBatchReader` reads record header fields into `MS3RecordBatch` columns,
+  exportable to Arrow without copying via `to_arrow()` or the Arrow PyCapsule
+  interface (pyarrow, polars, DuckDB); requires the new `[pyarrow]` optional dependency.
 - Zenodo DOI badge to README.
 
 ### Changed

@@ -41,7 +41,7 @@ from .util import (
     format_nstime,
     numpy_dtype,
     parse_flags,
-    require_numpy,
+    require_optional,
     sample_preview,
     timestr2nstime,
 )
@@ -1389,7 +1389,7 @@ class MS3Record:
             numsamples: Number of available samples
             sampletype: Type indicator ('i', 'f', 'd', 't')
         """
-        np = require_numpy()
+        np = require_optional("numpy", "numpy")
 
         sampletype = self.sampletype
         if self._msr.numsamples <= 0:

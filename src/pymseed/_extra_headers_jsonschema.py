@@ -7,11 +7,9 @@ from importlib.resources import files
 from typing import Any
 
 from ._json import json_loads
+from .util import missing_dependency_message, require_optional
 
-_IMPORT_ERROR_MESSAGE = (
-    "jsonschema-rs is not installed. Install jsonschema-rs or this package "
-    "with the [jsonschema] optional dependency"
-)
+_IMPORT_ERROR_MESSAGE = missing_dependency_message("jsonschema-rs", "jsonschema")
 
 # Returned by load_extra_headers_validator() when jsonschema-rs is unavailable,
 # so callers can tell a missing optional dependency from a broken schema.
@@ -25,10 +23,7 @@ KNOWN_SCHEMAS: dict[str, str] = {
 
 def validator_for_extra_headers_schema(schema: dict[str, Any]) -> Any:
     """Return a reusable validator for *schema* (Draft 2020-12 via ``$schema``)."""
-    try:
-        import jsonschema_rs
-    except ImportError:
-        raise ImportError(_IMPORT_ERROR_MESSAGE) from None
+    jsonschema_rs = require_optional("jsonschema_rs", "jsonschema", package="jsonschema-rs")
     return jsonschema_rs.validator_for(schema)
 
 

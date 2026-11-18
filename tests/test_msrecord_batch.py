@@ -576,11 +576,11 @@ def test_to_arrow_without_pyarrow_explains_what_to_install(monkeypatch):
     batch = next(MS3RecordBatchReader.from_buffer(MIXED))
     monkeypatch.setitem(sys.modules, "pyarrow", None)  # import fails
 
-    with pytest.raises(ImportError, match=r"requires pyarrow 14 or later"):
+    with pytest.raises(ImportError, match=r"pyarrow is not installed"):
         batch.to_arrow()
-    with pytest.raises(ImportError, match=r"requires pyarrow 14 or later"):
+    with pytest.raises(ImportError, match=r"pyarrow is not installed"):
         MS3RecordBatchReader.from_buffer(MIXED).to_arrow()
-    with pytest.raises(ImportError, match=r"requires pyarrow 14 or later"):
+    with pytest.raises(ImportError, match=r"pyarrow is not installed"):
         batch.__arrow_c_array__()
 
 
