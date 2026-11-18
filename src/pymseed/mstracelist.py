@@ -137,7 +137,9 @@ class MS3RecordPtr:
         if not hasattr(self, "_msrecord"):
             # libmseed leaves msr->record unset unless the source bytes outlive the
             # read, as they do for a buffer-sourced entry held by the trace list.
-            self._msrecord = MS3Record._borrow(self._ptr.msr, self)
+            msr = self._ptr.msr
+            self._raw_reclen = msr.reclen if msr.record != ffi.NULL else None
+            self._msrecord = MS3Record._borrow(msr, self)
         return self._msrecord
 
     def _msr_for_borrower(self) -> Any:

@@ -184,6 +184,8 @@ class MS3RecordReader(_AdvanceGuard):
         # Whether a record has ever been returned; distinguishes empty input
         # (no records) from non-miniSEED content encountered later.
         self._read_any = False
+        # Length of the raw record the struct holds, as parsed
+        self._raw_reclen: int | None = None
 
         # Validate and normalize source. bool is a subclass of int but is
         # rejected explicitly: True/False as a file descriptor would silently
@@ -318,6 +320,7 @@ class MS3RecordReader(_AdvanceGuard):
 
         if status == clibmseed.MS_NOERROR:
             self._read_any = True
+            self._raw_reclen = self._msr_ptr[0].reclen
             # Hold the reader so its struct cannot be freed by garbage collection
             # while this record is still referenced.
             return MS3Record._borrow(self._msr_ptr[0], self)

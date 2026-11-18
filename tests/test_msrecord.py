@@ -509,6 +509,38 @@ def test_generate_rejects_advancing_the_source(name):
         source.close()
 
 
+def test_record_mv_of_earlier_record_follows_the_source():
+    """An escaped record reflects the struct's current record, length included."""
+    import io
+
+    from pymseed import MS3RecordReader
+
+    with open(test_repack3_output, "rb") as f:
+        large = f.read()
+    with open(test_pack3, "rb") as f:
+        small = f.read()
+    large = large[: MS3Record.parse(large).reclen]
+    assert len(large) > len(small)
+
+    for first, second in ((large, small), (small, large)):
+        data = first + second
+        sources = [
+            MS3Record.from_buffer(data),
+            MS3Record.from_filelike(io.BytesIO(data)),
+        ]
+        for source in sources:
+            r0 = next(source)
+            assert r0.record == first
+            next(source)
+            assert r0.record == second
+
+    # The parsed length holds whatever reclen is set to for packing
+    with MS3RecordReader(test_pack3) as reader:
+        r0 = next(reader)
+        r0.reclen = 128
+        assert r0.record == small
+
+
 def test_generate_rejects_reallocating_the_record():
     """Reparsing or unpacking mid-generate() would free the samples being packed."""
     with open(test_pack3, "rb") as f:

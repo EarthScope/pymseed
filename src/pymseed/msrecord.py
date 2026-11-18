@@ -147,11 +147,13 @@ class _SharedRecordStruct(_AdvanceGuard):
     reading the freed memory (see :meth:`MS3Record._borrow`).
     """
 
-    __slots__ = ("_msr_ptr", "_source", "_temp_contexts")
+    __slots__ = ("_msr_ptr", "_raw_reclen", "_source", "_temp_contexts")
 
     def __init__(self, msr_ptr: Any, source: Any = None) -> None:
         self._temp_contexts = 0
         self._msr_ptr = msr_ptr
+        # Length of the raw record the struct holds, as parsed
+        self._raw_reclen: int | None = None
         # Keeps the parsed-from buffer alive; msr->record points into it.
         self._source = source
 
@@ -195,6 +197,12 @@ def _borrowed_msr(self: MS3Record) -> Any:
     return self._owner._msr_for_borrower()
 
 
+def _borrowed_raw_reclen(self: MS3Record) -> int | None:
+    """``_raw_reclen`` for a borrowed MS3Record, from the owner, which reparses
+    the struct as it advances."""
+    return self._owner._raw_reclen
+
+
 # One guarded subclass per distinct MS3Record subclass, created on first
 # borrow and reused after. The property shadows the `_msr` slot inherited
 # from the base class (a subclass's class attribute takes precedence over an
@@ -211,6 +219,7 @@ def _borrowed_class(cls: type) -> type:
             {
                 "__slots__": (),
                 "_msr": property(_borrowed_msr),
+                "_raw_reclen": property(_borrowed_raw_reclen),
             },
         )
         _borrowed_record_classes[cls] = guarded
@@ -387,15 +396,15 @@ class MS3Record:
 
         `owner` must implement ``_msr_for_borrower()``, returning the live
         struct pointer or raising :class:`ValueError` once it is no longer
-        valid (see ``_SharedRecordStruct``, ``MS3RecordReader``, and
-        ``mstracelist.MS3RecordPtr``). The returned instance reads through
+        valid, and hold ``_raw_reclen``, the length of the raw record the
+        struct holds as parsed (see ``_SharedRecordStruct``,
+        ``MS3RecordReader``, and ``mstracelist.MS3RecordPtr``). The returned instance reads through
         that method on every ``_msr`` access instead of caching the
         pointer, so it cannot read memory `owner` has already released.
         """
         guarded = _borrowed_class(cls)
         obj: MS3Record = object.__new__(guarded)
         obj._msr_allocated = False
-        obj._raw_reclen = recordptr.reclen if recordptr.record != ffi.NULL else None
         obj._owner = owner
         obj._packing = 0
         obj._temp_samples = None
@@ -2180,6 +2189,7 @@ class MS3Record:
 
                 if status == clibmseed.MS_NOERROR:
                     offset += msr_ptr[0].reclen
+                    struct._raw_reclen = msr_ptr[0].reclen
                     parsed_any = True
 
                     if has_selections and not _select_record(
@@ -2362,6 +2372,7 @@ class MS3Record:
 
                     if status == clibmseed.MS_NOERROR:
                         offset += msr_ptr[0].reclen
+                        struct._raw_reclen = msr_ptr[0].reclen
                         parsed_any = True
 
                         if has_selections and not _select_record(
