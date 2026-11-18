@@ -99,7 +99,7 @@ include-package-data = true
 where = ["src"]
 
 [tool.setuptools.package-data]
-pymseed = ["*.so", "*.pyd", "*.dll", "*.py", "py.typed", "schemas/*.json"]
+pymseed = ["*.py", "py.typed", "schemas/*.json"]
 
 [tool.setuptools.dynamic]
 version = {attr = "pymseed.__version__.__version__"}
