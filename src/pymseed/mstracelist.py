@@ -539,8 +539,14 @@ class MS3TraceSeg:
         # Create numpy array of the correct type and size
         array = np.empty(self.samplecnt, dtype=dtype)
 
-        # Unpack data samples into the array
-        self.unpack_recordlist(buffer=array)
+        # Unpack data samples into the array, which the record list may not
+        # fill when the segment merges data added without one
+        count = self.unpack_recordlist(buffer=array)
+        if count != self.samplecnt:
+            raise MiniSEEDError(
+                clibmseed.MS_GENERROR,
+                f"Record list holds {count} of the segment's {self.samplecnt} samples",
+            )
 
         return array
 

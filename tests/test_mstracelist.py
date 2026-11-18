@@ -1057,6 +1057,25 @@ def test_tracelist_numpy():
     )
 
 
+def test_numpy_array_from_partial_recordlist_raises():
+    """A segment merging data added without a record list cannot be filled from one."""
+    pytest.importorskip("numpy")
+    from pymseed import MS3Record
+
+    with open(test_path3, "rb") as f:
+        data = f.read()
+    first = MS3Record.parse(data)
+
+    traces = MS3TraceList()
+    traces.add_buffer(data[: first.reclen])
+    traces.add_buffer(data[first.reclen :], record_list=True)
+    segment = traces.get_traceid(first.sourceid)[0]
+    assert segment.samplecnt > first.samplecnt
+
+    with pytest.raises(MiniSEEDError, match=f"of the segment's {segment.samplecnt} samples"):
+        segment.create_numpy_array_from_recordlist()
+
+
 def test_tracelist_numpy_arrayfrom_recordlist():
     np = pytest.importorskip("numpy")
 

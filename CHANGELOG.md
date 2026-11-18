@@ -23,9 +23,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - `MS3Record.parse_into()` no longer references a released buffer after a failed parse.
 - `MS3Record.generate()` blocks re-parsing the record or advancing its source while packing.
-- `MS3Record.record_mv` of a record yielded earlier uses the length of the record its source now holds.
+- `MS3Record.record_mv` of a record yielded earlier uses the length of the record its source
+  now holds.
 - `MS3RecordBatchReader.from_buffer()` reads the records of buffers with items wider than a byte.
 - Document that a segment must not be packed or added to after `take_np_datasamples()`.
+- `create_numpy_array_from_recordlist()` raises when the record list does not cover the
+  segment's samples.
 
 ## [1.0.1] - 2026-09-29
 
