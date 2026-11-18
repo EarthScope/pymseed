@@ -588,6 +588,32 @@ def test_reader_as_arrow_stream():
     assert table["sourceid"].cast(pa.string()).to_pylist() == [r[0] for r in expected]
 
 
+def test_arrow_stream_reads_blocks_as_batches_are_pulled():
+    """The stream reads input as its consumer pulls batches, never all of it at once."""
+    pytest.importorskip("pyarrow")
+    blocks = 20
+    reads = []
+
+    class CountingReader(ReadOnly):
+        def read(self, n: int = -1) -> bytes:
+            reads.append(n)
+            return super().read(n)
+
+    reader = MS3RecordBatchReader.from_filelike(
+        CountingReader(MIXED * blocks), block_size=len(MIXED)
+    )
+    stream = reader.to_arrow()
+    assert reads == []
+
+    first = stream.read_next_batch()
+    assert len(reads) == 1
+    second = stream.read_next_batch()
+    assert len(reads) == 2
+
+    rows = first.num_rows + second.num_rows + stream.read_all().num_rows
+    assert rows == blocks * len(expected_records(MIXED))
+
+
 def test_stream_continues_where_iteration_left_off():
     pytest.importorskip("pyarrow")
     reader = MS3RecordBatchReader.from_buffer(MIXED, batch_size=10)
