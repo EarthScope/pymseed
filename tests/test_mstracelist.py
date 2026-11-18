@@ -1531,8 +1531,8 @@ def test_mstracelist_generate_validates_format_version_eagerly():
 
 
 def test_mstracelist_validates_encoding_range():
-    """An out-of-range encoding raises the same ValueError MS3Record.encoding
-    does, rather than the OverflowError cffi produces at the C call."""
+    """An out-of-range encoding raises ValueError rather than the
+    OverflowError cffi produces at the int8_t C parameter."""
     traces = MS3TraceList()
     traces.add_data(
         sourceid="FDSN:XX_STA__B_H_Z",
@@ -1542,11 +1542,19 @@ def test_mstracelist_validates_encoding_range():
         starttime_str="2023-01-01T00:00:00Z",
     )
 
-    for bad in (-1, 256, 9999):
-        with pytest.raises(ValueError, match="encoding must be in the range 0..255"):
+    for bad in (-1, 128, 255, 9999):
+        with pytest.raises(ValueError, match="encoding must be in the range 0..127"):
             traces.generate(encoding=bad)
-        with pytest.raises(ValueError, match="encoding must be in the range 0..255"):
+        with pytest.raises(ValueError, match="encoding must be in the range 0..127"):
             traces.to_file("unused.mseed", encoding=bad)
+
+
+def test_mstracelist_validates_flush_idle_seconds_range():
+    traces = MS3TraceList()
+
+    for bad in (-1, 2**32):
+        with pytest.raises(ValueError, match="flush_idle_seconds must be in the range"):
+            traces.generate(flush_idle_seconds=bad)
 
 
 def test_tracelist_get_traceid_rejects_non_str():
@@ -1555,6 +1563,10 @@ def test_tracelist_get_traceid_rejects_non_str():
     for bad in (b"FDSN:XX_STA__B_H_Z", None, 42):
         with pytest.raises(TypeError, match="sourceid must be str"):
             traces.get_traceid(bad)
+
+    for bad in (-1, 256):
+        with pytest.raises(ValueError, match="version must be in the range 0..255"):
+            traces.get_traceid("FDSN:XX_STA__B_H_Z", bad)
 
 
 def test_tracelist_selection_rejects_non_str_sourceid():

@@ -44,6 +44,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rather than keeping a full batch's memory.
 - `MS3Record.extra` rejects JSON that is not an object.
 - `MS3Record.get_extra_header()` returns an empty string value rather than `None`.
+- Out-of-range `encoding`, `flush_idle_seconds`, trace ID `version` and extra header int values
+  raise `ValueError` rather than `OverflowError`.
 
 ## [1.0.1] - 2026-09-29
 

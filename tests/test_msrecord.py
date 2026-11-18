@@ -892,6 +892,20 @@ class TestMS3RecordSorting:
         )
 
 
+def test_msrecord_set_extra_header_int_range():
+    """Ints outside the 64-bit range raise ValueError, not cffi's OverflowError."""
+    msr = MS3Record()
+
+    for bad in (2**64, -(2**63) - 1):
+        with pytest.raises(ValueError, match="64-bit integer range"):
+            msr.set_extra_header("/FDSN/Time/Quality", bad)
+
+    msr.set_extra_header("/A", 2**64 - 1)
+    msr.set_extra_header("/B", -(2**63))
+    assert msr.get_extra_header("/A") == 2**64 - 1
+    assert msr.get_extra_header("/B") == -(2**63)
+
+
 def test_msrecord_generate():
     """Test creating miniSEED with MS3Record.generate() method."""
 

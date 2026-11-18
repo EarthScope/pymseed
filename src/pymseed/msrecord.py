@@ -1091,7 +1091,8 @@ class MS3Record:
         Raises:
             TypeError: If ptr is not a str, or value is not one of the
                 supported types.
-            ValueError: If the header value cannot be set.
+            ValueError: If an int value is outside the 64-bit integer range,
+                or the header value cannot be set.
 
         Examples:
             >>> from pymseed import MS3Record
@@ -1111,6 +1112,8 @@ class MS3Record:
             type_code = b"b"
             c_value = ffi.new("int *", 1 if value else 0)
         elif isinstance(value, int):
+            if not -(2**63) <= value < 2**64:
+                raise ValueError(f"int value is outside the 64-bit integer range: {value}")
             if value >= 0:
                 type_code = b"u"
                 c_value = ffi.new("uint64_t *", value)

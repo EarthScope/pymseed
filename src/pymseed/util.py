@@ -25,10 +25,11 @@ SAMPLE_FORMATS: dict[str, tuple[Literal["i", "f", "d", "B"], int]] = {
 }
 
 
-def check_encoding(encoding: int) -> None:
-    """Raise ValueError if encoding is outside the range libmseed stores it in"""
-    if not 0 <= encoding <= 255:
-        raise ValueError(f"encoding must be in the range 0..255; got {encoding}")
+def check_encoding(encoding: int, maximum: int = 255) -> None:
+    """Raise ValueError if encoding is outside the range libmseed stores it in,
+    0..255, or 0..127 where libmseed takes it as int8_t"""
+    if not 0 <= encoding <= maximum:
+        raise ValueError(f"encoding must be in the range 0..{maximum}; got {encoding}")
 
 
 def check_str(name: str, value: Any) -> None:

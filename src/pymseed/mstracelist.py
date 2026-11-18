@@ -1139,8 +1139,11 @@ class MS3TraceList(_AdvanceGuard):
 
         Raises:
             TypeError: If sourceid is not a str
+            ValueError: If version is outside the range 0..255
         """
         check_str("sourceid", sourceid)
+        if not 0 <= version <= 255:
+            raise ValueError(f"version must be in the range 0..255; got {version}")
         self._check_open()
 
         c_sourceid = ffi.new("char[]", sourceid.encode("utf-8"))
@@ -1969,8 +1972,9 @@ class MS3TraceList(_AdvanceGuard):
             bytes: Each miniSEED record as it is created
 
         Raises:
-            ValueError: If format_version is not 2 or 3, or encoding is outside
-                the range 0..255.  Raised by this call, before the first record
+            ValueError: If format_version is not 2 or 3, encoding is outside
+                the range 0..127, or flush_idle_seconds is outside the range
+                0..4294967295.  Raised by this call, before the first record
                 is created.
             MiniSEEDError: If the underlying libmseed library encounters an
                 error during creation of miniSEED records, such as a
@@ -2045,7 +2049,11 @@ class MS3TraceList(_AdvanceGuard):
         if format_version is not None:
             check_format_version(format_version)
 
-        check_encoding(encoding)
+        check_encoding(encoding, 127)
+        if not 0 <= flush_idle_seconds <= 0xFFFFFFFF:
+            raise ValueError(
+                f"flush_idle_seconds must be in the range 0..4294967295; got {flush_idle_seconds}"
+            )
         self._check_open()
 
         return self._generate(
@@ -2191,7 +2199,7 @@ class MS3TraceList(_AdvanceGuard):
             TypeError: If filename is not a str or os.PathLike.
 
             ValueError: If format_version is not 2 or 3, or encoding is outside
-                the range 0..255.
+                the range 0..127.
 
             MiniSEEDError: If the underlying libmseed library
                 encounters an error during file writing (e.g., permission
@@ -2234,7 +2242,7 @@ class MS3TraceList(_AdvanceGuard):
         """
         filename = check_path("filename", filename)
 
-        check_encoding(encoding)
+        check_encoding(encoding, 127)
         self._check_open()
 
         begin_operation()
