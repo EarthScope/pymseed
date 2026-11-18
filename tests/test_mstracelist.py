@@ -1564,6 +1564,22 @@ def test_mstracelist_validates_flush_idle_seconds_range():
     for bad in (-1, 2**32):
         with pytest.raises(ValueError, match="flush_idle_seconds must be in the range"):
             traces.generate(flush_idle_seconds=bad)
+    with pytest.raises(TypeError, match="flush_idle_seconds must be int"):
+        traces.generate(flush_idle_seconds=1.5)
+
+
+def test_mstracelist_validates_generate_arguments_eagerly(tmp_path):
+    traces = MS3TraceList()
+
+    for bad in (-(2**31) - 1, 2**31):
+        with pytest.raises(ValueError, match="max_record_length must be in the range"):
+            traces.generate(max_record_length=bad)
+        with pytest.raises(ValueError, match="max_record_length must be in the range"):
+            traces.to_file(tmp_path / "unused.mseed", max_record_length=bad)
+    with pytest.raises(TypeError, match="max_record_length must be int"):
+        traces.generate(max_record_length=512.0)
+    with pytest.raises(TypeError, match="extra_headers must be str"):
+        traces.generate(extra_headers=b"{}")
 
 
 def test_tracelist_get_traceid_rejects_non_str():

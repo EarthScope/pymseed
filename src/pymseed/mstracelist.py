@@ -29,6 +29,7 @@ from .util import (
     SAMPLE_FORMATS,
     check_encoding,
     check_format_version,
+    check_int,
     check_path,
     check_str,
     encoding_sizetype,
@@ -1973,8 +1974,11 @@ class MS3TraceList(_AdvanceGuard):
             bytes: Each miniSEED record as it is created
 
         Raises:
+            TypeError: If max_record_length or flush_idle_seconds is not an
+                int, or extra_headers is not a str.  Raised by this call.
             ValueError: If format_version is not 2 or 3, encoding is outside
-                the range 0..127, or flush_idle_seconds is outside the range
+                the range 0..127, max_record_length is outside the 32-bit
+                integer range, or flush_idle_seconds is outside the range
                 0..4294967295.  Raised by this call, before the first record
                 is created.
             MiniSEEDError: If the underlying libmseed library encounters an
@@ -2051,10 +2055,10 @@ class MS3TraceList(_AdvanceGuard):
             check_format_version(format_version)
 
         check_encoding(encoding, 127)
-        if not 0 <= flush_idle_seconds <= 0xFFFFFFFF:
-            raise ValueError(
-                f"flush_idle_seconds must be in the range 0..4294967295; got {flush_idle_seconds}"
-            )
+        check_int("max_record_length", max_record_length, -(2**31), 2**31 - 1)
+        check_int("flush_idle_seconds", flush_idle_seconds, 0, 2**32 - 1)
+        if extra_headers is not None:
+            check_str("extra_headers", extra_headers)
         self._check_open()
 
         return self._generate(
@@ -2199,10 +2203,12 @@ class MS3TraceList(_AdvanceGuard):
             int: Number of miniSEED records written to the file.
 
         Raises:
-            TypeError: If filename is not a str or os.PathLike.
+            TypeError: If filename is not a str or os.PathLike, or
+                max_record_length is not an int.
 
-            ValueError: If format_version is not 2 or 3, or encoding is outside
-                the range 0..127.
+            ValueError: If format_version is not 2 or 3, encoding is outside
+                the range 0..127, or max_record_length is outside the 32-bit
+                integer range.
 
             MiniSEEDError: If the underlying libmseed library
                 encounters an error during file writing (e.g., permission
@@ -2246,6 +2252,7 @@ class MS3TraceList(_AdvanceGuard):
         filename = check_path("filename", filename)
 
         check_encoding(encoding, 127)
+        check_int("max_record_length", max_record_length, -(2**31), 2**31 - 1)
         self._check_open()
 
         begin_operation()

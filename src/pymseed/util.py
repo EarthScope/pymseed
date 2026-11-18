@@ -32,6 +32,15 @@ def check_encoding(encoding: int, maximum: int = 255) -> None:
         raise ValueError(f"encoding must be in the range 0..{maximum}; got {encoding}")
 
 
+def check_int(name: str, value: Any, minimum: int, maximum: int) -> None:
+    """Raise TypeError if value is not an int, or ValueError if it is outside
+    minimum..maximum, before it is converted for C"""
+    if not isinstance(value, int):
+        raise TypeError(f"{name} must be int; got {type(value).__name__}")
+    if not minimum <= value <= maximum:
+        raise ValueError(f"{name} must be in the range {minimum}..{maximum}; got {value}")
+
+
 def check_str(name: str, value: Any) -> None:
     """Raise TypeError if value is not a str, before it is encoded for C"""
     if not isinstance(value, str):

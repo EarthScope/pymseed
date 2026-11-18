@@ -51,6 +51,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Document optional `numpy`, `pyarrow` and `jsonschema` dependencies in the installation notes.
 - `MS3Record.merge_extra_headers()` rejects a patch that is not a JSON object and
   `set_extra_header()` rejects an empty pointer.
+- `MS3TraceList.generate()` checks `max_record_length`, `flush_idle_seconds` and `extra_headers`
+  when called, and `to_file()` raises `ValueError` for an out-of-range `max_record_length`.
 
 ## [1.0.1] - 2026-09-29
 
