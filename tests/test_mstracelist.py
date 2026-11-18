@@ -2287,6 +2287,15 @@ def test_record_entry_with_datasamples_rejects_changing_the_trace_list():
             traces.add_data(_SID, [1], "i", 10, starttime_str="2024-01-01T00:00:00Z")
         with pytest.raises(ValueError, match="within its with_datasamples"):
             next(traces.generate(remove_packed=True))
+        with pytest.raises(ValueError, match="within its with_datasamples"):
+            traces.add_file(test_path3, sourceid="*")
+        # Refused before the buffer is exported, so it can still be resized
+        with open(test_path3, "rb") as f:
+            buf = bytearray(f.read())
+        for record_list in (False, True):
+            with pytest.raises(ValueError, match="within its with_datasamples"):
+                traces.add_buffer(buf, sourceid="*", record_list=record_list)
+            buf.append(0)
         assert list(record.datasamples) == [1, 2, 3]
 
     traces.add_data(_SID, [1], "i", 10, starttime_str="2024-01-01T00:00:00Z")

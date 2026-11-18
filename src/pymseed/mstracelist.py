@@ -1351,6 +1351,7 @@ class MS3TraceList(_AdvanceGuard):
 
         # Create a reference to the current trace list pointer
         self._check_open()
+        self._check_advance()
         mstl_ptr = ffi.new("MS3TraceList **")
         mstl_ptr[0] = self._mstl
 
@@ -1368,7 +1369,6 @@ class MS3TraceList(_AdvanceGuard):
         # Build selections, if sourceid, starttime, or endtime are specified
         selections_ptr, free_selections = build_selections(sourceid, starttime, endtime)
 
-        self._check_advance()
         self._segment_epoch += 1
 
         try:
@@ -1534,6 +1534,7 @@ class MS3TraceList(_AdvanceGuard):
 
         # Create a reference to the current trace list pointer
         self._check_open()
+        self._check_advance()
         mstl_ptr = ffi.new("MS3TraceList **")
         mstl_ptr[0] = self._mstl
 
@@ -1556,7 +1557,6 @@ class MS3TraceList(_AdvanceGuard):
         if record_list:
             self._buffer_refs.append(buffer_ptr)
 
-        self._check_advance()
         self._segment_epoch += 1
 
         try:

@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `MS3RecordBatchReader` reads record header fields into `MS3RecordBatch` columns,
   exportable to Arrow without copying via `to_arrow()` or the Arrow PyCapsule
   interface (pyarrow, polars, DuckDB); requires the new `[pyarrow]` optional dependency.
-- Zenodo DOI badge to README.
+- Zenodo DOI badge to README.md
 
 ### Changed
 - libmseed updated to v3.5.5.  Including:
@@ -46,6 +46,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is inclusive.
 - Wheels and sdists no longer include extension binaries left in the source tree by other builds.
 - `MS3Record.with_datasamples()` raises `ValueError` while `generate()` is packing the record.
+- `MS3TraceList.add_buffer()` and `add_file()` release the buffer and selections when refused
+  within a record's `with_datasamples()` or `generate()`.
 
 ## [1.0.1] - 2026-09-29
 
