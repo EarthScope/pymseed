@@ -1714,8 +1714,9 @@ class MS3Record:
                 # Convert everything to bytes for simplicity
                 if isinstance(data_samples, str):
                     text_bytes = data_samples.encode("utf-8")
-                elif isinstance(data_samples, (bytes, bytearray)):
-                    text_bytes = bytes(data_samples)
+                elif mv is not None and mv.itemsize == 1:
+                    # bytes, bytearray, or e.g. a numpy 'S1' array
+                    text_bytes = mv.tobytes()
                 else:
                     # Handle sequence - convert each item to byte
                     byte_values = []
@@ -1728,6 +1729,13 @@ class MS3Record:
                                     f"encode to exactly one byte; got {sample!r}"
                                 )
                             byte_values.append(encoded[0])
+                        elif isinstance(sample, (bytes, bytearray)):
+                            if len(sample) != 1:
+                                raise ValueError(
+                                    "Text data samples given as a sequence of bytes must each "
+                                    f"be exactly one byte; got {sample!r}"
+                                )
+                            byte_values.append(sample[0])
                         else:
                             byte_values.append(int(sample) & 0xFF)
                     text_bytes = bytes(byte_values)

@@ -289,6 +289,34 @@ def test_with_datasamples_text_sequence_rejects_non_single_byte_strings():
         assert bytes(msr.datasamples) == b"abc"
 
 
+def test_with_datasamples_text_accepts_bytes_samples():
+    """Text given as single bytes, or a byte-sized buffer, is taken as is."""
+    import array
+
+    msr = MS3Record()
+    msr.sourceid = "FDSN:XX_TEST__L_O_G"
+    msr.samprate = 0
+
+    for data in ([b"1", b"a", b"\xff"], array.array("B", b"1a\xff"), memoryview(b"1a\xff")):
+        with msr.with_datasamples(data, "t"):
+            assert bytes(msr.datasamples) == b"1a\xff"
+
+    with pytest.raises(ValueError, match="exactly one byte"):
+        with msr.with_datasamples([b"a", b"bc"], "t"):
+            pass
+
+    np = pytest.importorskip("numpy")
+    text = np.frombuffer(b"123abc", dtype="S1")
+    with msr.with_datasamples(text, "t"):
+        assert bytes(msr.datasamples) == b"123abc"
+        # Round trips through the samples' own view
+        with msr.with_datasamples(msr.np_datasamples, "t"):
+            assert bytes(msr.datasamples) == b"123abc"
+    # Non-contiguous
+    with msr.with_datasamples(text[::2], "t"):
+        assert bytes(msr.datasamples) == b"13b"
+
+
 def test_with_datasamples_accepts_one_dimensional():
     """The dimension check must not reject the supported input types, including
     a non-contiguous array that takes the element-wise copy path."""

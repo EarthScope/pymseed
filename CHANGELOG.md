@@ -35,6 +35,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   not of earlier records.
 - `MS3Record.parse()` and `parse_into()` size a miniSEED 2 record without a Blockette 1000
   from the buffer.
+- Text samples given as single `bytes` or a byte-sized buffer, e.g. a numpy `S1` array,
+  are taken as is rather than converted with `int()`.
 
 ## [1.0.1] - 2026-09-29
 
