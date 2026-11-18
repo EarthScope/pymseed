@@ -1091,8 +1091,8 @@ class MS3Record:
         Raises:
             TypeError: If ptr is not a str, or value is not one of the
                 supported types.
-            ValueError: If an int value is outside the 64-bit integer range,
-                or the header value cannot be set.
+            ValueError: If ``ptr`` is empty, an int value is outside the 64-bit
+                integer range, or the header value cannot be set.
 
         Examples:
             >>> from pymseed import MS3Record
@@ -1106,6 +1106,9 @@ class MS3Record:
             merge_extra_headers(): Apply a JSON Merge Patch to extra headers
         """
         check_str("ptr", ptr)
+        # The root, an object, cannot be replaced by a value
+        if not ptr:
+            raise ValueError("ptr must not be empty, which points to the extra headers root")
 
         # Determine value type and create appropriate C value
         if isinstance(value, bool):
@@ -1145,7 +1148,8 @@ class MS3Record:
             value: JSON Merge Patch to apply, serialized as a string
 
         Raises:
-            ValueError: If ``value`` is not valid JSON, or the patch cannot be applied
+            ValueError: If ``value`` is not a valid JSON object, or the patch cannot be
+                applied
 
         Examples:
             >>> from pymseed import MS3Record
@@ -1167,8 +1171,12 @@ class MS3Record:
             >>> msr.extra
             '{"FDSN":{"Time":{"Correction":1.234}}}'
         """
-        # Minify the JSON string to ensure valid JSON and minimize size
-        minified = json_dumps_minified(json_loads(value))
+        # Minify the JSON string to ensure valid JSON and minimize size.  A patch
+        # that is not an object would replace the extra headers with it.
+        parsed = json_loads(value)
+        if not isinstance(parsed, dict):
+            raise ValueError(f"Merge patch must be a JSON object; got {type(parsed).__name__}")
+        minified = json_dumps_minified(parsed)
         c_value = ffi.new("char[]", minified)
 
         # Merge at the root: pass an explicit empty C string for the pointer

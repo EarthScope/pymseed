@@ -849,6 +849,14 @@ def test_msrecord_extra_clear():
         with pytest.raises(ValueError, match="must be a JSON object"):
             msr.extra = value
         assert msr.extra == payload
+        with pytest.raises(ValueError, match="must be a JSON object"):
+            msr.merge_extra_headers(value)
+        assert msr.extra == payload
+
+    # Nor can a value replace the root object
+    with pytest.raises(ValueError, match="must not be empty"):
+        msr.set_extra_header("", 5)
+    assert msr.extra == payload
 
 
 class TestMS3RecordSorting:
