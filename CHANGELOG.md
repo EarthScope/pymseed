@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - `MS3Record.parse_into()` no longer references a released buffer after a failed parse.
+- `MS3Record.generate()` blocks reparsing the record or advancing its source while packing.
 
 ## [1.0.1] - 2026-09-29
 

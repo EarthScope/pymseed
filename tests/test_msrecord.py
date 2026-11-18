@@ -488,6 +488,52 @@ def test_with_datasamples_rejects_advancing_the_source(name):
         assert next(source).numsamples > 0
 
 
+@pytest.mark.parametrize("name", ["from_buffer", "from_filelike", "from_file", "reader"])
+def test_generate_rejects_advancing_the_source(name):
+    """The packer reads the record between yields; the source may advance once it ends."""
+    source = _iterators_over_records()[name]()
+    msr = next(source)
+    msr.reclen = 256
+    expected = list(msr.generate())
+    assert len(expected) > 1
+
+    gen = msr.generate()
+    records = [next(gen)]
+    with pytest.raises(ValueError, match="or generate()"):
+        next(source)
+    records.extend(gen)
+    assert records == expected
+
+    if name == "reader":
+        assert next(source).numsamples > 0
+        source.close()
+
+
+def test_generate_rejects_reallocating_the_record():
+    """Reparsing or unpacking mid-generate() would free the samples being packed."""
+    with open(test_pack3, "rb") as f:
+        raw = f.read()
+
+    msr = MS3Record.parse(raw, unpack_data=True)
+    msr.reclen = 256
+    expected = list(msr.generate())
+
+    gen = msr.generate()
+    records = [next(gen)]
+    with pytest.raises(ValueError, match="while generate"):
+        msr.parse_into(raw, unpack_data=True)
+    with pytest.raises(ValueError, match="while generate"):
+        msr.unpack_data()
+    records.extend(gen)
+    assert records == expected
+
+    # Abandoning the generator releases the record
+    gen = msr.generate()
+    next(gen)
+    gen.close()
+    msr.parse_into(raw, unpack_data=True)
+
+
 def test_reader_close_rejected_within_with_datasamples():
     from pymseed import MS3RecordReader
 

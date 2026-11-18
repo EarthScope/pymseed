@@ -112,10 +112,10 @@ def _select_record(selections_ptr: Any, msr: Any, unpack_data: bool, verbose: in
 class _AdvanceGuard:
     """Mixin for a source of borrowed records, which libmseed reuses or frees.
 
-    with_datasamples() counts its active contexts in ``_temp_contexts``, which the
-    subclass sets to 0 first in ``__init__``.  Advancing or closing the source
-    would let libmseed reallocate or free the temporary samples it does not own,
-    so :meth:`_check_advance` refuses.
+    with_datasamples() and generate() count their active uses of a record in
+    ``_temp_contexts``, which the subclass sets to 0 first in ``__init__``.
+    Advancing or closing the source would let libmseed reallocate or free the
+    record they are using, so :meth:`_check_advance` refuses.
     """
 
     __slots__ = ()
@@ -127,7 +127,8 @@ class _AdvanceGuard:
     def _check_advance(self) -> None:
         if self._temp_contexts:  # type: ignore[attr-defined]
             raise ValueError(
-                "cannot advance or close the source of a record within its with_datasamples()"
+                "cannot advance or close the source of a record within its "
+                "with_datasamples() or generate()"
             )
 
 
@@ -284,6 +285,7 @@ class MS3Record:
         "_msr",
         "_msr_allocated",
         "_owner",
+        "_packing",
         "_raw_reclen",
         "_temp_samples",
     )
@@ -296,6 +298,10 @@ class MS3Record:
     # otherwise None.  Views of those samples hold it, and it bars the calls that
     # would reallocate or free samples libmseed does not own.
     _temp_samples: Any
+
+    # Number of generate() calls packing this record, which reads its samples
+    # between yields.
+    _packing: int
 
     def __init__(self, reclen: int | None = None, encoding: int | None = None) -> None:
         """
@@ -346,6 +352,7 @@ class MS3Record:
         self._pin_raw_reclen()
 
         self._owner = None
+        self._packing = 0
         self._temp_samples = None
 
     @classmethod
@@ -365,6 +372,7 @@ class MS3Record:
         obj._msr_allocated = owns
         obj._raw_reclen = recordptr.reclen if recordptr.record != ffi.NULL else None
         obj._owner = owner
+        obj._packing = 0
         obj._temp_samples = None
         return obj
 
@@ -389,6 +397,7 @@ class MS3Record:
         obj._msr_allocated = False
         obj._raw_reclen = recordptr.reclen if recordptr.record != ffi.NULL else None
         obj._owner = owner
+        obj._packing = 0
         obj._temp_samples = None
         return obj
 
@@ -1501,9 +1510,12 @@ class MS3Record:
 
     def _check_no_temp_samples(self, operation: str) -> None:
         """Refuse `operation`, which reallocates the record's data samples,
-        while with_datasamples() has set samples that libmseed does not own."""
+        while with_datasamples() has set samples that libmseed does not own or
+        generate() is packing them."""
         if self._temp_samples is not None:
             raise ValueError(f"{operation} cannot be used within with_datasamples()")
+        if self._packing:
+            raise ValueError(f"{operation} cannot be used while generate() is packing the record")
 
     def unpack_data(self, verbose: int = 0) -> int:
         """Unpack the record's data samples
@@ -1843,6 +1855,13 @@ class MS3Record:
             if not packer:
                 raise MiniSEEDError(clibmseed.MS_GENERROR, "Error initializing packer")
 
+            # The packer reads the record between yields, so neither it nor a
+            # source that yielded it may change until packing ends
+            guard = getattr(self._owner, "_advance_guard", None)
+            if guard is not None:
+                guard._temp_contexts += 1
+            self._packing += 1
+
             try:
                 while True:
                     # 1 = record available, 0 = finished, < 0 = error
@@ -1855,6 +1874,9 @@ class MS3Record:
 
                     yield ffi.buffer(record_pp[0], reclen_p[0])[:]
             finally:
+                self._packing -= 1
+                if guard is not None:
+                    guard._temp_contexts -= 1
                 pkr_pp = ffi.new("MS3RecordPacker **")
                 pkr_pp[0] = packer
                 clibmseed.msr3_pack_free(pkr_pp, ffi.NULL)
