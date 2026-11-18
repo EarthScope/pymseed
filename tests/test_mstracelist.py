@@ -1737,6 +1737,35 @@ def test_mstracelist_empty_file_yields_no_traces(tmp_path):
     assert len(traces) == 0
 
 
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="requires os.mkfifo")
+def test_mstracelist_reads_from_fifo(tmp_path):
+    """A FIFO reports a size of 0 but is read rather than taken as empty."""
+    import threading
+
+    with open(test_path3, "rb") as f:
+        data = f.read()
+    fifo = tmp_path / "data.fifo"
+    os.mkfifo(fifo)
+
+    def write():
+        with open(fifo, "wb") as f:
+            f.write(data)
+
+    writer = threading.Thread(target=write)
+    writer.start()
+    try:
+        traces = MS3TraceList.from_file(str(fifo))
+    finally:
+        # Drain the FIFO if it was not read, so the writer is not left blocked
+        writer.join(timeout=5)
+        if writer.is_alive():
+            with open(fifo, "rb") as f:
+                f.read()
+            writer.join()
+
+    assert len(traces) == len(MS3TraceList.from_file(test_path3))
+
+
 def test_mstracelist_nonempty_garbage_still_raises(tmp_path):
     """Non-empty content that isn't miniSEED still raises, unlike empty input."""
     garbage = tmp_path / "garbage.mseed3"

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import itertools
 import os
+import stat
 import sys
 from collections.abc import Iterator
 from typing import Any
@@ -1360,7 +1361,8 @@ class MS3TraceList(_AdvanceGuard):
         # MS_NOTSEED. A stat failure (e.g. a nonexistent path) is left for
         # the read call below to report as it normally would.
         try:
-            if os.stat(file_name).st_size == 0:
+            st = os.stat(file_name)
+            if stat.S_ISREG(st.st_mode) and st.st_size == 0:
                 return
         except OSError:
             pass
