@@ -1074,8 +1074,7 @@ class MS3Record:
         elif type_code == b"n":
             return float(value[0])
         elif type_code == b"s":
-            string = ffi.string(value).decode("utf-8")
-            return string if string else None
+            return ffi.string(value).decode("utf-8")
         else:  # b"b"
             return bool(value[0])
 

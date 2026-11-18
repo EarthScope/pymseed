@@ -827,6 +827,12 @@ def test_msrecord_extra_clear():
     assert msr.extra == payload
     assert msr.extralength == len(payload)
 
+    # An empty string value exists, unlike a missing header
+    msr.extra = '{"FDSN":{"Name":""}}'
+    assert msr.get_extra_header("/FDSN/Name") == ""
+    assert msr.get_extra_header("/FDSN/Other") is None
+    msr.extra = payload
+
     # As should JSON that is not an object
     for value in ("[1, 2]", "5", '"text"', "null"):
         with pytest.raises(ValueError, match="must be a JSON object"):
