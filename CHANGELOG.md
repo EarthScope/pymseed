@@ -7,8 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `MS3RecordBatchReader` reads records' header fields as `MS3RecordBatch` column
+  arrays filled in C, with column projection and optional `skip_not_data`.
+- Arrow export of batches and readers, without copying, via `to_arrow()` and the
+  Arrow PyCapsule interface (pyarrow, polars, DuckDB); requires pyarrow 14 or later.
+- Zenodo DOI badge to README.
+
 ### Changed
-- refactor: build Arrow exports with pyarrow instead of a C exporter
+- libmseed updated to v3.5.5.  Including:
+    * `MS3Record.to_file()` reports a failure to flush or close the output file
+    * Trace segments stay in time order after `generate(remove_packed=True)` trims them
+    * Reject or omit extra header values not representable in miniSEED 2 blockettes
+    * Decoding fixes for truncated miniSEED 2 records, Steim frames and BTIME fractions
 
 ## [1.0.1] - 2026-09-29
 

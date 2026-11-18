@@ -762,7 +762,7 @@ TEST (read, v3_invalid_samplerate)
   REQUIRE (packbuflen > 0, "msr3_pack() did not produce any output");
 
   /* Patch the fixed-header sample rate to NaN */
-  *pMS3FSDH_SAMPLERATE (packbuf) = HO8f (NAN, swapflag);
+  STORE8f (pMS3FSDH_SAMPLERATE (packbuf), NAN, swapflag);
 
   rv = msr3_parse (packbuf, (uint64_t)packbuflen, &parsed, 0, 0);
   CHECK (rv != MS_NOERROR, "msr3_parse() did not reject a NaN sample rate");
@@ -817,4 +817,201 @@ TEST (read, v2_b100_invalid_samplerate)
 
   msr3_free (&msr);
   msr3_free (&parsed);
+}
+
+/* Verify a miniSEED 2 buffer shorter than the fixed header is parsed as
+ * incomplete, with exactly-sized buffers so out-of-bounds reads are detectable. */
+TEST (read, v2_truncated_header)
+{
+  MS3Record *msr = NULL;
+  MS3Record *parsed = NULL;
+  int64_t packedsamples = 0;
+  char *exact;
+  int length;
+  int rv;
+
+  msr = msr3_init (msr);
+  REQUIRE (msr != NULL, "msr3_init() returned unexpected NULL");
+
+  strcpy (msr->sid, "FDSN:XX_TEST__L_H_Z");
+  msr->reclen = 128;
+  msr->pubversion = 1;
+  msr->starttime = ms_timestr2nstime ("2020-01-01T00:00:00Z");
+  msr->samprate = 1.0;
+
+  packbuflen = 0;
+  rv = msr3_pack (msr, record_handler_buf, NULL, &packedsamples, MSF_FLUSHDATA | MSF_PACKVER2, 0);
+  REQUIRE (rv == 1, "msr3_pack() returned unexpected value");
+  REQUIRE (packbuflen >= MS2FSDH_LENGTH, "msr3_pack() did not produce a full fixed header");
+
+  for (length = MINRECLEN; length < MS2FSDH_LENGTH; length++)
+  {
+    exact = (char *)malloc ((size_t)length);
+    REQUIRE (exact != NULL, "Cannot allocate memory");
+    memcpy (exact, packbuf, (size_t)length);
+
+    rv = msr3_parse (exact, (uint64_t)length, &parsed, 0, 0);
+    CHECK (rv == MINRECLEN, "msr3_parse() did not request more data for a truncated header");
+    CHECK (parsed == NULL, "msr3_parse() populated 'parsed' for a truncated header");
+
+    free (exact);
+  }
+
+  msr3_free (&msr);
+  msr3_free (&parsed);
+}
+
+/* Build a 2-frame Steim buffer: X0=100, Xn=104, differences 7,1,1,1,1 as 8-bit
+ * words, in frame 0 when firstframe is nonzero, otherwise in frame 1.  A nonzero
+ * trailnibble places trailword with that nibble in the word after the differences. */
+static void
+build_steim_frames (uint32_t *frames, int firstframe, int trailnibble, uint32_t trailword)
+{
+  uint32_t *dframe = firstframe ? frames : frames + 16;
+  int dstart = firstframe ? 3 : 1;
+
+  memset (frames, 0, 32 * sizeof (uint32_t));
+
+  /* Two words of 4 x 8-bit differences, nibble 01 (valid for Steim1 and Steim2) */
+  dframe[dstart]     = 0x07010101u;
+  dframe[dstart + 1] = 0x01000000u;
+  dframe[0] |= (0x1u << (30 - 2 * dstart)) | (0x1u << (30 - 2 * (dstart + 1)));
+
+  if (trailnibble)
+  {
+    dframe[dstart + 2] = trailword;
+    dframe[0] |= ((uint32_t)trailnibble << (30 - 2 * (dstart + 2)));
+  }
+
+  frames[1] = 100;
+  frames[2] = 104;
+
+  if (!ms_bigendianhost ())
+    for (int idx = 0; idx < 32; idx++)
+      frames[idx] = ((frames[idx] & 0xFFu) << 24) | ((frames[idx] & 0xFF00u) << 8) |
+                    ((frames[idx] >> 8) & 0xFF00u) | (frames[idx] >> 24);
+}
+
+TEST (read, steim_first_difference)
+{
+  uint32_t frames[32];
+  int32_t output[5];
+  int32_t expected[5] = {100, 101, 102, 103, 104};
+  uint8_t encodings[2] = {DE_STEIM1, DE_STEIM2};
+  char sampletype;
+  int64_t rv;
+
+  for (int enc = 0; enc < 2; enc++)
+  {
+    for (int firstframe = 1; firstframe >= 0; firstframe--)
+    {
+      build_steim_frames (frames, firstframe, 0, 0);
+      memset (output, 0, sizeof (output));
+
+      rv = ms_decode_data (frames, sizeof (frames), encodings[enc], 5, output, sizeof (output),
+                           &sampletype, 1 - ms_bigendianhost (), NULL, 0);
+      REQUIRE (rv == 5, "ms_decode_data() did not decode 5 samples");
+      CHECK (cmpint32s (output, expected, 5) == 0,
+             "Steim decode is wrong when the first difference is not in frame 0");
+    }
+  }
+}
+
+TEST (read, steim2_trailing_undefined)
+{
+  uint32_t frames[32];
+  int32_t output[9];
+  int32_t expected[5] = {100, 101, 102, 103, 104};
+  /* Undefined codes: nibble 10 with dnib 00, nibble 11 with dnib 11 */
+  int nibbles[2]      = {2, 3};
+  uint32_t words[2]   = {0x00000000u, 0xC0000000u};
+  char sampletype;
+  int64_t rv;
+
+  for (int idx = 0; idx < 2; idx++)
+  {
+    /* Undefined word follows the 8 differences (5 used) in frame 0 */
+    build_steim_frames (frames, 1, nibbles[idx], words[idx]);
+    memset (output, 0, sizeof (output));
+
+    rv = ms_decode_data (frames, sizeof (frames), DE_STEIM2, 5, output, sizeof (output),
+                         &sampletype, 1 - ms_bigendianhost (), NULL, 0);
+    REQUIRE (rv == 5, "ms_decode_data() rejected an undefined code after the last needed difference");
+    CHECK (cmpint32s (output, expected, 5) == 0, "Steim2 decode is wrong with a trailing undefined code");
+
+    /* Reaching the undefined word is an error */
+    rv = ms_decode_data (frames, sizeof (frames), DE_STEIM2, 9, output, sizeof (output),
+                         &sampletype, 1 - ms_bigendianhost (), NULL, 0);
+    CHECK (rv < 0, "ms_decode_data() accepted an undefined Steim2 code that was needed");
+  }
+}
+
+/* ms_parse_raw2() must honor an explicit swap flag rather than only
+ * the autodetected value.  The record header is byte swapped relative
+ * to the host, so a swap flag of 1 or -1 parses cleanly and 0 does not.
+ */
+TEST (read, v2_parse_raw_swapflag)
+{
+  char record[512];
+  FILE *fp = NULL;
+  size_t rv;
+
+  /* Use the header byte order opposite to the host */
+  const char *path = (ms_bigendianhost ()) ? "data/reference-testdata-steim2-LE.mseed2"
+                                           : "data/reference-testdata-steim2.mseed2";
+
+  fp = fopen (path, "rb");
+  REQUIRE (fp != NULL, "File pointer is unexpected NULL");
+  rv = fread (record, sizeof (record), 1, fp);
+  fclose (fp);
+  REQUIRE (rv == 1, "fread() did not read a complete record");
+
+  CHECK (ms_parse_raw2 (record, sizeof (record), 0, -1) == 0,
+         "ms_parse_raw2() with autodetected swapping reported errors");
+  CHECK (ms_parse_raw2 (record, sizeof (record), 0, 1) == 0,
+         "ms_parse_raw2() with explicit swapping reported errors");
+  CHECK (ms_parse_raw2 (record, sizeof (record), 0, 0) > 0,
+         "ms_parse_raw2() without swapping did not report errors");
+}
+
+/* A non-finite float in a miniSEED 2 blockette cannot be represented in the
+ * extra headers; it is omitted while the rest of the blockette is kept. */
+TEST (read, v2_blockette_nonfinite_float)
+{
+  MS3Record *msr = NULL;
+  char record[512];
+  char wave[32] = {0};
+  double number = 0.0;
+  FILE *fp = NULL;
+  size_t readcount;
+  int rv;
+
+  fp = fopen ("data/testdata-detection.record.mseed2", "rb");
+  REQUIRE (fp != NULL, "File pointer is unexpected NULL");
+  readcount = fread (record, sizeof (record), 1, fp);
+  fclose (fp);
+  REQUIRE (readcount == 1, "fread() did not read a complete record");
+
+  REQUIRE ((uint8_t)record[56] == 0x00 && (uint8_t)record[57] == 0xC9,
+           "Blockette 201 is not at expected offset 56");
+
+  /* Blockette 201 signal amplitude: big endian quiet NaN */
+  record[60] = (char)0x7F;
+  record[61] = (char)0xC0;
+  record[62] = 0x00;
+  record[63] = 0x00;
+
+  rv = msr3_parse (record, sizeof (record), &msr, 0, 0);
+  REQUIRE (rv == MS_NOERROR, "msr3_parse() did not return expected MS_NOERROR");
+
+  CHECK (mseh_exists (msr, "/FDSN/Event/Detection/0"),
+         "Expected /FDSN/Event/Detection/0 does not exist");
+  CHECK (!mseh_exists (msr, "/FDSN/Event/Detection/0/SignalAmplitude"),
+         "Non-finite /FDSN/Event/Detection/0/SignalAmplitude is unexpectedly present");
+  CHECK (mseh_get_number (msr, "/FDSN/Event/Detection/0/SignalPeriod", &number) == 0,
+         "Expected /FDSN/Event/Detection/0/SignalPeriod does not exist");
+  mseh_get_string (msr, "/FDSN/Event/Detection/0/Wave", wave, sizeof (wave));
+  CHECK_STREQ (wave, "DILATATION");
+
+  msr3_free (&msr);
 }

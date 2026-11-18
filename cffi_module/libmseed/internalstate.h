@@ -102,6 +102,10 @@ extern void lm_pack_state_finish (MS3RecordPacker *packer, int64_t *packedsample
 /* Release a packer's rawrec/encoded buffers */
 extern void lm_pack_state_free (MS3RecordPacker *packer);
 
+/* Open a record list file path for reading, without a byte range suffix
+ * if the path as given does not exist; returns NULL on error */
+extern FILE *lm_fopen_recordfile (const char *path);
+
 /* Number of most-recently-active segments tracked per MS3TraceID, used to
  * bound the segment-list search in _mstl3_addmsr_impl() */
 #define LM_RECENTSEGS 4
@@ -111,15 +115,18 @@ extern void lm_pack_state_free (MS3RecordPacker *packer);
  * refused in favor of a full scan */
 #define LM_RECENTSEGS_MAXWALK 8
 
-/* Private extension of MS3TraceList (opaque in public header).
- *
- * The public struct is the first member so public pointers, sizeof, and
- * field offsets are unaffected by the extension. */
-typedef struct
+/* Tag in the otherwise unused source ID of a trace list's head node, set by
+ * mstl3_init() and cleared when an MS3TraceID not allocated by this library
+ * may be present.  The leading control byte is never part of a source ID. */
+#define LM_TRACELIST_TAG "\001libmseed trace list"
+
+/* Test whether a trace list was initialized by mstl3_init() and holds only
+ * trace IDs allocated by this library as LMTraceIDNode */
+static inline int
+lm_tracelist_native (const MS3TraceList *mstl)
 {
-  MS3TraceList mstl;
-  int8_t foreignid; /* Set if an MS3TraceID not allocated by this library may be present */
-} LMTraceListNode;
+  return memcmp (mstl->traces.sid, LM_TRACELIST_TAG, sizeof (LM_TRACELIST_TAG)) == 0;
+}
 
 /* Private extension of MS3TraceID (opaque in public header).
  *
@@ -131,6 +138,11 @@ typedef struct
  * in the end time of segments as they are evicted from the recent set or
  * removed from the trace list.
  *
+ * The seen_* fields hold the trace ID's segment count and first and last
+ * segments as of the library's last change to its segment list.  A
+ * mismatch means the list was changed by the caller, and the recent set,
+ * whose pointers may no longer be valid, is rebuilt before use.
+ *
  * The public struct is the first member so public pointers, sizeof, and
  * field offsets are unaffected by the extension. */
 typedef struct
@@ -138,6 +150,9 @@ typedef struct
   MS3TraceID id;
   MS3TraceSeg *recentseg[LM_RECENTSEGS];
   nstime_t nonrecentendbound;
+  uint32_t seen_numsegments;
+  MS3TraceSeg *seen_first;
+  MS3TraceSeg *seen_last;
 } LMTraceIDNode;
 
 #ifdef __cplusplus

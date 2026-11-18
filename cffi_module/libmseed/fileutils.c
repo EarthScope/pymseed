@@ -26,6 +26,7 @@
 #include <sys/types.h>
 #include <time.h>
 
+#include "internalstate.h"
 #include "libmseed.h"
 #include "msio.h"
 
@@ -1139,9 +1140,23 @@ msr3_writemseed (MS3Record *msr, const char *mspath, int8_t overwrite, uint32_t 
   /* Free packer and get total packed samples */
   msr3_pack_free (&packer, NULL);
 
+  /* A full or read-only filesystem may not surface an error until
+   * buffered data is flushed */
+  if (packedrecords >= 0 && (fflush (ofp) != 0 || ferror (ofp)))
+  {
+    ms_log (2, "Error writing to output file %s\n", mspath);
+    packedrecords = -1;
+  }
+
   /* Close file and return record count */
   if (ofp != stdout)
-    fclose (ofp);
+  {
+    if (fclose (ofp) != 0 && packedrecords >= 0)
+    {
+      ms_log (2, "Error closing output file %s: %s\n", mspath, strerror (errno));
+      packedrecords = -1;
+    }
+  }
 
   return packedrecords;
 } /* End of msr3_writemseed() */
@@ -1243,6 +1258,58 @@ mstl3_writemseed (MS3TraceList *mstl, const char *mspath, int8_t overwrite, int 
 
   return packedrecords;
 } /* End of mstl3_writemseed() */
+
+/***************************************************************************
+ * Open a file named by a record list path for reading.  A path that does
+ * not exist as given but ends in a valid byte range suffix, as read with
+ * ::MSF_PNAMERANGE, is opened without the suffix.
+ *
+ * Returns an open FILE on success and NULL on error, with errno set.
+ ***************************************************************************/
+FILE *
+lm_fopen_recordfile (const char *path)
+{
+  FILE *fp;
+  char *barepath;
+  const char *range;
+  int64_t start;
+  int64_t end;
+  size_t length;
+  int fopen_errno;
+
+  if (!path)
+    return NULL;
+
+  if ((fp = fopen (path, "rb")) != NULL)
+    return fp;
+
+  fopen_errno = errno;
+
+  if ((range = parse_pathname_range (path, &start, &end)) == NULL)
+  {
+    errno = fopen_errno;
+    return NULL;
+  }
+
+  length = (size_t)(range - path);
+
+  if ((barepath = (char *)libmseed_memory.malloc (length + 1)) == NULL)
+  {
+    errno = ENOMEM;
+    return NULL;
+  }
+
+  memcpy (barepath, path, length);
+  barepath[length] = '\0';
+
+  fp = fopen (barepath, "rb");
+
+  fopen_errno = errno;
+  libmseed_memory.free (barepath);
+  errno = fopen_errno;
+
+  return fp;
+} /* End of lm_fopen_recordfile() */
 
 /** ************************************************************************
  * Parse a range from the end of a string.

@@ -168,3 +168,134 @@ TEST (repack, v2_negative_time_correction)
   msr3_free (&msr);
   msr3_free (&parsed);
 }
+
+/* Repack the first record of a file to the specified version, parse the
+ * result and confirm the decoded samples match the original.
+ */
+static void
+repack_roundtrip (const char *path, int version)
+{
+  MS3Record *msr = NULL;
+  MS3Record *parsed = NULL;
+  char buffer[8192];
+  uint8_t samplesize;
+  int packedlength;
+  int rv;
+
+  rv = ms3_readmsr (&msr, path, MSF_UNPACKDATA, 0);
+  CHECK (rv == MS_NOERROR, "ms3_readmsr() did not return expected MS_NOERROR");
+  CHECK (msr != NULL && msr->numsamples > 0, "ms3_readmsr() did not unpack samples");
+
+  if (rv != MS_NOERROR || msr == NULL || msr->numsamples <= 0)
+    goto cleanup;
+
+  if (version == 3)
+  {
+    packedlength = msr3_repack_mseed3 (msr, buffer, sizeof (buffer), 0);
+  }
+  else
+  {
+    /* v2 record length must be a power of 2 */
+    if (msr->formatversion == 3)
+      msr->reclen = 1024;
+
+    packedlength = msr3_repack_mseed2 (msr, buffer, sizeof (buffer), 0);
+  }
+
+  CHECK (packedlength > 0, "Repack returned an error");
+
+  if (packedlength <= 0)
+    goto cleanup;
+
+  rv = msr3_parse (buffer, packedlength, &parsed, MSF_UNPACKDATA, 0);
+  CHECK (rv == MS_NOERROR && parsed != NULL, "msr3_parse() of repacked record failed");
+
+  if (rv != MS_NOERROR || parsed == NULL)
+    goto cleanup;
+
+  CHECK (parsed->formatversion == version, "Repacked format version is not expected");
+  CHECK (parsed->encoding == msr->encoding, "Repacked encoding does not match");
+  CHECK (parsed->sampletype == msr->sampletype, "Repacked sample type does not match");
+  CHECK (parsed->numsamples == msr->numsamples, "Repacked sample count does not match");
+
+  samplesize = ms_samplesize (msr->sampletype);
+  if (parsed->numsamples == msr->numsamples && parsed->sampletype == msr->sampletype)
+    CHECK (memcmp (parsed->datasamples, msr->datasamples,
+                   (size_t)msr->numsamples * samplesize) == 0,
+           "Repacked samples do not match original");
+
+cleanup:
+  msr3_free (&parsed);
+  ms3_readmsr (&msr, NULL, 0, 0);
+}
+
+TEST (repack, v3_payload_byteorder)
+{
+  repack_roundtrip ("data/reference-testdata-int16.mseed2", 3);
+  repack_roundtrip ("data/reference-testdata-int32.mseed2", 3);
+  repack_roundtrip ("data/reference-testdata-float32.mseed2", 3);
+  repack_roundtrip ("data/reference-testdata-float64.mseed2", 3);
+  repack_roundtrip ("data/reference-testdata-steim1-LE.mseed2", 3);
+  repack_roundtrip ("data/reference-testdata-steim2-LE.mseed2", 3);
+  repack_roundtrip ("data/reference-testdata-text.mseed2", 3);
+}
+
+TEST (repack, v2_payload_byteorder)
+{
+  repack_roundtrip ("data/reference-testdata-int16.mseed3", 2);
+  repack_roundtrip ("data/reference-testdata-int32.mseed3", 2);
+  repack_roundtrip ("data/reference-testdata-float32.mseed3", 2);
+  repack_roundtrip ("data/reference-testdata-float64.mseed3", 2);
+  repack_roundtrip ("data/reference-testdata-steim2.mseed3", 2);
+  repack_roundtrip ("data/reference-testdata-steim1-LE.mseed2", 2);
+  repack_roundtrip ("data/reference-testdata-steim2-LE.mseed2", 2);
+}
+
+/* A miniSEED 2 header-only record has a data offset of 0, meaning no payload,
+ * regardless of the encoding declared in Blockette 1000.  Repacking must not
+ * carry any part of the record as encoded data. */
+TEST (repack, v2_headeronly_steim)
+{
+  MS3Record *msr = NULL;
+  char record[4096];
+  char repacked[4096];
+  uint32_t dataoffset = 1;
+  uint32_t datasize = 1;
+  uint32_t datalength;
+  FILE *fp = NULL;
+  size_t readcount;
+  int reclen;
+  int rv;
+
+  fp = fopen ("data/reference-testdata-headeronly.mseed2", "rb");
+  REQUIRE (fp != NULL, "File pointer is unexpected NULL");
+  readcount = fread (record, sizeof (record), 1, fp);
+  fclose (fp);
+  REQUIRE (readcount == 1, "fread() did not read a complete record");
+
+  REQUIRE ((uint8_t)record[48] == 0x03 && (uint8_t)record[49] == 0xE8,
+           "Blockette 1000 is not at expected offset 48");
+  REQUIRE (record[44] == 0 && record[45] == 0, "Data offset is not expected 0");
+
+  record[52] = DE_STEIM2; /* Blockette 1000 encoding */
+
+  rv = msr3_parse (record, sizeof (record), &msr, 0, 0);
+  REQUIRE (rv == MS_NOERROR, "msr3_parse() did not return expected MS_NOERROR");
+  CHECK (msr->samplecnt == 0, "msr->samplecnt is not expected 0");
+
+  rv = msr3_data_bounds (msr, &dataoffset, &datasize);
+  CHECK (rv == 0, "msr3_data_bounds() did not return expected 0");
+  CHECK (datasize == 0, "msr3_data_bounds() datasize is not expected 0");
+
+  reclen = msr3_repack_mseed3 (msr, repacked, sizeof (repacked), 0);
+  REQUIRE (reclen > 0, "msr3_repack_mseed3() did not return a record length");
+  memcpy (&datalength, repacked + 36, sizeof (datalength));
+  if (ms_bigendianhost ())
+    ms_gswap4 (&datalength);
+  CHECK (datalength == 0, "Repacked v3 data length is not expected 0");
+
+  reclen = msr3_repack_mseed2 (msr, repacked, sizeof (repacked), 0);
+  CHECK (reclen == 4096, "msr3_repack_mseed2() did not return expected 4096");
+
+  msr3_free (&msr);
+}
