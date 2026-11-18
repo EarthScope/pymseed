@@ -827,6 +827,12 @@ def test_msrecord_extra_clear():
     assert msr.extra == payload
     assert msr.extralength == len(payload)
 
+    # As should JSON that is not an object
+    for value in ("[1, 2]", "5", '"text"', "null"):
+        with pytest.raises(ValueError, match="must be a JSON object"):
+            msr.extra = value
+        assert msr.extra == payload
+
 
 class TestMS3RecordSorting:
     """Test sorting of MS3Record objects."""

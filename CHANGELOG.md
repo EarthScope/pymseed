@@ -42,6 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `MS3TraceSeg.has_same_data()` no longer compares the allocated size of sample buffers.
 - `MS3RecordBatchReader` batches holding under half of `batch_size` records are sized to them,
   rather than keeping a full batch's memory.
+- `MS3Record.extra` rejects JSON that is not an object.
 
 ## [1.0.1] - 2026-09-29
 

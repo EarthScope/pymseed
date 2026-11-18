@@ -938,11 +938,12 @@ class MS3Record:
         """Set extra headers as JSON string, will be minified to reduce size
 
         Args:
-            value (str | None): JSON, serialized to a string, to set as extra headers.
-            If ``None`` or an empty string, extra headers will be removed.
+            value (str | None): JSON object, serialized to a string, to set as extra
+            headers. If ``None`` or an empty string, extra headers will be removed.
 
         Raises:
-            ValueError: If the JSON string is not valid or cannot be set or removed.
+            ValueError: If the string is not a valid JSON object, or cannot be set or
+                removed.
 
         Examples:
             >>> from pymseed import MS3Record
@@ -955,7 +956,7 @@ class MS3Record:
             ...                  },
             ...                  "Flags": {
             ...                    "MassPositionOffscale": true
-            ...                  },
+            ...                  }
             ...                },
             ...                "Operator": {
             ...                  "Battery": {
@@ -966,7 +967,12 @@ class MS3Record:
         c_value = ffi.NULL
         if value:
             # Minify the JSON string to ensure valid JSON and minimize size
-            minified = json_dumps_minified(json_loads(value))
+            parsed = json_loads(value)
+            if not isinstance(parsed, dict):
+                raise ValueError(
+                    f"Extra headers must be a JSON object; got {type(parsed).__name__}"
+                )
+            minified = json_dumps_minified(parsed)
             c_value = ffi.new("char[]", minified)
 
         status = clibmseed.mseh_replace(self._msr, c_value)
