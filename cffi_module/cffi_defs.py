@@ -418,4 +418,34 @@ extern nstime_t ms_sampletime (nstime_t time, int64_t offset, double samprate);
 extern int ms_bigendianhost (void);
 
 extern nstime_t lmp_systemtime (void);
+
+// pymseed's column scanner, see pymseed_scan.h
+#define PM_SCAN_NEEDMORE 0
+#define PM_SCAN_FULL 1
+#define PM_SCAN_SKIP 2
+
+typedef struct PMRecordColumns {
+  int64_t capacity;
+  int64_t count;
+  int32_t nsids;
+  int64_t base;
+  int32_t *offset;
+  char *sids;
+  int32_t *sid_index;
+  int32_t *sid_slots;
+  int32_t sid_slot_mask;
+  uint32_t *sid_hashes;
+  int64_t *starttime;
+  int64_t *endtime;
+  uint8_t *endtime_validity;
+  int64_t endtime_nulls;
+  double *samprate;
+  int64_t *samplecnt;
+  int16_t *encoding;
+  uint8_t *pubversion;
+  uint8_t *formatversion;
+} PMRecordColumns;
+
+extern int pm_scan_records (const char *buffer, uint64_t buflen, uint32_t flags, int8_t verbose,
+                            PMRecordColumns *cols, uint64_t *consumed);
 """

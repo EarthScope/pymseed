@@ -34,7 +34,7 @@ from .util import (
     format_nstime,
     numpy_dtype,
     parse_flags,
-    require_numpy,
+    require_optional,
     sample_preview,
 )
 
@@ -441,7 +441,7 @@ class MS3TraceSeg:
         :meth:`take_np_datasamples` for a numpy array that outlives the trace
         list instead.
         """
-        np = require_numpy()
+        np = require_optional("numpy", "numpy")
 
         sampletype = self.sampletype
         if self._seg.numsamples <= 0:
@@ -470,7 +470,7 @@ class MS3TraceSeg:
         array returned here does; dropping the array while such a view is
         still around leaves that view referring to freed memory.
         """
-        np = require_numpy()
+        np = require_optional("numpy", "numpy")
 
         if self._seg.numsamples <= 0:
             # Use the known sample type's dtype where available, rather than
@@ -510,7 +510,7 @@ class MS3TraceSeg:
         :meth:`take_np_datasamples` is usually faster.  The record list is still
         preferable to decode only some segments, or into a caller's own buffer.
         """
-        np = require_numpy()
+        np = require_optional("numpy", "numpy")
 
         if self.recordlist is None:
             raise ValueError(

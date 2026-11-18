@@ -3,6 +3,7 @@ Core utility functions for pymseed
 
 """
 
+import importlib
 import os
 from typing import Any, Literal
 
@@ -89,16 +90,38 @@ def parse_flags(
     return flags
 
 
-def require_numpy() -> Any:
-    """Import and return numpy, or raise if it is not installed."""
-    try:
-        import numpy as np
-    except ImportError:
-        raise ImportError(
-            "numpy is not installed. Install numpy or this package with [numpy] optional dependency"
-        ) from None
+def missing_dependency_message(package: str, extra: str) -> str:
+    """Message for an optional dependency that is not installed."""
+    return (
+        f"{package} is not installed. Install {package} or this package "
+        f"with the [{extra}] optional dependency"
+    )
 
-    return np
+
+def require_optional(
+    module: str, extra: str, package: str | None = None, min_version: int | None = None
+) -> Any:
+    """Import and return an optional dependency, or raise if it is not installed.
+
+    `package` is the distribution name, if it differs from `module`, and
+    `min_version` the minimum major version.
+    """
+    package = package or module
+    try:
+        mod = importlib.import_module(module)
+    except ImportError:
+        raise ImportError(missing_dependency_message(package, extra)) from None
+
+    if min_version is not None:
+        version = getattr(mod, "__version__", "0")
+        if int(version.split(".")[0]) < min_version:
+            raise ImportError(
+                f"{package} {min_version} or later is required, found {version}. "
+                f"Install {package}>={min_version} or this package with the "
+                f"[{extra}] optional dependency"
+            )
+
+    return mod
 
 
 def numpy_dtype(np: Any, sampletype: str | None) -> Any:

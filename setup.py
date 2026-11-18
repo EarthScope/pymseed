@@ -28,6 +28,8 @@ ffi.cdef(cffi_defs.LIBRARY_CDEF)
 # for setuptools to work correctly, especially with 'python -m build'.
 # We use pathlib to find the absolute paths and then make them relative to 'here'.
 c_sources = [str(p.relative_to(here)) for p in libmseed_path.glob("*.c")]
+# pymseed's own C helpers
+c_sources.append(str((cffi_module_path / "pymseed_scan.c").relative_to(here)))
 
 # --- Platform-specific compiler options ---
 if sys.platform.startswith("win"):
@@ -47,11 +49,14 @@ ffi.set_source(
     "_libmseed_cffi",
     # This is the C code that will be compiled. It includes the header
     # which makes all the C functions available to the CFFI module.
-    '#include "libmseed.h"',
+    '#include "libmseed.h"\n#include "pymseed_scan.h"',
     # Provide the list of all C source files to be compiled together.
     sources=c_sources,
     # Provide the include directory, also as a relative path.
-    include_dirs=[str(libmseed_path.relative_to(here))],
+    include_dirs=[
+        str(libmseed_path.relative_to(here)),
+        str(cffi_module_path.relative_to(here)),
+    ],
     # Pass platform-specific compiler and linker arguments.
     extra_compile_args=extra_compile_args,
     extra_link_args=extra_link_args,
