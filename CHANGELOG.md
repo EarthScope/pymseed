@@ -45,6 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Document that `flush_data=False` requires `remove_packed=True` and that `end_byte_offset`
   is inclusive.
 - Wheels and sdists no longer include extension binaries left in the source tree by other builds.
+- `MS3Record.with_datasamples()` raises `ValueError` while `generate()` is packing the record.
 
 ## [1.0.1] - 2026-09-29
 

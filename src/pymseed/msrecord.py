@@ -1596,8 +1596,8 @@ class MS3Record:
             MS3Record: The record with the temporary data samples set
 
         Raises:
-            ValueError: If ``data_samples`` is not one-dimensional, or ``sample_type`` is
-                not one of 'i', 'f', 'd', 't'.
+            ValueError: If ``data_samples`` is not one-dimensional, ``sample_type`` is
+                not one of 'i', 'f', 'd', 't', or :meth:`generate` is packing the record.
 
         Examples:
             Setting data samples for packing:
@@ -1661,6 +1661,12 @@ class MS3Record:
         See Also:
             MS3TraceList.add_data(): Add data samples to a trace list
         """
+        # The packer reads the record's samples between yields
+        if self._packing:
+            raise ValueError(
+                "with_datasamples() cannot be used while generate() is packing the record"
+            )
+
         # A multi-dimensional buffer is flattened when shared zero-copy, while
         # len() gives only its first dimension.  Reused below for the format
         # check, so a buffer-protocol object is not wrapped in a memoryview twice.

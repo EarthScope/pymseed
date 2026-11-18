@@ -584,8 +584,19 @@ def test_generate_rejects_reallocating_the_record():
         msr.parse_into(raw, unpack_data=True)
     with pytest.raises(ValueError, match="while generate"):
         msr.unpack_data()
+    with pytest.raises(ValueError, match="while generate"):
+        with msr.with_datasamples([1], "i"):
+            pass
     records.extend(gen)
     assert records == expected
+
+    # A second generate() with samples would swap those being packed
+    data = list(range(5000))
+    gen = msr.generate(data, "i")
+    next(gen)
+    with pytest.raises(ValueError, match="while generate"):
+        next(msr.generate(data, "i"))
+    gen.close()
 
     # Abandoning the generator releases the record
     gen = msr.generate()
