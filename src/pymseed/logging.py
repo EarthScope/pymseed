@@ -104,8 +104,14 @@ def configure_logging(
         if prefix is not None and len(prefix.encode("utf-8")) >= _MAX_RLOG_MSG_LEN:
             raise ValueError(f"{name} must be shorter than {_MAX_RLOG_MSG_LEN} bytes")
 
-    global _inherited_config
+    _apply_logging(log_prefix, error_prefix, max_messages)
 
+    global _inherited_config
+    _inherited_config = (log_prefix, error_prefix, max_messages)
+
+
+def _apply_logging(log_prefix: str | None, error_prefix: str | None, max_messages: int) -> None:
+    """Configure the calling thread's libmseed logging with validated arguments."""
     # libmseed stores each prefix by pointer without copying (logging.c
     # rloginit_int), so the buffer must outlive the call.  CFFI only guarantees
     # the address of a Python bytes object for the duration of the call, so use
@@ -127,8 +133,6 @@ def configure_logging(
         _thread_local_prefixes.error_prefix = c_error_prefix
     _thread_local_prefixes.configured = True
 
-    _inherited_config = (log_prefix, error_prefix, max_messages)
-
 
 def ensure_thread_logging() -> None:
     """Configure libmseed logging for the calling thread if not already done.
@@ -143,7 +147,9 @@ def ensure_thread_logging() -> None:
     if getattr(_thread_local_prefixes, "configured", False):
         return
 
-    configure_logging(*_inherited_config)
+    # Not through configure_logging(), whose update of _inherited_config could
+    # overwrite a newer configuration from another thread
+    _apply_logging(*_inherited_config)
 
 
 def begin_operation() -> None:

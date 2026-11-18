@@ -496,6 +496,18 @@ class TestUnconfiguredThreadLogging:
         assert captured["messages"], "unconfigured thread captured no messages"
         assert "CRC" in " ".join(captured["messages"])
 
+    def test_unconfigured_thread_leaves_inherited_config(self) -> None:
+        """A thread applying the inherited configuration must not store it back,
+        which could replace a newer one set meanwhile by another thread."""
+        import pymseed.logging as pmlogging
+
+        inherited = pmlogging._inherited_config
+        thread = threading.Thread(target=pmlogging.ensure_thread_logging)
+        thread.start()
+        thread.join()
+
+        assert pmlogging._inherited_config is inherited
+
     def test_validator_finds_corruption_on_unconfigured_thread(self) -> None:
         """MS3RecordValidator must not report corrupt data as clean off the main thread.
 

@@ -57,6 +57,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Document that a segment's record list no longer matches it after packing with `remove_packed=True`.
 - Out-of-range samples given to `MS3Record.with_datasamples()` and `MS3TraceList.add_data()`
   raise `ValueError`.
+- A thread applying the `configure_logging()` configuration on first use keeps a newer one set
+  on another thread in place.
 
 ## [1.0.1] - 2026-09-29
 
