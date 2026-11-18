@@ -713,7 +713,6 @@ class MS3TraceSeg:
             and self.endtime == other.endtime
             and self.samprate == other.samprate
             and self.samplecnt == other.samplecnt
-            and self.datasize == other.datasize
             and self.numsamples == other.numsamples
             and (self.numsamples == 0 or self.datasamples == other.datasamples)
         )

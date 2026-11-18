@@ -39,6 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   are taken as is rather than converted with `int()`.
 - `MS3TraceList.add_file()` reads from a FIFO or device rather than taking it as an empty file.
 - `unpack_recordlist()` fills a caller's buffer when the segment already holds unpacked samples.
+- `MS3TraceSeg.has_same_data()` no longer compares the allocated size of sample buffers.
 
 ## [1.0.1] - 2026-09-29
 

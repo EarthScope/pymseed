@@ -759,6 +759,20 @@ def test_tracelist_has_same_data_short_circuits_on_sampletype():
         assert mock_datasamples.call_count == 0
 
 
+def test_tracelist_has_same_data_ignores_buffer_capacity():
+    """Segments holding the same samples match however their buffers grew."""
+    whole = MS3TraceList()
+    whole.add_data("FDSN:XX_TEST__B_H_Z", [1, 2, 3, 4, 5, 6], "i", 1.0, starttime=0)
+
+    pieces = MS3TraceList()
+    pieces.add_data("FDSN:XX_TEST__B_H_Z", [1, 2, 3], "i", 1.0, starttime=0)
+    pieces.add_data("FDSN:XX_TEST__B_H_Z", [4, 5, 6], "i", 1.0, starttime=3 * NSTMODULUS)
+
+    seg1, seg2 = whole[0][0], pieces[0][0]
+    assert seg1.datasize != seg2.datasize
+    assert seg1.has_same_data(seg2)
+
+
 def test_tracelist_sample_size_type_requires_record_list():
     """sample_size_type needs record_list=True; absent it, raises a clear ValueError."""
     # Default construction does not retain a record list.
