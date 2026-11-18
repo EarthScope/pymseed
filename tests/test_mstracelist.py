@@ -1076,6 +1076,20 @@ def test_numpy_array_from_partial_recordlist_raises():
         segment.create_numpy_array_from_recordlist()
 
 
+def test_unpack_recordlist_into_buffer_after_unpacking():
+    """A caller's buffer is filled whether or not the segment holds samples,
+    which are left as they are."""
+    np = pytest.importorskip("numpy")
+
+    traces = MS3TraceList.from_file(test_path3, unpack_data=True, record_list=True)
+    segment = traces[0][0]
+    expected = segment.np_datasamples.copy()
+
+    array = segment.create_numpy_array_from_recordlist()
+    assert np.array_equal(array, expected)
+    assert np.array_equal(segment.np_datasamples, expected)
+
+
 def test_tracelist_numpy_arrayfrom_recordlist():
     np = pytest.importorskip("numpy")
 

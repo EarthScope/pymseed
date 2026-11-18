@@ -38,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Text samples given as single `bytes` or a byte-sized buffer, e.g. a numpy `S1` array,
   are taken as is rather than converted with `int()`.
 - `MS3TraceList.add_file()` reads from a FIFO or device rather than taking it as an empty file.
+- `unpack_recordlist()` fills a caller's buffer when the segment already holds unpacked samples.
 
 ## [1.0.1] - 2026-09-29
 

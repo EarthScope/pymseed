@@ -577,8 +577,7 @@ class MS3TraceSeg:
 
         Raises:
             ValueError: If no record list is available (requires `record_list=True` when
-                reading), if data is already unpacked and a buffer is provided, or if
-                the provided buffer doesn't support the buffer protocol
+                reading), or if the provided buffer doesn't support the buffer protocol
 
             BufferError: If the provided buffer is read-only or not C-contiguous, and so
                 cannot be written to
@@ -670,9 +669,6 @@ class MS3TraceSeg:
         """
         if not self.recordlist:
             raise ValueError("No record list available to unpack")
-
-        if self._seg.numsamples > 0 and buffer is not None:
-            raise ValueError("Data samples already unpacked")
 
         buffer_ptr = ffi.NULL
         buffer_size = 0
