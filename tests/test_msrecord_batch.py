@@ -543,6 +543,18 @@ def test_unrepresentable_endtimes_are_nsterror():
     ]
 
 
+def test_source_ids_that_are_not_utf8_are_replaced():
+    data = bytearray(read(test_path3))
+    data[40 + len("FDSN:")] = 0xFF  # First byte of the first record's source ID
+    expected = expected_records(read(test_path3))
+
+    batches = list(MS3RecordBatchReader.from_buffer(bytes(data), validate_crc=False))
+
+    batch = batches[0]
+    assert batch.sourceid(0) == "FDSN:\ufffd" + expected[0][0][len("FDSN:") + 1 :]
+    assert [batch.sourceid(i) for i in range(1, len(batch))] == [r[0] for r in expected[1:]]
+
+
 def test_unrepresentable_endtimes_are_null_in_arrow():
     pa = pytest.importorskip("pyarrow")
     data = with_unrepresentable_endtimes(read(test_path3), NULL_ENDTIMES)

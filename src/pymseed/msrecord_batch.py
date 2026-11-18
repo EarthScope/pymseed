@@ -583,8 +583,9 @@ class _Scanner:
                 else None
             )
             if cols.count:
+                # libmseed does not check that a source ID is UTF-8
                 sourceids = [
-                    ffi.string(cols.sids + i * clibmseed.LM_SIDLEN).decode("utf-8")
+                    ffi.string(cols.sids + i * clibmseed.LM_SIDLEN).decode("utf-8", "replace")
                     for i in range(cols.nsids)
                 ]
                 # Decoded above, so not kept with the batch
