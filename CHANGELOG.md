@@ -55,6 +55,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   when called, and `to_file()` raises `ValueError` for an out-of-range `max_record_length`.
 - Document that file-like readers need a `read()` that blocks until data is available.
 - Document that a segment's record list no longer matches it after packing with `remove_packed=True`.
+- Out-of-range samples given to `MS3Record.with_datasamples()` and `MS3TraceList.add_data()`
+  raise `ValueError`.
 
 ## [1.0.1] - 2026-09-29
 

@@ -1828,7 +1828,8 @@ class MS3TraceList(_AdvanceGuard):
 
         Raises:
             ValueError: If sample_type is invalid, time parameters are conflicting,
-                or data_samples format is incompatible with sample_type
+                data_samples format is incompatible with sample_type, or a sample
+                is out of range for it
 
             MiniSEEDError: If the data cannot be added to the trace list
 

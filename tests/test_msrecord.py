@@ -271,6 +271,19 @@ def test_with_datasamples_rejects_multidimensional():
                 pass
 
 
+def test_with_datasamples_rejects_out_of_range_samples():
+    msr = MS3Record()
+
+    for data in ([2**31], (-(2**31) - 1,), array.array("q", [2**40])):
+        with pytest.raises(ValueError, match="out of range for sample type 'i'"):
+            with msr.with_datasamples(data, "i"):
+                pass
+    assert msr.numsamples == 0
+
+    with msr.with_datasamples([1.7, -2.9], "i"):
+        assert list(msr.datasamples) == [1, -2]
+
+
 def test_with_datasamples_text_sequence_rejects_non_single_byte_strings():
     """Each str item in a text-sample sequence must encode to exactly one
     byte: an empty string used to raise IndexError, and a multibyte

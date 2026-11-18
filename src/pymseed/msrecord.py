@@ -1597,15 +1597,17 @@ class MS3Record:
             data_samples: One-dimensional sequence containing the data samples. Can be a
                 list, numpy array, memoryview, or any object supporting the sequence
                 protocol.  If the value supports a memoryview, it will be used directly
-                without copying.
+                without copying.  Otherwise samples are converted with ``int()`` for
+                'i', which truncates floats, or ``float()`` for 'f' and 'd'.
             sample_type: Single character string indicating the data type ('i', 'f', 'd', 't')
 
         Yields:
             MS3Record: The record with the temporary data samples set
 
         Raises:
-            ValueError: If ``data_samples`` is not one-dimensional, ``sample_type`` is
-                not one of 'i', 'f', 'd', 't', or :meth:`generate` is packing the record.
+            ValueError: If ``data_samples`` is not one-dimensional, a sample is out of
+                range for ``sample_type``, ``sample_type`` is not one of 'i', 'f', 'd',
+                't', or :meth:`generate` is packing the record.
 
         Examples:
             Setting data samples for packing:
@@ -1722,11 +1724,16 @@ class MS3Record:
                     # float for an int array, or a non-list/tuple sequence)
                     # falls back to explicit per-element conversion.
                     try:
-                        sample_array = ffi.new(f"{ctype}[]", data_samples)
-                    except TypeError:
-                        sample_array = ffi.new(
-                            f"{ctype}[]", [convert(sample) for sample in data_samples]
-                        )
+                        try:
+                            sample_array = ffi.new(f"{ctype}[]", data_samples)
+                        except TypeError:
+                            sample_array = ffi.new(
+                                f"{ctype}[]", [convert(sample) for sample in data_samples]
+                            )
+                    except OverflowError as e:
+                        raise ValueError(
+                            f"data_samples value out of range for sample type '{sample_type}': {e}"
+                        ) from None
                     temp_samples = sample_array
 
                 self._msr.datasamples = sample_array
