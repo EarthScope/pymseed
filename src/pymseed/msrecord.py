@@ -2567,7 +2567,10 @@ class MS3Record:
             buf_ptr,
             len(buf_ptr),
             msr_ptr,
-            parse_flags(unpack_data=unpack_data, validate_crc=validate_crc),
+            # The buffer holds one record, so a miniSEED 2 record without a
+            # Blockette 1000 can be sized from it
+            parse_flags(unpack_data=unpack_data, validate_crc=validate_crc)
+            | clibmseed.MSF_ATENDOFFILE,
             verbose,
         )
 
@@ -2661,7 +2664,10 @@ class MS3Record:
             buf_ptr,
             len(buf_ptr),
             msr_ptr,
-            parse_flags(unpack_data=unpack_data, validate_crc=validate_crc),
+            # The buffer holds one record, so a miniSEED 2 record without a
+            # Blockette 1000 can be sized from it
+            parse_flags(unpack_data=unpack_data, validate_crc=validate_crc)
+            | clibmseed.MSF_ATENDOFFILE,
             verbose,
         )
 

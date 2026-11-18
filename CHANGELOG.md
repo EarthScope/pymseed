@@ -33,6 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   not as non-miniSEED.
 - Errors raised while iterating records or packing carry libmseed diagnostics of that step only,
   not of earlier records.
+- `MS3Record.parse()` and `parse_into()` size a miniSEED 2 record without a Blockette 1000
+  from the buffer.
 
 ## [1.0.1] - 2026-09-29
 

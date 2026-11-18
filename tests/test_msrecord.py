@@ -1049,6 +1049,21 @@ class TestMS3RecordParse:
         assert len(records) == 1
         assert len(records[0]) <= 4096
 
+    def test_parse_sizes_v2_record_without_blockette_1000(self):
+        """The buffer holds one record, which sizes a v2 record lacking B1000."""
+        with open(test_pack2, "rb") as f:
+            data = bytearray(f.read(512))
+        # Drop the first blockette offset
+        data[46:48] = b"\x00\x00"
+
+        msr = MS3Record.parse(bytes(data))
+        assert msr.reclen == 512
+        assert msr.sourceid == "FDSN:XX_TEST__B_S_X"
+
+        into = MS3Record()
+        into.parse_into(bytes(data))
+        assert into.reclen == 512
+
     def test_parse_into_repins_record_length(self):
         """parse_into() sizes the raw record by the newly parsed length, not by
         a reclen left over from the previous record."""
