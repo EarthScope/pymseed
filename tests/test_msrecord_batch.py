@@ -395,6 +395,26 @@ def test_skipped_input_ends_a_batch():
     assert all(bytes(b.records) == data3 for b in batches)
 
 
+def test_short_batches_are_sized_to_their_records():
+    """A batch ended early by skipped input doesn't keep a full batch's arrays."""
+    from pymseed.clib import ffi
+
+    records = list(MS3Record.from_buffer(MIXED))[:20]
+    junk = b"\0" * 3
+    data = b"".join(junk + r.record for r in records)
+
+    batches = list(MS3RecordBatchReader.from_buffer(data, skip_not_data=True))
+    assert [len(b) for b in batches] == [1] * len(records)
+    assert batch_records(batches) == expected_records(b"".join(r.record for r in records))
+    for batch in batches:
+        assert "sids" not in batch._arrays
+        assert all(ffi.sizeof(a) <= 8 * 2 for a in batch._arrays.values())
+
+    full = next(MS3RecordBatchReader.from_buffer(MIXED, batch_size=8))
+    assert "sids" not in full._arrays
+    assert ffi.sizeof(full._arrays["starttime"]) == 8 * 8
+
+
 @pytest.mark.parametrize("block_size", [100, 1 << 20])
 def test_skip_not_data_ends_cleanly(block_size):
     data = read(test_path3)

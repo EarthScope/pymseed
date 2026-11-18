@@ -499,6 +499,23 @@ def _read_file(
         yield from _read_filelike(scanner, fh, block_size)
 
 
+def _fit(arrays: dict[str, Any], count: int) -> dict[str, Any]:
+    """Copies of a batch's arrays sized to its `count` records, so a short batch
+    doesn't keep a full one's memory."""
+    fitted = {}
+    for name, array in arrays.items():
+        if name == "offset":
+            n = count + 1
+        elif name == "endtime_validity":
+            n = (count + 7) // 8
+        else:
+            n = count
+        ctype = ffi.typeof(array).item.cname
+        fitted[name] = _new(f"{ctype}[]", n)
+        ffi.memmove(fitted[name], array, n * ffi.sizeof(ctype))
+    return fitted
+
+
 class _Scanner:
     """Runs `pm_scan_records` over a buffer, a batch at a time."""
 
@@ -569,6 +586,10 @@ class _Scanner:
                     ffi.string(cols.sids + i * clibmseed.LM_SIDLEN).decode("utf-8")
                     for i in range(cols.nsids)
                 ]
+                # Decoded above, so not kept with the batch
+                arrays.pop("sids", None)
+                if cols.count * 2 <= cols.capacity:
+                    arrays = _fit(arrays, cols.count)
                 yield MS3RecordBatch(view, cols, self.columns, arrays, sourceids)
             if error is not None:
                 raise error
