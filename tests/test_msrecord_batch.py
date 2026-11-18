@@ -11,7 +11,7 @@ import pytest
 from pymseed import NSTERROR, DataEncoding, MS3Record, MS3RecordBatchReader
 from pymseed.clib import clibmseed
 from pymseed.exceptions import MiniSEEDError
-from pymseed.msrecord_batch import COLUMNS, DEFAULT_BATCH_SIZE
+from pymseed.msrecord_batch import COLUMNS, DEFAULT_BATCH_SIZE, MAX_BATCH_SIZE
 
 test_dir = os.path.abspath(os.path.dirname(__file__))
 test_path3 = os.path.join(test_dir, "data", "testdata-COLA-signal.mseed3")
@@ -446,8 +446,11 @@ def test_invalid_crc_raises_unless_not_validated():
 
 
 def test_invalid_arguments():
-    with pytest.raises(ValueError):
-        list(MS3RecordBatchReader.from_buffer(MIXED, batch_size=0))
+    for bad in (0, MAX_BATCH_SIZE + 1):
+        with pytest.raises(ValueError, match="batch_size must be in the range"):
+            MS3RecordBatchReader.from_buffer(MIXED, batch_size=bad)
+    with pytest.raises(TypeError, match="batch_size must be int"):
+        MS3RecordBatchReader.from_buffer(MIXED, batch_size=10.0)
     with pytest.raises(ValueError):
         list(MS3RecordBatchReader.from_filelike(io.BytesIO(MIXED), block_size=0))
 

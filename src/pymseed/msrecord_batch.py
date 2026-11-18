@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING, Any, Literal, get_args
 from .clib import buffer_pointer, clibmseed, ffi
 from .exceptions import MiniSEEDError
 from .logging import begin_operation, clear_error_messages
-from .util import require_optional
+from .util import check_int, require_optional
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -33,6 +33,9 @@ DEFAULT_BATCH_SIZE = 8192
 Like :data:`DEFAULT_BLOCK_SIZE`, a power of two, so a block of fixed-length records
 of the common lengths (512 or 4096 bytes) divides into whole batches rather than
 ending with a smaller one."""
+
+MAX_BATCH_SIZE = 2**30
+"""Records per batch, at most."""
 
 DEFAULT_BLOCK_SIZE = 8 * 1024**2
 """Bytes read from a file or stream at a time. A batch never spans blocks: a record
@@ -346,8 +349,9 @@ class MS3RecordBatchReader:
             columns: The columns to read, from :attr:`COLUMNS`; all of them by
                 default. Others are neither filled nor allocated, and without
                 ``record``, batches don't keep the buffer alive.
-            batch_size: Records per batch, at most. A batch may hold fewer at the
-                end of a block, or before input skipped with ``skip_not_data``.
+            batch_size: Records per batch, at most, up to ``2**30``. A batch may
+                hold fewer at the end of a block, or before input skipped with
+                ``skip_not_data``.
             skip_not_data: Skip input that isn't miniSEED, a byte at a time, until
                 a record is found, including an incomplete record at the end.
             validate_crc: Validate CRCs when present (miniSEED 3).
@@ -535,8 +539,8 @@ class _Scanner:
             raise ValueError(f"Unknown columns {sorted(unknown)}; choose from {list(COLUMNS)}")
         if not requested:
             raise ValueError("columns must name at least one column")
-        if batch_size <= 0:
-            raise ValueError("batch_size must be greater than 0")
+        # The source ID hash table, of twice as many slots, is indexed by int32
+        check_int("batch_size", batch_size, 1, MAX_BATCH_SIZE)
         # In COLUMNS order, the order batches hold them
         self.columns = tuple(c for c in COLUMNS if c in requested)
         self.batch_size = batch_size
