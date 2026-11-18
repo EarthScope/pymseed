@@ -65,8 +65,10 @@ class MS3RecordReader(_AdvanceGuard):
         start_byte_offset (int): Start byte offset in the input bytes stream.
             Defaults to 0.
 
-        end_byte_offset (int): End byte offset in the input bytes stream.
-            Defaults to 0, which means read until the end of the stream.  A range
+        end_byte_offset (int): End byte offset in the input bytes stream,
+            inclusive: the offset of the last byte read, so a 512-byte record
+            at offset 0 ends at 511.  Defaults to 0, which means read until
+            the end of the stream.  A range
             ending part way through a record raises :class:`MiniSEEDError` after
             the records that fit within it, as a truncated stream does.
 

@@ -47,6 +47,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Out-of-range `encoding`, `flush_idle_seconds`, trace ID `version` and extra header int values
   raise `ValueError` rather than `OverflowError`.
 - `MS3TraceList.generate()` raises `ValueError` when the list is closed before the first record.
+- Document that `flush_data=False` requires `remove_packed=True` and that `end_byte_offset`
+  is inclusive.
 
 ## [1.0.1] - 2026-09-29
 

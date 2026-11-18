@@ -391,6 +391,16 @@ def test_msrecord_reader_rejects_invalid_byte_offsets():
         assert r is not None
 
 
+def test_msrecord_reader_end_byte_offset_is_inclusive():
+    from pymseed import MS3RecordReader
+
+    with MS3RecordReader(test_path2, end_byte_offset=511) as reader:
+        assert [msr.reclen for msr in reader] == [512]
+
+    with MS3RecordReader(test_path2, start_byte_offset=512, end_byte_offset=1023) as reader:
+        assert [msr.reclen for msr in reader] == [512]
+
+
 def test_msrecord_reader_repr_and_str():
     """Both name the source and report whether the reader is still open, rather
     than falling back to the default object repr."""

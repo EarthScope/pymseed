@@ -1954,7 +1954,8 @@ class MS3TraceList(_AdvanceGuard):
             flush_data: If True, forces creation of records for all
                 data, even if it doesn't fill a complete record. If False, data
                 samples at the end of traces may be held in internal buffers.
-                Default is True.
+                False takes effect only with `remove_packed=True`; otherwise
+                all data is flushed.  Default is True.
 
             flush_idle_seconds: If > 0, forces flushing of data segments that
                 have not been updated within the specified number of seconds.

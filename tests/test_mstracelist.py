@@ -2402,6 +2402,19 @@ def test_generate_remove_packed_completes():
     assert len(traces) == 0
 
 
+def test_generate_flush_data_false_needs_remove_packed():
+    """Without remove_packed, generate() flushes all data regardless of flush_data."""
+    traces = MS3TraceList()
+    traces.add_data(_SID, list(range(1000)), "i", 1.0, starttime_str="2024-01-01T00:00:00Z")
+
+    packed = MS3TraceList()
+    packed.add_buffer(b"".join(traces.generate(flush_data=False, max_record_length=512)))
+    assert packed[0][0].samplecnt == 1000
+
+    list(traces.generate(flush_data=False, remove_packed=True, max_record_length=512))
+    assert 0 < traces[0][0].numsamples < 1000
+
+
 def test_prealloc_block_size_api():
     """The block size defaults on, round-trips, and rejects invalid values."""
     import pymseed
