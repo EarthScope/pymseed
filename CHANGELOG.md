@@ -25,12 +25,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `MS3Record.generate()` blocks re-parsing the record or advancing its source while packing.
 - `MS3Record.record_mv` of a record yielded earlier uses the length of the record its source
   now holds.
-- `MS3RecordBatchReader.from_buffer()` reads the records of buffers with items wider than a byte.
 - Document that a segment must not be packed or added to after `take_np_datasamples()`.
 - `create_numpy_array_from_recordlist()` raises when the record list does not cover the
   segment's samples.
-- `MS3RecordBatchReader.from_filelike()` reports a short remnant after records as truncated,
-  not as non-miniSEED.
 - Errors raised while iterating records or packing carry libmseed diagnostics of that step only,
   not of earlier records.
 - `MS3Record.parse()` and `parse_into()` size a miniSEED 2 record without a Blockette 1000
@@ -40,8 +37,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `MS3TraceList.add_file()` reads from a FIFO or device rather than taking it as an empty file.
 - `unpack_recordlist()` fills a caller's buffer when the segment already holds unpacked samples.
 - `MS3TraceSeg.has_same_data()` no longer compares the allocated size of sample buffers.
-- `MS3RecordBatchReader` batches holding under half of `batch_size` records are sized to them,
-  rather than keeping a full batch's memory.
 - `MS3Record.extra` rejects JSON that is not an object.
 - `MS3Record.get_extra_header()` returns an empty string value rather than `None`.
 - Out-of-range `encoding`, `flush_idle_seconds`, trace ID `version` and extra header int values
