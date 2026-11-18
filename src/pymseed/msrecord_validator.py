@@ -470,6 +470,7 @@ class MS3RecordValidator:
 
         Args:
             fh: A file-like object with a ``.read(n)`` method returning bytes.
+                ``read`` must block until data is available, as an empty result ends the input.
             chunk_size: Read chunk size in bytes. Default is 10 MiB.
             **kwargs: Passed to ``MS3RecordValidator.__init__``.
 

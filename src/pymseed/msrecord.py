@@ -2271,6 +2271,7 @@ class MS3Record:
 
         Args:
             fh: A file-like object with a ``.read(n)`` method that returns ``bytes``.
+                ``read`` must block until data is available, as an empty result ends the input.
             chunk_size: Number of bytes to read per ``.read()`` call, greater
                 than 0 and less than 1 GiB. Default is 65536.
             unpack_data: If ``True``, decode data samples for each record.

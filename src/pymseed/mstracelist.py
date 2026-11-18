@@ -1631,6 +1631,7 @@ class MS3TraceList(_AdvanceGuard):
 
         Args:
             fh: A file-like object with a ``.read(n)`` method returning bytes.
+                ``read`` must block until data is available, as an empty result ends the input.
 
             chunk_size: Number of bytes to read per ``.read()`` call, greater
                 than 0 and less than 1 GiB. Default: 65536.

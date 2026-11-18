@@ -353,7 +353,8 @@ class MS3RecordBatchReader:
                 hold fewer at the end of a block, or before input skipped with
                 ``skip_not_data``.
             skip_not_data: Skip input that isn't miniSEED, a byte at a time, until
-                a record is found, including an incomplete record at the end.
+                a record is found, including an incomplete record at the end and
+                records that fail CRC validation or can't be decoded.
             validate_crc: Validate CRCs when present (miniSEED 3).
             verbose: libmseed verbosity.
 
@@ -386,7 +387,8 @@ class MS3RecordBatchReader:
         it was read from.
 
         Args:
-            fh: An object with a ``read(n)`` method returning bytes.
+            fh: An object with a ``read(n)`` method returning bytes. ``read``
+                must block until data is available, as an empty result ends the input.
             block_size: Bytes read at a time.
             columns, batch_size, skip_not_data, validate_crc, verbose: As for
                 :meth:`from_buffer`.

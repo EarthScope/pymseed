@@ -53,6 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `set_extra_header()` rejects an empty pointer.
 - `MS3TraceList.generate()` checks `max_record_length`, `flush_idle_seconds` and `extra_headers`
   when called, and `to_file()` raises `ValueError` for an out-of-range `max_record_length`.
+- Document that file-like readers need a `read()` that blocks until data is available.
 
 ## [1.0.1] - 2026-09-29
 
