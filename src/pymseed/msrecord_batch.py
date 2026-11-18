@@ -19,7 +19,7 @@ import os
 from collections.abc import Generator, Iterable, Iterator
 from typing import TYPE_CHECKING, Any, Literal, get_args
 
-from .clib import clibmseed, ffi
+from .clib import buffer_pointer, clibmseed, ffi
 from .exceptions import MiniSEEDError
 from .logging import begin_operation
 from .util import require_optional
@@ -545,10 +545,11 @@ class _Scanner:
         `position` is the offset of `data` in the stream, for error messages.
         """
         flags = self.flags | (clibmseed.MSF_ATENDOFFILE if at_end else 0)
-        ptr = ffi.from_buffer(data)
+        ptr = buffer_pointer(data)
         size = len(ptr)
-        # Keeps a bytearray from being resized under the batches' records
-        view = memoryview(data) if "record" in self.columns else None
+        # Keeps a bytearray from being resized under the batches' records, and
+        # indexes them by byte, as the offsets are
+        view = memoryview(data).cast("B") if "record" in self.columns else None
         self.consumed[0] = start
         while True:
             cols, arrays = self._columns()

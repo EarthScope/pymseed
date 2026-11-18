@@ -205,6 +205,28 @@ def test_records_and_offsets_cover_each_batch():
         assert bytes(batch.records[offsets[1] : offsets[2]]) == batch.record(1)
 
 
+def test_buffers_of_wider_items_are_read_by_byte():
+    import array
+
+    data = read(test_path2)
+    assert len(data) % 4 == 0
+    expected = [
+        (bytes(b.records), [b.record(i) for i in range(len(b))])
+        for b in MS3RecordBatchReader.from_buffer(data, batch_size=10)
+    ]
+
+    for wide in (array.array("i", data), memoryview(data).cast("i", (len(data) // 8, 2))):
+        batches = list(MS3RecordBatchReader.from_buffer(wide, batch_size=10))
+        assert [(bytes(b.records), [b.record(i) for i in range(len(b))]) for b in batches] == (
+            expected
+        )
+
+
+def test_non_contiguous_buffer_is_rejected():
+    with pytest.raises(BufferError, match="not C-contiguous"):
+        next(MS3RecordBatchReader.from_buffer(memoryview(MIXED)[::2]))
+
+
 def test_columns_outlive_their_batch():
     batch = next(MS3RecordBatchReader.from_buffer(MIXED))
     expected = list(batch.starttimes)
