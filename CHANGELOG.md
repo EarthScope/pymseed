@@ -35,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from the buffer.
 - Text samples given as single `bytes` or a byte-sized buffer, e.g. a numpy `S1` array,
   are taken as is rather than converted with `int()`.
+- Iterate non-contiguous byte-sized text samples, as PyPy's `tobytes()` may ignore strides.
 - `MS3TraceList.add_file()` reads from a FIFO or device rather than taking it as an empty file.
 - `unpack_recordlist()` fills a caller's buffer when the segment already holds unpacked samples.
 - `MS3TraceSeg.has_same_data()` no longer compares the allocated size of sample buffers.

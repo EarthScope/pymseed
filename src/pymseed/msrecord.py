@@ -1743,11 +1743,12 @@ class MS3Record:
                 # Convert everything to bytes for simplicity
                 if isinstance(data_samples, str):
                     text_bytes = data_samples.encode("utf-8")
-                elif mv is not None and mv.itemsize == 1:
+                elif mv is not None and mv.itemsize == 1 and mv.c_contiguous:
                     # bytes, bytearray, or e.g. a numpy 'S1' array
                     text_bytes = mv.tobytes()
                 else:
-                    # Handle sequence - convert each item to byte
+                    # Handle sequence - convert each item to byte.  A strided buffer
+                    # is iterated, as PyPy's tobytes() may ignore its strides.
                     byte_values = []
                     for sample in data_samples:
                         if isinstance(sample, str):
