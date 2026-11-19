@@ -29,8 +29,8 @@ extern "C"
 {
 #endif
 
-#define LIBMSEED_VERSION "3.5.5"    //!< Library version
-#define LIBMSEED_RELEASE "2026.321" //!< Library release date
+#define LIBMSEED_VERSION "3.6.0"    //!< Library version
+#define LIBMSEED_RELEASE "2026.322" //!< Library release date
 
 /** @defgroup io-functions File and URL I/O */
 /** @defgroup miniseed-record Record Handling */
@@ -420,6 +420,9 @@ typedef struct MS3Record
 
 extern int msr3_parse (const char *record, uint64_t recbuflen, MS3Record **ppmsr, uint32_t flags,
                        int8_t verbose);
+
+extern int msr3_parse_next (const char *buffer, uint64_t buflen, uint64_t *offset,
+                            MS3Record **ppmsr, uint32_t flags, int8_t verbose);
 
 extern int msr3_pack (const MS3Record *msr, void (*record_handler) (char *, int, void *),
                       void *handlerdata, int64_t *packedsamples, uint32_t flags, int8_t verbose);
