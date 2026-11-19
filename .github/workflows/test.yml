@@ -32,6 +32,8 @@ jobs:
             python-version: "3.10"
           - os: windows-latest
             python-version: "3.14"
+          - os: ubuntu-latest
+            python-version: "pypy3.11"
 
     steps:
       - uses: actions/checkout@v7
@@ -44,7 +46,13 @@ jobs:
           activate-environment: true
 
       - name: Install pymseed with test dependencies
+        if: ${{ !startsWith(matrix.python-version, 'pypy') }}
         run: uv pip install -e .[test]
+
+      # pyarrow has no PyPy wheels
+      - name: Install pymseed with PyPy test dependencies
+        if: ${{ startsWith(matrix.python-version, 'pypy') }}
+        run: uv pip install -e . pytest pytest-markdown-docs numpy jsonschema-rs
 
       - name: Sanity check the built extension
         run: python -c "import pymseed; print(pymseed.__version__)"
