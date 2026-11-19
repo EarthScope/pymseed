@@ -359,6 +359,23 @@ def test_records_before_an_error_are_yielded(batch_size):
     assert excinfo.value.status_code == clibmseed.MS_NOTSEED
 
 
+@pytest.mark.parametrize("block_size", [1000, 1 << 20])
+def test_record_longer_than_supported_raises_unless_skipped(block_size):
+    data = read(test_path3)
+    # A miniSEED 3 header whose data length makes the record far longer than MAXRECLEN
+    bogus = data[:36] + struct.pack("<I", 0x7FFFFFFF) + data[40:]
+
+    with pytest.raises(MiniSEEDError, match="at byte 0") as excinfo:
+        list(MS3RecordBatchReader.from_filelike(io.BytesIO(bogus), block_size=block_size))
+    assert excinfo.value.status_code == clibmseed.MS_OUTOFRANGE
+
+    reader = MS3RecordBatchReader.from_filelike(
+        io.BytesIO(bogus), block_size=block_size, skip_not_data=True
+    )
+    rest = data[len(expected_records(data)[0][-1]) :]
+    assert batch_records(reader) == expected_records(rest)
+
+
 @pytest.mark.parametrize(
     "read_batches",
     [

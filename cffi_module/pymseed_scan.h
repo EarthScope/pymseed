@@ -48,13 +48,13 @@ typedef struct PMRecordColumns
   uint8_t *formatversion;
 } PMRecordColumns;
 
-/* Parse records from `buffer`, starting at `*consumed`, into `cols` until the
-   buffer ends, a record continues past it, or `cols` is full. Sets
-   `*consumed` to the end of the last record scanned.
+/* Parse records from `buffer` with msr3_parse_next(), starting at `*consumed`,
+   into `cols` until the buffer ends, a record continues past it, or `cols` is
+   full. Sets `*consumed` to the end of the last record scanned.
 
-   With MSF_SKIPNOTDATA in `flags`, input that isn't a record is skipped a byte
-   at a time, as libmseed's reader does, and `*consumed` includes it. A batch
-   starts after skipped input and ends before it.
+   With MSF_SKIPNOTDATA in `flags`, input that isn't a record is skipped and
+   `*consumed` may include it. A batch starts after skipped input and ends
+   before it.
 
    Returns PM_SCAN_NEEDMORE, PM_SCAN_FULL, PM_SCAN_SKIP, or a negative libmseed
    error code for the record at `*consumed`. */

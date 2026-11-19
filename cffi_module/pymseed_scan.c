@@ -71,6 +71,7 @@ pm_scan_records (const char *buffer, uint64_t buflen, uint32_t flags, int8_t ver
 {
   MS3Record *msr = NULL;
   uint64_t offset = *consumed;
+  uint64_t start;
   int64_t n = 0;
   int32_t last_sid = -1;
   int32_t sid;
@@ -86,38 +87,31 @@ pm_scan_records (const char *buffer, uint64_t buflen, uint32_t flags, int8_t ver
   if (cols->offset)
     cols->offset[0] = 0;
 
-  while (buflen - offset >= MINRECLEN)
+  while (n < cols->capacity)
   {
-    if (n >= cols->capacity)
-    {
-      result = PM_SCAN_FULL;
-      break;
-    }
+    start  = offset;
+    status = msr3_parse_next (buffer, buflen, &offset, &msr, flags, verbose);
 
-    status = msr3_parse (buffer + offset, buflen - offset, &msr, flags, verbose);
-
-    /* Skip what isn't a record, or claims to be longer than any can be */
-    if ((flags & MSF_SKIPNOTDATA) &&
-        (status < 0 || (status > 0 && buflen - offset + (uint64_t)status > MAXRECLEN)))
-    {
-      /* A batch's records are back to back, so end it before the gap */
-      if (n > 0)
-      {
-        result = PM_SCAN_SKIP;
-        break;
-      }
-      offset++;
-      cols->base = (int64_t)offset;
-      continue;
-    }
-
-    if (status > 0) /* More data needed to finish this record */
+    if (status > 0) /* No complete record remains */
       break;
 
     if (status < 0)
     {
       result = status;
       break;
+    }
+
+    /* Input before the record was skipped (MSF_SKIPNOTDATA) */
+    if (offset != start)
+    {
+      /* A batch's records are back to back, so end it before the gap */
+      if (n > 0)
+      {
+        offset = start;
+        result = PM_SCAN_SKIP;
+        break;
+      }
+      cols->base = (int64_t)offset;
     }
 
     /* Keep record offsets relative to the batch within int32 range, as Arrow's
@@ -169,6 +163,9 @@ pm_scan_records (const char *buffer, uint64_t buflen, uint32_t flags, int8_t ver
     if (cols->offset)
       cols->offset[n] = (int32_t)(offset - (uint64_t)cols->base);
   }
+
+  if (n >= cols->capacity)
+    result = PM_SCAN_FULL;
 
   msr3_free (&msr);
 
