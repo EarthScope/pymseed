@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.1.0] - 2026-11-18
 
 ### Added
 - `MS3RecordBatchReader` reads record header fields into `MS3RecordBatch` columns,
@@ -23,10 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - `MS3Record.parse_into()` no longer references a released buffer after a failed parse.
-- `MS3Record.generate()` blocks re-parsing the record or advancing its source while packing.
+- `MS3Record.generate()` blocks re-parsing the record, advancing its source or
+  `with_datasamples()` while packing.
 - `MS3Record.record_mv` of a record yielded earlier uses the length of the record its source
   now holds.
-- Document that a segment must not be packed or added to after `take_np_datasamples()`.
 - `create_numpy_array_from_recordlist()` raises when the record list does not cover the
   segment's samples.
 - Errors raised while iterating records or packing carry libmseed diagnostics of that step only,
@@ -38,28 +38,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `MS3TraceList.add_file()` reads from a FIFO or device rather than taking it as an empty file.
 - `unpack_recordlist()` fills a caller's buffer when the segment already holds unpacked samples.
 - `MS3TraceSeg.has_same_data()` no longer compares the allocated size of sample buffers.
-- `MS3Record.extra` rejects JSON that is not an object.
-- `MS3Record.get_extra_header()` returns an empty string value rather than `None`.
-- Out-of-range `encoding`, `flush_idle_seconds`, trace ID `version` and extra header int values
-  raise `ValueError` rather than `OverflowError`.
-- `MS3TraceList.generate()` raises `ValueError` when the list is closed before the first record.
-- Document that `flush_data=False` requires `remove_packed=True` and that `end_byte_offset`
-  is inclusive.
-- Wheels and sdists no longer include extension binaries left in the source tree by other builds.
-- `MS3Record.with_datasamples()` raises `ValueError` while `generate()` is packing the record.
+- Extra headers: `MS3Record.extra` and `merge_extra_headers()` reject JSON that is not an object,
+  `set_extra_header()` rejects an empty pointer, and `get_extra_header()` returns an empty
+  string value rather than `None`.
+- Out-of-range `encoding`, `flush_idle_seconds`, `max_record_length`, trace ID `version`,
+  extra header int values and data samples raise `ValueError`.
+- `MS3TraceList.generate()` checks `max_record_length`, `flush_idle_seconds` and `extra_headers`
+  when called, and raises `ValueError` when the list is closed before the first record.
 - `MS3TraceList.add_buffer()` and `add_file()` release the buffer and selections when refused
   within a record's `with_datasamples()` or `generate()`.
-- Document optional `numpy`, `pyarrow` and `jsonschema` dependencies in the installation notes.
-- `MS3Record.merge_extra_headers()` rejects a patch that is not a JSON object and
-  `set_extra_header()` rejects an empty pointer.
-- `MS3TraceList.generate()` checks `max_record_length`, `flush_idle_seconds` and `extra_headers`
-  when called, and `to_file()` raises `ValueError` for an out-of-range `max_record_length`.
-- Document that file-like readers need a `read()` that blocks until data is available.
-- Document that a segment's record list no longer matches it after packing with `remove_packed=True`.
-- Out-of-range samples given to `MS3Record.with_datasamples()` and `MS3TraceList.add_data()`
-  raise `ValueError`.
 - A thread applying the `configure_logging()` configuration on first use keeps a newer one set
   on another thread in place.
+- Wheels and sdists no longer include extension binaries left in the source tree by other builds.
+- Document that a segment must not be packed or added to after `take_np_datasamples()`, and
+  that its record list no longer matches it after packing with `remove_packed=True`.
+- Document that `flush_data=False` requires `remove_packed=True` and that `end_byte_offset`
+  is inclusive.
+- Document that file-like readers need a `read()` that blocks until data is available.
+- Document optional `numpy`, `pyarrow` and `jsonschema` dependencies in the installation notes.
 
 ## [1.0.1] - 2026-09-29
 
@@ -562,7 +558,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - MS3Record class for individual records
 - CFFI-based bindings to libmseed
 
-[Unreleased]: https://github.com/EarthScope/pymseed/compare/v1.0.1...HEAD
+[1.1.0]: https://github.com/EarthScope/pymseed/releases/tag/v1.1.0
 [1.0.1]: https://github.com/EarthScope/pymseed/releases/tag/v1.0.1
 [1.0.0]: https://github.com/EarthScope/pymseed/releases/tag/v1.0.0
 [0.9.6]: https://github.com/EarthScope/pymseed/releases/tag/v0.9.6
