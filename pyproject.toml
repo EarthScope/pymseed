@@ -216,7 +216,8 @@ enable = ["pypy"]
 # Skip:
 # Windows ARM builds for Python < 3.11 (limited ecosystem support)
 # Free-threading builds (no orjson wheels available)
-skip = "cp310-win_arm64 cp31?t-*"
+# 32-bit Windows builds (no orjson wheels available)
+skip = "cp310-win_arm64 cp31?t-* *-win32"
 
 # Testing configuration
 # Run unit tests from the source tree and doctests from the installed package
