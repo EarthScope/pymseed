@@ -1840,6 +1840,24 @@ def test_mstracelist_nonempty_garbage_still_raises(tmp_path):
         MS3TraceList.from_file(str(garbage))
 
 
+def test_mstracelist_add_buffer_skips_not_data():
+    with open(test_path3, "rb") as f:
+        data = f.read()
+    junk = b"garbage!" * 100
+
+    def summary(traces):
+        return [
+            (t.sourceid, [(s.starttime, s.endtime, s.samplecnt) for s in t]) for t in traces
+        ]
+
+    traces = MS3TraceList()
+    traces.add_buffer(junk + data + junk, skip_not_data=True)
+    assert summary(traces) == summary(MS3TraceList.from_file(test_path3))
+
+    with pytest.raises(MiniSEEDError):
+        MS3TraceList().add_buffer(junk + data)
+
+
 def test_mstracelist_options_are_keyword_only():
     """Every option after the primary source argument must be keyword-only."""
     with pytest.raises(TypeError):
